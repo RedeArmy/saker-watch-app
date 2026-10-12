@@ -11,6 +11,10 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      # init and analyze must always run the same CodeQL version.
+      codeql-action:
+        patterns: ["github/codeql-action/*"]
   - package-ecosystem: docker-compose
     directory: /deploy
     schedule: { interval: weekly }
