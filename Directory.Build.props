@@ -8,4 +8,9 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
+  <!-- ADR-0015: XML docs are mandatory on public surface of src/** (CS1591 is an error there). -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('/src/'))">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+  </PropertyGroup>
 </Project>

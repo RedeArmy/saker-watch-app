@@ -12,7 +12,7 @@ Statuses: stub → draft → in-review → approved. A stub past its target phas
 | docs/assumptions.md | Assumptions | Eder | draft | 0 | 2026-10-12 |
 | docs/clavaris-contract.md | Clavaris question list | Eder | draft | 1 | 2026-10-12 |
 | docs/threat-model/threat-model-v1.md | STRIDE threat model | Eder | draft | 0 | 2026-10-12 |
-| docs/api/README.md | API docs | Eder | stub | 1 | 2026-10-12 |
+| docs/api/README.md | API guidelines | Eder | draft | 1 | 2026-10-12 |
 | docs/templates/adr-template.md | ADR template | Eder | draft | 0 | 2026-10-12 |
 | docs/adr/0001-naming-and-ip-note.md | ADR 0001 | Eder | draft | 0 | 2026-10-12 |
 | docs/adr/0003-modular-monolith.md | ADR 0003 | Eder | draft | 0 | 2026-10-12 |
@@ -53,3 +53,7 @@ Statuses: stub → draft → in-review → approved. A stub past its target phas
 | deploy/docker-compose.dev-ports.yml | Dev port-publishing override | Eder | draft | 0 | 2026-10-12 |
 
 | docs/PHASE | Current phase pointer | Eder | draft | 0 | 2026-10-12 |
+| docs/adr/0013-engineering-standards-clean-architecture-ddd.md | ADR 0013 | Eder | draft | 0 | 2026-10-12 |
+| docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | draft | 0 | 2026-10-12 |
+| docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | draft | 0 | 2026-10-12 |
+| scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | draft | 0 | 2026-10-12 |

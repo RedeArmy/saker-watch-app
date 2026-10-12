@@ -19,6 +19,8 @@ jobs:
         with: { persist-credentials: false }
       - name: Docs index
         run: bash scripts/check-docs-index.sh
+      - name: TODO discipline
+        run: bash scripts/check-todos.sh
       - name: Remote-script pipe scan
         run: |
           pat='(curl|wget)[^;&]*\|&?[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$)|<\([[:space:]]*(curl|wget)|\$\([[:space:]]*(curl|wget)'

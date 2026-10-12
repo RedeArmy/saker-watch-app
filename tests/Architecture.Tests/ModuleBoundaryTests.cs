@@ -19,7 +19,7 @@ public sealed class ModuleBoundaryTests
         {
             var result = Types.InAssembly(Load(m, "Domain"))
                 .ShouldNot().HaveDependencyOnAny(
-                    $"SakerWatch.{m}.Application", $"SakerWatch.{m}.Infrastructure", "Microsoft.EntityFrameworkCore")
+                    $"SakerWatch.{m}.Application", $"SakerWatch.{m}.Infrastructure", "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "Serilog", "MongoDB.Driver", "Npgsql")
                 .GetResult();
             result.IsSuccessful.Should().BeTrue($"{m}.Domain must stay pure");
         }

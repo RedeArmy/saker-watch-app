@@ -12,3 +12,4 @@ format:
 	dotnet format
 check-docs:
 	bash scripts/check-docs-index.sh
+	bash scripts/check-todos.sh
