@@ -20,7 +20,7 @@ Sources (read-only, in the Clavaris repo): `docs/03-architecture/api-contracts/a
 | UserInfo | `GET {issuer}/userinfo` (scope-gated claims). |
 | MFA | TOTP not built yet (backlog); passkeys shipped; step-up MFA planned v1.1. `acr`/`amr` claims exist. |
 | Service-to-service | Management API uses `client_credentials` with a **PlatformClient** token from the platform issuer (`{base}/oauth2/token`, no `/o/...`), operator-only. Saker Watch's Worker does not need Clavaris tokens. |
-| Account deletion | Management API `POST /api/v1/admin/accounts/{id}:delete` (platform scope). The consumer owns its grace-period policy. |
+| Account deletion | Management API `POST /api/v1/admin/accounts/{id}:delete` (platform scope). The consumer owns its grace-period policy. Saker Watch will call it (decided). |
 | Events | Webhooks (at-least-once), header `Clavaris-Signature` (HMAC-SHA256), dedupe on `event.id`. Catalog includes `account.created`, `account.session_revoked`, `organization.deleted`, `workspace_membership.added`/`removed`/`role_changed`. |
 | Management API versioning | URI `/api/v1/admin/...`; OIDC surface is protocol-defined and unversioned. OpenAPI 3.1 via springdoc, Swagger UI only in dev. |
 | Error shape | OIDC: RFC 6749 `error`/`error_description`. Management API: problem-detail style JSON. |
@@ -35,7 +35,7 @@ Sources (read-only, in the Clavaris repo): `docs/03-architecture/api-contracts/a
 - **Refresh must be single-flight per session** (one refresh at a time, serialized, with the result shared), otherwise parallel refreshes trip reuse detection and log the user out.
 - **API token validation:** discovery-driven (`Authority = Clavaris:Authority`), RS256 only, validate `iss` equals the configured Organization issuer, signature via cached JWKS (refresh on unknown `kid`, rate-limited), `exp`/`nbf` with ≤ 60 s skew. Audience check configured but UNCONFIRMED (see below).
 - **Identity key:** `(external_issuer = Organization issuer URL, external_subject = sub)`; `sub` is a stable Account id. `email` is not a key.
-- **Account deletion (Phase 6):** local data hard-delete is ours; deleting the Clavaris identity needs a platform-tier credential, which we will not hold in the app. Decision: Saker Watch deletes its own data and tells the user to delete the identity in Clavaris, unless the owner later opts into the management-API call (open question below).
+- **Account deletion (Phase 6) — DECIDED:** Saker Watch deletes its own data and then deletes the Clavaris identity (no dead identities). Done by a Worker-only saga with a dedicated least-privilege PlatformClient credential; see ADR-0009. Configuration is deferred to Phase 6.
 - **Webhooks (optional, Phase 6):** a signed-webhook receiver could react to `account.session_revoked`/deletion; requires HMAC verification and `event.id` dedupe through the inbox table (ADR-0017).
 - **Testing:** CI uses the fake IdP (same contract: per-org issuer path, RS256, discovery); local E2E can run against a real Clavaris instance. Contract tests use recorded discovery/JWKS fixtures from Clavaris.
 
@@ -45,4 +45,4 @@ Sources (read-only, in the Clavaris repo): `docs/03-architecture/api-contracts/a
 - [ ] `clavarisBaseUrl` and `organizationId` per environment; whether production uses a custom domain (ADR-0009).
 - [ ] Rate limits applying to our BFF's token/refresh calls (per-client refresh limit exists in config).
 - [ ] Whether `post_logout_redirect_uri` requires `id_token_hint`.
-- [ ] Owner decision: call Clavaris `:delete` from Saker Watch on account deletion (needs a PlatformClient credential) or leave identity deletion to Clavaris.
+- [ ] Exact PlatformClient scope that permits `POST /api/v1/admin/accounts/{id}:delete`, whether `:delete` is idempotent (404/204 on repeat), and how the platform issuer token is requested (`client_credentials` at `{base}/oauth2/token`).

@@ -56,4 +56,4 @@ Trust boundaries: TB1 browser↔edge, TB2 edge↔app, TB3 app↔datastores, TB4 
 | T18 | dev | Fake IdP reachable outside dev | compose `dev` profile only; CI check that deployed compose lacks it | planned P5 |
 | T19 | TB3 | Redis queue poisoning / idempotency-key collision across tenants | Redis auth + private network; keys scoped by `user_id` (ADR-0005) | planned P1 |
 | T20 | TB3 | Mongo has no RLS equivalent: cross-tenant reads | Mongo holds only shared (non-user) data by design; per-db app user | planned P1 |
-
+| T21 | TB5 | Platform-tier Clavaris credential in the Worker (needed for identity deletion) could be abused to delete other accounts | dedicated least-privilege PlatformClient, Worker-only secret, egress limited to the Clavaris host, per-call audit, rotation runbook, job accepts only ids from our tombstones | planned P6 |
