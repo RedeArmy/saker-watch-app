@@ -1,4 +1,4 @@
-namespace SakerWatch.Retention.Contracts;
+namespace SakerWatch.Calculator.Contracts;
 
 /// <summary>Anchor type used by architecture tests to locate this assembly.</summary>
-public sealed class AssemblyMarker;
+public interface IAssemblyMarker;

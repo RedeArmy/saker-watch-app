@@ -26,6 +26,6 @@ To run the API/Worker from your IDE, also publish the datastores on loopback (wa
 On CPUs/VMs without AVX (`mongo:7.0` crashes with exit 132), add `-f deploy/docker-compose.no-avx.yml` to the compose command or run `make up-no-avx` (assumption A-013). For tests on such machines set `SAKER_TEST_MONGO_IMAGE=mongo:4.4`.
 
 ## Documentation
-`docs/product-spec.md` (what and why) · `docs/roadmap.md` (phases and gates) · `docs/rfc/0001-design-doc.md` · `docs/adr/` (decisions) · `docs/data-model.md` · `docs/threat-model/` · `docs/observability/` · `docs/api/` · `docs/assumptions.md` · `docs/clavaris-contract.md` · `docs/glossary.md` · `docs/DOCS-INDEX.md` (status of every document).
+`docs/product-spec.md` (what and why) · `docs/roadmap.md` (phases and gates) · `docs/rfc/0001-design-doc.md` · `docs/adr/` (decisions) · `docs/data-model.md` · `docs/threat-model/` · `docs/observability/` · `docs/api/` · `docs/assumptions.md` · `docs/clavaris-contract.md` · `docs/glossary.md` · `docs/DOCS-INDEX.md` (status of every document) · `docs/runbooks/sonarcloud-setup.md` (quality gates and branch protection).
 
 Product UI language: Spanish (`es-GT`). Code and docs: English. Informational only — not financial advice.
