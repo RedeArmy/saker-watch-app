@@ -1,7 +1,9 @@
 COMPOSE=docker compose -p saker-watch -f deploy/docker-compose.yml --profile dev
-.PHONY: up down logs test format check-docs
+.PHONY: up-no-avx up down logs test format check-docs
 up:        ## start dev infrastructure (Postgres+Timescale, Mongo, Redis, Caddy, fake IdP)
 	$(COMPOSE) up -d
+up-no-avx: ## same as up, with Mongo 4.4 for CPUs without AVX
+	$(COMPOSE) -f deploy/docker-compose.no-avx.yml up -d
 down:
 	$(COMPOSE) down
 logs:

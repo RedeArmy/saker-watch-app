@@ -23,6 +23,6 @@ make check-docs
 To run the API/Worker from your IDE, also publish the datastores on loopback:
 `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev-ports.yml --profile dev up -d`.
 
-Known dev-environment caveat: `mongo:7.0` needs AVX; VMs without AVX (see `docs/assumptions.md` A-013) must use another Mongo version or host.
+On CPUs/VMs without AVX (`mongo:7.0` crashes with exit 132), add `-f deploy/docker-compose.no-avx.yml` to the compose command or run `make up-no-avx` (assumption A-013).
 
 Product UI language: Spanish (`es-GT`). Code and docs: English. Informational only — not financial advice.

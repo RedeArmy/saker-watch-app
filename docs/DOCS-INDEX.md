@@ -60,3 +60,5 @@ Statuses: stub → draft → in-review → approved. A stub past its target phas
 | docs/adr/0016-observability-and-traceability.md | ADR 0016 | Eder | draft | 0 | 2026-10-12 |
 | docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | draft | 0 | 2026-10-12 |
 | docs/observability/README.md | Observability catalog | Eder | draft | 1 | 2026-10-12 |
+| docs/adr/0018-multi-market-and-multi-currency.md | ADR 0018 | Eder | draft | 0 | 2026-10-12 |
+| deploy/docker-compose.no-avx.yml | Dev override: Mongo 4.4 for CPUs without AVX | Eder | draft | 0 | 2026-10-12 |

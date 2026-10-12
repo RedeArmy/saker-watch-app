@@ -1,6 +1,6 @@
 # ADR-0006: Money, FX and rounding rules
 
-- **Status:** proposed (rounding mode needs owner confirmation)
+- **Status:** accepted (owner confirmed banker's rounding 2026-10-12)
 - **Date:** 2026-10-12
 
 ## Decision
@@ -12,4 +12,4 @@
 - Property tests (FsCheck): fraction×price≈amount, monotonicity, positive-only inputs, FX round-trip within tolerance.
 
 ## Consequences
-`TODO(owner: Eder)`: confirm banker's vs away-from-zero for GTQ display.
+Confirmed by the owner: banker's rounding (`MidpointRounding.ToEven`) for monetary display.

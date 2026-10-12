@@ -1,0 +1,10 @@
+# Dev-only override for CPUs/VMs without AVX (mongo >= 5.0 crashes with exit 132, see assumptions A-013).
+#   docker compose -f docker-compose.yml -f docker-compose.no-avx.yml --profile dev up -d
+services:
+  mongo:
+    image: mongo:4.4
+    healthcheck:
+      test: ["CMD", "mongo", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
