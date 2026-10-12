@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
   mongo:
-    image: mongo:7.0
+    image: mongo:9.0
     environment:
       # Root user for bootstrap only; Phase 1 creates a per-database readWrite user for the app.
       MONGO_INITDB_ROOT_USERNAME: saker_admin
