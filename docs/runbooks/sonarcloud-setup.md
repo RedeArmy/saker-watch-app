@@ -15,11 +15,7 @@
 1. **Settings → Secrets and variables → Actions → Secrets:** add `SONAR_TOKEN` (the token from A.5).
 2. **Variables tab:** add `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` (from A.3).
 3. **Settings → Code security:** enable Dependabot alerts and security updates. Enable *Code scanning* only if the repository is public or has Advanced Security (otherwise CodeQL keeps its SARIF as an artifact, assumption A-018). Enable *Secret scanning* and *Push protection* (free on public repositories).
-4. **Settings → Branches (or Rulesets) → protect `main`:**
-   - Require a pull request before merging (approvals: 0, because of the solo developer, A-015).
-   - Require status checks to pass and require the branch to be up to date. Select these checks: `docs-and-config`, `secrets`, `dotnet`, `sonarcloud`, `codeql`, `trivy`, and the SonarCloud app status `SonarCloud Code Analysis`.
-   - Require linear history; block force pushes and deletions; require conversation resolution.
-   - Optionally require signed commits.
+4. **Protect `main` with a Ruleset** (Settings → Rules → Rulesets); see section D for the exact steps and the importable file `docs/runbooks/github-ruleset-main.json`.
 
 ## C. First run checklist
 - Open the first PR: the `sonarcloud` job should finish and SonarCloud decorates the PR with the Quality Gate result.
@@ -29,3 +25,27 @@
 
 ## What SonarCloud validates here
 C# bugs, vulnerabilities, code smells and complexity; security hotspots; duplication; coverage on new code (OpenCover from coverlet); secrets; IaC and GitHub Actions workflow files. Formatting stays enforced locally and in CI by `dotnet format --verify-no-changes` and the analyzers in the build (warnings are errors), so the Sonar analyzers also run inside every local build.
+
+## D. Ruleset for `main` (GitHub)
+File: `docs/runbooks/github-ruleset-main.json` (name `protect-main`, target: default branch).
+
+**Order matters.** A ruleset that requires checks blocks every merge until those checks have run and passed.
+1. Get the first pull request green (sections A–C), merge it.
+2. Then import the ruleset: **Settings → Rules → Rulesets → New ruleset → Import a ruleset**, pick the JSON file, review it, **Create**. (Alternatively create it by hand with the same rules.)
+3. Open the next small pull request so the SonarCloud app reports its status; then **edit the ruleset** and add the required check `SonarCloud Code Analysis` (it only appears in the picker after it has reported once).
+
+What the ruleset enforces on the default branch:
+| Rule | Effect |
+|---|---|
+| Restrict deletions / block force pushes | `main` cannot be deleted or rewritten |
+| Require linear history | no merge commits; use squash or rebase |
+| Require a pull request | all changes arrive through a PR; 0 approvals (solo developer, A-015); stale approvals dismissed on push; conversations must be resolved; merge methods: squash or rebase |
+| Require status checks | `docs-and-config`, `secrets`, `dotnet`, `sonarcloud`, `codeql`, `trivy`; branch must be up to date (strict) |
+| Bypass list | empty on purpose: nobody, including the owner, skips the rules |
+
+Notes:
+- A job that is *skipped* (for example `sonarcloud` without a token) reports as passed. Do not rely on that: keep `SONAR_TOKEN` configured.
+- Emergency exit: temporarily set the ruleset to *Disabled* (Settings → Rules), fix, and re-enable; or add yourself under **Bypass list** with mode *Pull request only* if you want a documented escape hatch.
+- Optional extras (not enabled): *Require signed commits*; a second ruleset on tags `v*` (block deletion and force update) once releases start; *Require deployments to succeed* once a deploy environment exists. Code-scanning results as a merge rule need a public repository or Advanced Security (A-018).
+- Required check names are the workflow job ids in `.github/workflows/ci.yml`; renaming a job requires updating the ruleset.
+
