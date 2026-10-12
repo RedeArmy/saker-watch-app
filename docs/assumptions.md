@@ -6,7 +6,7 @@
 | ID | Assumption | Default if unanswered | Needs answer by |
 |---|---|---|---|
 | A-001 | Name "Saker Watch" has no trademark clearance (ADR-0001). Task: USPTO classes 9/36/42, WIPO, GitHub/NuGet/npm, domains, attorney. | Private use only | Before any public/commercial release |
-| A-002 | Clavaris is standard OIDC/JWT (JWKS). Nothing else assumed. | Fake IdP only | Phase 1 gate |
+| A-002 | PARTIALLY RESOLVED 2026-10-12: contract extracted from the Clavaris repo (per-org OIDC issuer, RS256/JWKS, confidential client, PKCE, rotating refresh). Unconfirmed items (audience, access-token TTL, email claims, base URL/org id per environment, deletion approach) listed in `docs/clavaris-contract.md`. | Fake IdP with the same contract | Phase 1 gate |
 | A-003 | RESOLVED 2026-10-12 (scope): US equities/ETFs first, then Europe (LSE, XETRA, Euronext), Canada (TSX), LatAm (BMV, B3) and Asia (exchanges TBD) incrementally. Design in ADR-0018. Open: which Asian exchanges; provider coverage/licensing per market. | US enabled first | Per-market enablement |
 | A-004 | LLM server undecided (Ollama runtime chosen, hardware/model TBD). Behind `ILlmAnalyzer` + FakeLlm; decide before Phase 4 (CPU-only = small quantized models, concurrency 1, nightly batch). | FakeLlm | Phase 4 start |
 | A-005 | Frontend Next.js (ADR-0007). | Next.js | — (answered) |
