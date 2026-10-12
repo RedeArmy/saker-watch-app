@@ -57,3 +57,6 @@ Statuses: stub → draft → in-review → approved. A stub past its target phas
 | docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | draft | 0 | 2026-10-12 |
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | draft | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | draft | 0 | 2026-10-12 |
+| docs/adr/0016-observability-and-traceability.md | ADR 0016 | Eder | draft | 0 | 2026-10-12 |
+| docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | draft | 0 | 2026-10-12 |
+| docs/observability/README.md | Observability catalog | Eder | draft | 1 | 2026-10-12 |
