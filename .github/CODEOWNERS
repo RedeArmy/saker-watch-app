@@ -8,7 +8,6 @@
 /Directory.*.props             @RedeArmy
 /global.json                   @RedeArmy
 /.pre-commit-config.yaml       @RedeArmy
-/.gitleaks.toml                @RedeArmy
 /.editorconfig                 @RedeArmy
 /docs/adr/                     @RedeArmy
 /docs/threat-model/            @RedeArmy

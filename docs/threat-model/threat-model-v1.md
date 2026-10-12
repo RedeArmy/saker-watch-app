@@ -1,7 +1,7 @@
 # Threat model v1 (STRIDE)
 
 - **Purpose:** identify threats per trust boundary and track mitigations. Updated every phase.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 0 (updated each phase)
+- **Owner:** Eder · **Status:** in-review · **Target phase:** 0 (updated each phase)
 
 ## Data-flow diagram
 ```mermaid
@@ -29,14 +29,14 @@ flowchart LR
   end
   B-->C-->W-->A
   A-->P; A-->R; K-->P; K-->M; K-->R
-  K-->X; K-->L; A-.JWKS.->I; B-.OIDC.->I
+  K-->X; K-->L; A-.JWKS.->I; B-.OIDC.->I; W-.token exchange and refresh.->I; K-.account deletion.->I
 ```
 Trust boundaries: TB1 browser↔edge, TB2 edge↔app, TB3 app↔datastores, TB4 app↔LLM, TB5 app↔external providers/IdP.
 
 ## STRIDE
 | ID | Boundary | Threat | Mitigation | Status |
 |---|---|---|---|---|
-| T1 | TB1 | **S**poofing: forged/replayed JWT | JWKS validation, alg allow-list, aud/iss/exp, short skew | planned P1 |
+| T1 | TB1 | **S**poofing: forged/replayed JWT | JWKS validation, alg allow-list, iss/exp/nbf, short skew, audience check once confirmed (clavaris-contract.md) | planned P1 |
 | T2 | TB1 | **T**ampering: mass assignment / injected ticker | FluentValidation, strict binding, ticker allow-list | planned P1 |
 | T3 | TB2 | **R**epudiation: untraceable security events | append-only `platform.audit_log`, correlation id | planned P1 |
 | T4 | TB3 | **I**nfo disclosure: cross-user data read (IDOR) | EF filters + Postgres RLS, tests with filter bypassed | planned P1 |
@@ -45,7 +45,7 @@ Trust boundaries: TB1 browser↔edge, TB2 edge↔app, TB3 app↔datastores, TB4 
 | T7 | TB4 | Prompt injection via filings/news | untrusted-data delimiting, no tools, schema-validated output, deterministic signal | planned P4 |
 | T8 | TB5 | SSRF via user URLs | no user-controlled URLs; named HttpClients with host allow-lists | planned P2 |
 | T9 | TB3 | Secrets leakage in repo/logs | gitleaks, redaction policy, Docker secrets | planned P0/P1 |
-| T10 | repo | Poisoned dev tooling/config (hooks, MCP servers, build scripts) | CODEOWNERS (placeholder handle, A-010), CI scan, pinned/vetted MCP, read-only dev DB | partial P0 |
+| T10 | repo | Poisoned dev tooling and build configuration (hooks, scripts, CI) | CODEOWNERS (`RedeArmy`), CI scan, vetted tooling configuration, read-only dev DB | partial P0 |
 | T11 | supply chain | Malicious dependency/image | Dependabot, CodeQL, Trivy, SBOM; digest pins P5 | planned P0/P5 |
 | T12 | TB1 | Token theft via XSS | BFF httpOnly cookies, strict CSP | planned P3 |
 | T13 | tooling | Dev tooling self-modifies its guardrails or abuses allow-listed executors (`make`, scripts) | write guards on protected paths, review on build/CI files, narrowed allow-lists, CODEOWNERS | partial P0 |

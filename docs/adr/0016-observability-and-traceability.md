@@ -46,7 +46,7 @@ Naming `sakerwatch_<module>_<what>_<unit>`; labels low-cardinality only (no user
 `platform.audit_log` is append-only (no UPDATE/DELETE grants; hash chain `prev_hash` for tamper evidence), written in the same transaction as the audited change. Events: provisioning, config/prompt/rule-set changes, data export/delete, authorization failures on ownership checks, admin actions.
 
 ### 8. SLOs and alerting
-SLIs/SLOs from the product spec; multi-window burn-rate alerts on availability and latency; symptom-based alerts first (queue age, dead-letter > 0, price staleness > 24 h on trading days, provider error rate, LLM failure rate, readiness failing). Every alert links to a runbook in `docs/runbooks/`.
+SLIs/SLOs from `docs/product-spec.md`; multi-window burn-rate alerts on availability and latency; symptom-based alerts first (queue age, dead-letter > 0, price staleness > 24 h on trading days, provider error rate, LLM failure rate, readiness failing). Every alert links to a runbook in `docs/runbooks/`.
 
 ### 9. Testing and enforcement
 - Tests: trace/correlation propagation API → job → worker; redaction tests; required metrics emitted; health endpoints.

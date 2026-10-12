@@ -17,7 +17,7 @@ The project targets big-tech engineering quality. ADR-0003 fixed the macro style
 - Strongly typed IDs (UUIDv7); no primitive obsession for domain concepts.
 - Domain events raised by aggregates, dispatched after commit through the outbox (ADR-0005).
 - Domain services only when logic does not belong to one aggregate. Repositories are interfaces in Domain/Application, implemented in Infrastructure, one per aggregate root.
-- Ubiquitous language: names in code match `docs/glossary.md` (created when the first module is built).
+- Ubiquitous language: names in code match `docs/glossary.md`.
 - Anti-corruption layers around external providers (market data, EDGAR, Clavaris, LLM): provider models never leak into Domain.
 
 **Vertical slices inside Application:** one folder per use case (`Features/<UseCase>/`) containing the command/query, handler, validator, DTOs and endpoint mapping. CQRS-style separation: commands go through aggregates; queries may use read-optimized projections (Dapper allowed for hot reads). No shared "services" god classes.

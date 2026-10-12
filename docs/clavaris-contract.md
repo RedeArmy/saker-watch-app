@@ -3,7 +3,7 @@
 - **Purpose:** the integration contract between Saker Watch and Clavaris (the owner's identity provider), extracted from the Clavaris repository docs and code. Replaces the earlier question list.
 - **Owner:** Eder · **Status:** draft (verified against Clavaris docs; items marked UNCONFIRMED must be checked against a running instance) · **Target phase:** 1
 
-Sources (read-only, in the Clavaris repo): `docs/03-architecture/api-contracts/api-contract-overview.md`, `integration-design/integration-design.md`, ADR-0002, 0006, 0008, 0010, 0013; token/claim customizers under `app/src/main/java/.../infrastructure/`. Secrets files were deliberately not read.
+Sources (read-only, in the Clavaris repository; ADR numbers below are Clavaris's own): `docs/03-architecture/api-contracts/api-contract-overview.md`, `integration-design/integration-design.md`, Clavaris ADR-0002, 0006, 0008, 0010, 0013; token/claim customizers under `app/src/main/java/.../infrastructure/`. Secrets files were deliberately not read.
 
 ## Answers
 
@@ -19,7 +19,7 @@ Sources (read-only, in the Clavaris repo): `docs/03-architecture/api-contracts/a
 | Logout | RP-initiated logout: `GET {issuer}/connect/logout`; `post_logout_redirect_uris` are registered per client. Token revocation: `POST {issuer}/oauth2/revoke`. |
 | UserInfo | `GET {issuer}/userinfo` (scope-gated claims). |
 | MFA | TOTP not built yet (backlog); passkeys shipped; step-up MFA planned v1.1. `acr`/`amr` claims exist. |
-| Service-to-service | Management API uses `client_credentials` with a **PlatformClient** token from the platform issuer (`{base}/oauth2/token`, no `/o/...`), operator-only. Saker Watch's Worker does not need Clavaris tokens. |
+| Service-to-service | Management API uses `client_credentials` with a **PlatformClient** token from the platform issuer (`{base}/oauth2/token`, no `/o/...`), operator-only. Saker Watch's Worker needs no Clavaris tokens except in the Phase 6 account-deletion saga (a dedicated PlatformClient; ADR-0009). |
 | Account deletion | Management API `POST /api/v1/admin/accounts/{id}:delete` (platform scope). The consumer owns its grace-period policy. Saker Watch will call it (decided). |
 | Events | Webhooks (at-least-once), header `Clavaris-Signature` (HMAC-SHA256), dedupe on `event.id`. Catalog includes `account.created`, `account.session_revoked`, `organization.deleted`, `workspace_membership.added`/`removed`/`role_changed`. |
 | Management API versioning | URI `/api/v1/admin/...`; OIDC surface is protocol-defined and unversioned. OpenAPI 3.1 via springdoc, Swagger UI only in dev. |

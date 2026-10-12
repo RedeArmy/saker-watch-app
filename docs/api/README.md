@@ -14,7 +14,7 @@
 URL segment `/v1`. Additive changes are non-breaking; anything else needs `/v2`. Deprecation: `deprecated: true`, `Deprecation` and `Sunset` headers, at least one release cycle of overlap.
 
 ## Naming and shape
-Plural kebab-case resources, `camelCase` JSON, ISO-8601 UTC timestamps, decimals as strings or exact JSON numbers (never floating point math), stable error codes in ProblemDetails `type`.
+Plural kebab-case resources (computations are named as actions, e.g. `/v1/calculations/partial-purchase`), `camelCase` JSON, ISO-8601 UTC timestamps, **decimals always as JSON strings** (so generated clients never use floating point), stable error codes in ProblemDetails `type`. All JSON fields are camelCase, including the calculator and staleness fields.
 
 ## Errors
-400 validation, 401/403 auth, 404 not found, 409 conflict/concurrent duplicate, 422 idempotency-key payload mismatch, 429 rate limit, 5xx never leaks internals; every error carries a correlation id.
+304 not modified (ETag), 400 validation, 401/403 auth, 404 not found, 409 conflict/concurrent duplicate, 412 `If-Match` mismatch, 422 idempotency-key payload mismatch, 428 `If-Match` required, 429 rate limit, 503 dependency unavailable (with `Retry-After`), other 5xx never leak internals; every error carries a correlation id. A replayed idempotent response carries `Idempotent-Replayed: true`. Pure computations such as the calculator are exempt from `Idempotency-Key`.
