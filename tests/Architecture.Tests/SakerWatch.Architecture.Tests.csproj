@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>SakerWatch.Architecture.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="AwesomeAssertions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../../src/Modules/Identity/Domain/SakerWatch.Identity.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Domain/SakerWatch.MarketData.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Application/SakerWatch.MarketData.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Infrastructure/SakerWatch.MarketData.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Watchlist/Domain/SakerWatch.Watchlist.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Watchlist/Application/SakerWatch.Watchlist.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Watchlist/Infrastructure/SakerWatch.Watchlist.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Watchlist/Contracts/SakerWatch.Watchlist.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Analysis/Domain/SakerWatch.Analysis.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Analysis/Application/SakerWatch.Analysis.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Analysis/Infrastructure/SakerWatch.Analysis.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Analysis/Contracts/SakerWatch.Analysis.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Signals/Domain/SakerWatch.Signals.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Signals/Application/SakerWatch.Signals.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Signals/Infrastructure/SakerWatch.Signals.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Signals/Contracts/SakerWatch.Signals.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Calculator/Domain/SakerWatch.Calculator.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Calculator/Application/SakerWatch.Calculator.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Calculator/Infrastructure/SakerWatch.Calculator.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Calculator/Contracts/SakerWatch.Calculator.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Retention/Domain/SakerWatch.Retention.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Retention/Application/SakerWatch.Retention.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Retention/Infrastructure/SakerWatch.Retention.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Retention/Contracts/SakerWatch.Retention.Contracts.csproj" />
+  </ItemGroup>
+</Project>

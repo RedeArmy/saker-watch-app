@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Retention.Contracts</AssemblyName>
+    <RootNamespace>SakerWatch.Retention.Contracts</RootNamespace>
+  </PropertyGroup>
+</Project>

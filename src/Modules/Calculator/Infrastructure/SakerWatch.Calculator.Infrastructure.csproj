@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Calculator.Infrastructure</AssemblyName>
+    <RootNamespace>SakerWatch.Calculator.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Application/SakerWatch.Calculator.Application.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+# ADR-0016 / ADR-0013: banned APIs in src/** (enforced by BannedApiAnalyzers; RS0030 is an error)
+M:System.Console.WriteLine;Use ILogger with message templates (ADR-0016)
+M:System.Console.Write;Use ILogger with message templates (ADR-0016)
+P:System.DateTime.Now;Inject TimeProvider
+P:System.DateTime.UtcNow;Inject TimeProvider
+P:System.DateTimeOffset.Now;Inject TimeProvider
+P:System.DateTimeOffset.UtcNow;Inject TimeProvider
+M:System.Threading.Thread.Sleep(System.Int32);Use async delays via TimeProvider; no sleeps
+M:System.Guid.NewGuid();Use the injected ID generator (UUIDv7)

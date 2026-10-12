@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Retention.Domain</AssemblyName>
+    <RootNamespace>SakerWatch.Retention.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

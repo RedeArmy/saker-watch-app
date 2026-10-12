@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.MarketData.Application</AssemblyName>
+    <RootNamespace>SakerWatch.MarketData.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/SakerWatch.MarketData.Domain.csproj" />
+    <ProjectReference Include="../Contracts/SakerWatch.MarketData.Contracts.csproj" />
+  </ItemGroup>
+</Project>

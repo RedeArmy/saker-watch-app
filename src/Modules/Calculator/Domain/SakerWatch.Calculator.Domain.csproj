@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Calculator.Domain</AssemblyName>
+    <RootNamespace>SakerWatch.Calculator.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

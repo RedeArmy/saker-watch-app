@@ -1,0 +1,108 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+# Every action is pinned to a full commit SHA (the trailing comment is the human-readable tag);
+# Dependabot (github-actions ecosystem) proposes SHA bumps.
+jobs:
+  docs-and-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - name: Docs index
+        run: bash scripts/check-docs-index.sh
+      - name: TODO discipline
+        run: bash scripts/check-todos.sh
+      - name: Remote-script pipe scan
+        run: |
+          pat='(curl|wget)[^;&]*\|&?[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$)|<\([[:space:]]*(curl|wget)|\$\([[:space:]]*(curl|wget)'
+          if grep -RInE "$pat" Makefile scripts deploy .github/workflows --exclude=ci.yml; then
+            echo "remote-script pipe found"; exit 1
+          fi
+      - name: Compose config
+        run: |
+          export POSTGRES_PASSWORD=ci MONGO_PASSWORD=ci REDIS_PASSWORD=ci
+          docker compose -f deploy/docker-compose.yml --profile dev config -q
+          # The fake IdP must exist only behind the dev profile.
+          if docker compose -f deploy/docker-compose.yml config --services | grep -q fake-idp; then
+            echo "fake-idp is enabled without the dev profile"; exit 1
+          fi
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # gitleaks-action lists the PR's commits through the API on pull_request events.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  dotnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with: { global-json-file: global.json }
+      - run: dotnet restore
+      - run: dotnet build --no-restore -warnaserror
+      - run: dotnet format --verify-no-changes --no-restore
+      - run: dotnet test --no-build
+      - name: Vulnerable packages
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln.txt
+          if grep -q "has the following vulnerable packages" vuln.txt; then exit 1; fi
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with: { global-json-file: global.json }
+      - uses: github/codeql-action/init@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+        with: { languages: csharp }
+      - run: dotnet build --no-incremental -warnaserror
+      # Code scanning (the upload target) needs a public repo or GitHub Advanced Security. On a private repo
+      # without it, analyze locally and keep the SARIF as a build artifact instead of failing the job.
+      - uses: github/codeql-action/analyze@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+        with:
+          output: sarif-results
+          upload: ${{ github.event.repository.private && 'never' || 'always' }}
+      - name: Keep SARIF results (private repo)
+        if: github.event.repository.private
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codeql-sarif
+          path: sarif-results
+          retention-days: 14
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+  # TODO(phase-1+): coverage gate, SBOM (CycloneDX), multi-arch images (linux/arm64), EF migration bundle, deploy job.

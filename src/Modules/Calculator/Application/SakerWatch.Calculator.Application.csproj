@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Calculator.Application</AssemblyName>
+    <RootNamespace>SakerWatch.Calculator.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/SakerWatch.Calculator.Domain.csproj" />
+    <ProjectReference Include="../Contracts/SakerWatch.Calculator.Contracts.csproj" />
+  </ItemGroup>
+</Project>

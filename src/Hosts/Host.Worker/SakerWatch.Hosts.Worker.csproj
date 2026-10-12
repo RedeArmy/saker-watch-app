@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Hosts.Worker</AssemblyName>
+    <RootNamespace>SakerWatch.Hosts.Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="../../Modules/MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/MarketData/Infrastructure/SakerWatch.MarketData.Infrastructure.csproj" />
+    <ProjectReference Include="../../Modules/Watchlist/Contracts/SakerWatch.Watchlist.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/Watchlist/Infrastructure/SakerWatch.Watchlist.Infrastructure.csproj" />
+    <ProjectReference Include="../../Modules/Analysis/Contracts/SakerWatch.Analysis.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/Analysis/Infrastructure/SakerWatch.Analysis.Infrastructure.csproj" />
+    <ProjectReference Include="../../Modules/Signals/Contracts/SakerWatch.Signals.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/Signals/Infrastructure/SakerWatch.Signals.Infrastructure.csproj" />
+    <ProjectReference Include="../../Modules/Calculator/Contracts/SakerWatch.Calculator.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/Calculator/Infrastructure/SakerWatch.Calculator.Infrastructure.csproj" />
+    <ProjectReference Include="../../Modules/Retention/Contracts/SakerWatch.Retention.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/Retention/Infrastructure/SakerWatch.Retention.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
