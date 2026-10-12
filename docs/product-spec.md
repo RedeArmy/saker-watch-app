@@ -1,7 +1,7 @@
 # Product specification — Saker Watch
 
 - **Purpose:** what the product does, for whom, and the non-functional targets it must meet.
-- **Owner:** Eder · **Status:** in-review · **Target phase:** 0
+- **Owner:** Eder · **Status:** approved · **Target phase:** 0
 
 ## 1. Product
 A personal stock **watchlist and research assistant**. It does **not** execute trades and never connects to a broker. One user today; multi-user ready by design. UI language Spanish (`es-GT`, i18n-ready); code, comments, logs, ADRs and commits in English.

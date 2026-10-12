@@ -1,7 +1,7 @@
 # Threat model v1 (STRIDE)
 
 - **Purpose:** identify threats per trust boundary and track mitigations. Updated every phase.
-- **Owner:** Eder · **Status:** in-review · **Target phase:** 0 (updated each phase)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 0 (updated each phase)
 
 ## Data-flow diagram
 ```mermaid

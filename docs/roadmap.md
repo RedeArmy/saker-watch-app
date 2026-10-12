@@ -1,9 +1,9 @@
 # Roadmap and phase gates
 
 - **Purpose:** the phases, their exit criteria and the working agreements.
-- **Owner:** Eder · **Status:** in-review · **Target phase:** 0 (updated at every gate)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 0 (updated at every gate)
 
-Work proceeds in phases. Each phase ends at a **hard gate**: stop, report (Phase Report), and wait for the owner's approval. The current phase is in `docs/PHASE`.
+Work proceeds in phases. Each phase ends at a **hard gate**: stop, report (Phase Report), and wait for the owner's approval. The current phase is in `docs/PHASE` (now 1: platform core, pending its plan).
 
 ## Working agreements
 1. Plan first: list tasks, files, risks and open questions at the start of each phase.
@@ -18,7 +18,7 @@ Work proceeds in phases. Each phase ends at a **hard gate**: stop, report (Phase
 ## Phases
 | Phase | Scope | Extra DoD |
 |---|---|---|
-| 0 Design and scaffolding | Docs, ADRs, threat model, repo skeleton, CI, dev compose, standards | Docs index and guards green (done, awaiting gate) |
+| 0 Design and scaffolding | Docs, ADRs, threat model, repo skeleton, CI, dev compose, standards | Docs index and guards green. **Done; gate approved 2026-10-12** |
 | 1 Platform core | Building blocks (results, `TimeProvider`, outbox/inbox, idempotency middleware, job queue with leases, resilience, logging/OTel, health, ProblemDetails, rate limiting); Postgres schemas and migrations, Mongo migration runner, Redis; Identity (`IAuthProvider`, Clavaris adapter, fake IdP, JIT provisioning, policies); RLS with two roles; audit log; minimal Retention slice (purge of idempotency keys, outbox/inbox and finished job rows); `IIdentityProviderAdmin` port with a fake adapter; committed OpenAPI contract gate in CI; package version verification (ADR-0014, ADR-0016) | Authz matrix and JWT negative tests; RLS bypass test; idempotency concurrency test; migrations from empty and previous version |
 | 2 Market data, watchlist, calculator (backend) | Stock catalog, providers with fakes and contract tests, ingestion (daily and backfill), `price_daily`, FX, performance math, watchlist and calculator APIs, caching | Performance math on fixtures incl. splits and short histories; stale-data behavior; provider-licensing ADR; k6 baseline |
 | 3 Frontend | Product spec section 3, Phase 3 screens (watchlist, stock detail chart, calculator, basic settings) against the real API and the fake IdP; BFF session store; E2E in CI | E2E green |

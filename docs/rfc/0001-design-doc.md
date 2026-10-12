@@ -1,7 +1,7 @@
 # RFC-0001 — Saker Watch design doc
 
 - **Purpose:** goals, architecture, data model, flows, failure modes, rollout.
-- **Owner:** Eder · **Status:** in-review · **Target phase:** 0
+- **Owner:** Eder · **Status:** approved · **Target phase:** 0
 
 ## Goals
 Watchlist with multi-window performance; quote-currency→GTQ conversion (USD first) and partial-purchase calculator; nightly shared LLM analysis with deterministic signal; retention policy; multi-user ready by design.

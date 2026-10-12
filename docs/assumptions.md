@@ -1,7 +1,7 @@
 # Assumptions
 
 - **Purpose:** every fact not given by the owner, coded against an interface until confirmed.
-- **Owner:** Eder · **Status:** in-review · **Target phase:** 0 (living)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 0 (living)
 
 | ID | Assumption | Default if unanswered | Needs answer by |
 |---|---|---|---|
