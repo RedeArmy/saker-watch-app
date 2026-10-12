@@ -1,0 +1,90 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+# TODO(owner: Eder, A-015): pin every third-party action to a full commit SHA once the repo exists
+# (Dependabot github-actions will then maintain the SHAs).
+jobs:
+  docs-and-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: Docs index
+        run: bash scripts/check-docs-index.sh
+      - name: Remote-script pipe scan
+        run: |
+          pat='(curl|wget)[^;&]*\|&?[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$)|<\([[:space:]]*(curl|wget)|\$\([[:space:]]*(curl|wget)'
+          if grep -RInE "$pat" Makefile scripts deploy .github/workflows --exclude=ci.yml; then
+            echo "remote-script pipe found"; exit 1
+          fi
+      - name: Compose config
+        run: |
+          export POSTGRES_PASSWORD=ci MONGO_PASSWORD=ci REDIS_PASSWORD=ci
+          docker compose -f deploy/docker-compose.yml --profile dev config -q
+          # The fake IdP must exist only behind the dev profile.
+          if docker compose -f deploy/docker-compose.yml config --services | grep -q fake-idp; then
+            echo "fake-idp is enabled without the dev profile"; exit 1
+          fi
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  dotnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-dotnet@v4
+        with: { global-json-file: global.json }
+      - run: dotnet restore
+      - run: dotnet build --no-restore -warnaserror
+      - run: dotnet format --verify-no-changes --no-restore
+      - run: dotnet test --no-build
+      - name: Vulnerable packages
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln.txt
+          if grep -q "has the following vulnerable packages" vuln.txt; then exit 1; fi
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-dotnet@v4
+        with: { global-json-file: global.json }
+      - uses: github/codeql-action/init@v3
+        with: { languages: csharp }
+      - run: dotnet build --no-incremental -warnaserror
+      - uses: github/codeql-action/analyze@v3
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+  # TODO(phase-1+): coverage gate, SBOM (CycloneDX), multi-arch images (linux/arm64), EF migration bundle, deploy job.

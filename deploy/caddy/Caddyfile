@@ -1,0 +1,19 @@
+# Dev: plain HTTP on localhost:8088. The deployed Caddyfile (auto-TLS, HSTS, CSP) arrives in Phase 5.
+:80 {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+	# NOTE: stripping the prefix changes the issuer URL; revisit in Phase 1 (assumption A-012).
+	handle_path /idp/* {
+		reverse_proxy fake-idp:8080
+	}
+	handle /health {
+		respond "ok" 200
+	}
+	# TODO(phase-1): reverse_proxy to Host.Api; (phase-3): Next.js web.
+	respond "Saker Watch dev edge" 200
+}

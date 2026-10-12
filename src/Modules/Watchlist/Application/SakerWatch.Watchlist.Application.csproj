@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Watchlist.Application</AssemblyName>
+    <RootNamespace>SakerWatch.Watchlist.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/SakerWatch.Watchlist.Domain.csproj" />
+    <ProjectReference Include="../Contracts/SakerWatch.Watchlist.Contracts.csproj" />
+  </ItemGroup>
+</Project>

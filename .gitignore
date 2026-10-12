@@ -1,0 +1,25 @@
+# Personal / local (never commit)
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+.idea/
+TestResults/
+coverage/
+artifacts/
+
+# Node
+node_modules/
+.next/
+web/out/
+
+# OS
+.DS_Store

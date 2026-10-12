@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Watchlist.Contracts</AssemblyName>
+    <RootNamespace>SakerWatch.Watchlist.Contracts</RootNamespace>
+  </PropertyGroup>
+</Project>

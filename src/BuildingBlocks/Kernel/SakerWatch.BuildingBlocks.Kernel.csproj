@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.BuildingBlocks.Kernel</AssemblyName>
+    <RootNamespace>SakerWatch.BuildingBlocks.Kernel</RootNamespace>
+  </PropertyGroup>
+</Project>

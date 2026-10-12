@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.MarketData.Domain</AssemblyName>
+    <RootNamespace>SakerWatch.MarketData.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

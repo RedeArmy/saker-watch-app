@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Retention.Application</AssemblyName>
+    <RootNamespace>SakerWatch.Retention.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/SakerWatch.Retention.Domain.csproj" />
+    <ProjectReference Include="../Contracts/SakerWatch.Retention.Contracts.csproj" />
+  </ItemGroup>
+</Project>

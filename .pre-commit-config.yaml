@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: docs-index
+        name: docs index
+        entry: bash scripts/check-docs-index.sh
+        language: system
+        pass_filenames: false

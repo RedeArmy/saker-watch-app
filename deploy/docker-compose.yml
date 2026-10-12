@@ -1,0 +1,81 @@
+# Dev stack. Only Caddy publishes a port (loopback); datastores live on an internal network.
+# TODO(phase-5): pin image digests (supply-chain requirement) once versions are chosen.
+name: saker-watch
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16   # multi-arch (amd64+arm64)
+    environment:
+      # Bootstrap superuser: for migrations/admin ONLY. Phase 1 adds init scripts creating
+      # api_role / worker_role (NOSUPERUSER NOBYPASSRLS) so RLS tests are not vacuous.
+      POSTGRES_USER: saker_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in deploy/.env}
+      POSTGRES_DB: saker
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saker_admin -d saker"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+  mongo:
+    image: mongo:7.0
+    environment:
+      # Root user for bootstrap only; Phase 1 creates a per-database readWrite user for the app.
+      MONGO_INITDB_ROOT_USERNAME: saker_admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set in deploy/.env}
+    volumes: [mongodata:/data/db]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set in deploy/.env}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes: [redisdata:/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+  fake-idp:
+    # DEV/TEST ONLY OIDC provider. Behind the `dev` profile; must never exist in a deployed compose file.
+    profiles: [dev]
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    environment:
+      SERVER_PORT: "8080"
+    networks: [idp]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+  caddy:
+    image: caddy:2.8-alpine
+    ports: ["127.0.0.1:8088:80"]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    networks: [edge, idp]    # Phase 1 adds an `app` network shared with the API; never `backend`.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+networks:
+  backend:
+    internal: true
+  idp:
+    internal: true
+  edge: {}
+volumes:
+  pgdata: {}
+  mongodata: {}
+  redisdata: {}
+  caddydata: {}

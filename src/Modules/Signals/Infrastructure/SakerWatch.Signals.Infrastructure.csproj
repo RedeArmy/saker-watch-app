@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Signals.Infrastructure</AssemblyName>
+    <RootNamespace>SakerWatch.Signals.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Application/SakerWatch.Signals.Application.csproj" />
+  </ItemGroup>
+</Project>

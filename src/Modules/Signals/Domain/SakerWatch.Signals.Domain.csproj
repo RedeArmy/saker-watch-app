@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Signals.Domain</AssemblyName>
+    <RootNamespace>SakerWatch.Signals.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

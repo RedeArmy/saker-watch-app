@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>SakerWatch.Identity.Infrastructure</AssemblyName>
+    <RootNamespace>SakerWatch.Identity.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Application/SakerWatch.Identity.Application.csproj" />
+  </ItemGroup>
+</Project>
