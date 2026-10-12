@@ -1,15 +1,15 @@
 # Build, CI and deployment files are attack surface: owner review required.
-# TODO(owner: Eder): replace @eder with the real GitHub handle/team (assumption A-010) and enable
-# "Require review from Code Owners" in branch protection (assumption A-015).
-/.github/                      @eder
-/deploy/                       @eder
-/scripts/                      @eder
-/Makefile                      @eder
-/Directory.*.props             @eder
-/global.json                   @eder
-/.pre-commit-config.yaml       @eder
-/.gitleaks.toml                @eder
-/.editorconfig                 @eder
-/docs/adr/                     @eder
-/docs/threat-model/            @eder
-/src/Modules/*/Infrastructure/Migrations/ @eder
+# TODO(owner: RedeArmy, A-015): enable "Require review from Code Owners" in branch protection once the repo exists.
+# Note: a solo owner cannot approve their own PR; configure the ruleset accordingly.
+/.github/                      @RedeArmy
+/deploy/                       @RedeArmy
+/scripts/                      @RedeArmy
+/Makefile                      @RedeArmy
+/Directory.*.props             @RedeArmy
+/global.json                   @RedeArmy
+/.pre-commit-config.yaml       @RedeArmy
+/.gitleaks.toml                @RedeArmy
+/.editorconfig                 @RedeArmy
+/docs/adr/                     @RedeArmy
+/docs/threat-model/            @RedeArmy
+/src/Modules/*/Infrastructure/Migrations/ @RedeArmy
