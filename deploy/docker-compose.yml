@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
   caddy:
-    image: caddy:2.8-alpine
+    image: caddy:2.11-alpine
     ports: ["127.0.0.1:8088:80"]
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
