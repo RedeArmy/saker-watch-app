@@ -51,7 +51,7 @@ services:
   fake-idp:
     # DEV/TEST ONLY OIDC provider. Behind the `dev` profile; must never exist in a deployed compose file.
     profiles: [dev]
-    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.5
     environment:
       SERVER_PORT: "8080"
     networks: [idp]
