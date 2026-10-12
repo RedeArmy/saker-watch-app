@@ -12,14 +12,14 @@
 6. **Quality Gate:** keep the built-in *Sonar way* (new code: no new bugs/vulnerabilities, hotspots reviewed, coverage >= 80 %, duplication <= 3 %) or create a stricter copy and assign it to the project.
 
 ## B. GitHub repository settings
-1. **Settings → Secrets and variables → Actions → Secrets:** add `SONAR_TOKEN` (the token from A.5).
+1. **Settings → Secrets and variables → Actions → Secrets:** add `SONAR_TOKEN` (the token from A.5). **Add the same secret under the *Dependabot* tab** too: Dependabot-triggered runs cannot read the Actions secret store, so without it every Dependabot PR fails the `sonarcloud` job (by design, see below).
 2. **Variables tab:** add `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` (from A.3).
 3. **Settings → Code security:** enable Dependabot alerts and security updates. Enable *Code scanning* only if the repository is public or has Advanced Security (otherwise CodeQL keeps its SARIF as an artifact, assumption A-018). Enable *Secret scanning* and *Push protection* (free on public repositories).
 4. **Protect `main` with a Ruleset** (Settings → Rules → Rulesets); see section D for the exact steps and the importable file `docs/runbooks/github-ruleset-main.json`.
 
 ## C. First run checklist
 - Open the first PR: the `sonarcloud` job should finish and SonarCloud decorates the PR with the Quality Gate result.
-- If `sonarcloud` shows "skipped", the `SONAR_TOKEN` secret is missing or the PR comes from a fork.
+- If `sonarcloud` fails at "Require SONAR_TOKEN", the secret is missing from the Actions or the Dependabot store. It is only skipped for PRs from forks.
 - If the scanner reports "automatic analysis is enabled", repeat A.4.
 - Findings appear under the project in SonarCloud; fix them or mark false positives with a justification (never disable a rule globally without an ADR note).
 
@@ -44,7 +44,7 @@ What the ruleset enforces on the default branch:
 | Bypass list | empty on purpose: nobody, including the owner, skips the rules |
 
 Notes:
-- A job that is *skipped* (for example `sonarcloud` without a token) reports as passed. Do not rely on that: keep `SONAR_TOKEN` configured.
+- A *skipped* required job reports as passed, so `sonarcloud` fails loudly when `SONAR_TOKEN` is missing instead of skipping (fork PRs are the only exception). Dependabot PRs are covered by the Dependabot copy of the secret (B.1).
 - Emergency exit: temporarily set the ruleset to *Disabled* (Settings → Rules), fix, and re-enable; or add yourself under **Bypass list** with mode *Pull request only* if you want a documented escape hatch.
 - Optional extras (not enabled): *Require signed commits*; a second ruleset on tags `v*` (block deletion and force update) once releases start; *Require deployments to succeed* once a deploy environment exists. Code-scanning results as a merge rule need a public repository or Advanced Security (A-018).
 - Each required check is pinned to the GitHub Actions app (`integration_id` 15368), so no other app or API call can post a fake green status under the same name.

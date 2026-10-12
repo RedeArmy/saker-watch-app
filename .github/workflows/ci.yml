@@ -67,7 +67,7 @@ jobs:
   sonarcloud:
     # Static analysis, coverage, duplication and security hotspots; fails when the Quality Gate fails.
     # Requires the SONAR_TOKEN secret and the SONAR_ORGANIZATION / SONAR_PROJECT_KEY repository variables
-    # (docs/runbooks/sonarcloud-setup.md). Skipped when the token is unavailable (e.g. PRs from forks).
+    # (docs/runbooks/sonarcloud-setup.md). Fails when the token is missing (also in the Dependabot secret store); skipped only for fork PRs.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -80,6 +80,13 @@ jobs:
         with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with: { global-json-file: global.json }
+      # A missing token must fail the job, not skip it (a skipped required check counts as passed).
+      # Dependabot runs read the *Dependabot* secret store, so SONAR_TOKEN must exist there too.
+      - name: Require SONAR_TOKEN
+        if: env.SONAR_TOKEN == '' && github.event.pull_request.head.repo.fork != true
+        run: |
+          echo "::error::SONAR_TOKEN is not available. Add it under Settings > Secrets and variables > Actions AND > Dependabot."
+          exit 1
       - name: Install SonarScanner for .NET
         if: env.SONAR_TOKEN != ''
         run: dotnet tool install --global dotnet-sonarscanner --version 11.3.0
