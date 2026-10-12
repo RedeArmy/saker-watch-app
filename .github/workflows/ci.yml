@@ -155,4 +155,4 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           exit-code: "1"
-  # TODO(phase-1+): coverage gate, SBOM (CycloneDX), multi-arch images (linux/arm64), EF migration bundle, deploy job.
+  # Planned for phase 1+ (tracked in docs/roadmap.md): coverage gate, SBOM (CycloneDX), multi-arch images (linux/arm64), EF migration bundle, deploy job.
