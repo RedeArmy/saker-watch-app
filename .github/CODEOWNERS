@@ -1,6 +1,6 @@
 # Build, CI and deployment files are attack surface: owner review required.
-# TODO(owner: RedeArmy, A-015): enable "Require review from Code Owners" in branch protection once the repo exists.
-# Note: a solo owner cannot approve their own PR; configure the ruleset accordingly.
+# Solo developer: "Require review from Code Owners" is intentionally NOT enabled (assumption A-015).
+# This file still documents ownership and starts enforcing the day a second contributor joins.
 /.github/                      @RedeArmy
 /deploy/                       @RedeArmy
 /scripts/                      @RedeArmy

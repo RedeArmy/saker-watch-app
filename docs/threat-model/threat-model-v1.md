@@ -49,7 +49,7 @@ Trust boundaries: TB1 browser↔edge, TB2 edge↔app, TB3 app↔datastores, TB4 
 | T11 | supply chain | Malicious dependency/image | Dependabot, CodeQL, Trivy, SBOM; digest pins P5 | planned P0/P5 |
 | T12 | TB1 | Token theft via XSS | BFF httpOnly cookies, strict CSP | planned P3 |
 | T13 | tooling | Dev tooling self-modifies its guardrails or abuses allow-listed executors (`make`, scripts) | write guards on protected paths, review on build/CI files, narrowed allow-lists, CODEOWNERS | partial P0 |
-| T14 | CI/CD | Mutable action tags, no branch protection | Pin SHAs + branch protection when repo exists (A-015) | open |
+| T14 | CI/CD | Mutable action tags; unprotected `main` | Pin action SHAs; branch protection with required checks, no force push (code-owner review not required: solo developer, A-015) | open |
 | T15 | TB3 | Dev superuser makes RLS tests vacuous | `api_role`/`worker_role` NOSUPERUSER NOBYPASSRLS; test asserts `is_superuser=off` (A-014) | planned P1 |
 | T16 | TB4 | LLM cost/DoS, cross-tenant prompt/cache leakage, transport auth over Tailscale | token/budget quotas, no per-user data in shared prompts, service token + key rotation | planned P4 |
 | T17 | TB1 | CSRF / session fixation / open redirect in BFF OIDC callback | SameSite cookies, state+nonce+PKCE, redirect allow-list | planned P3 |
