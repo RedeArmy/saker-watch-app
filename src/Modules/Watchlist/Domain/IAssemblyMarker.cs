@@ -1,4 +1,4 @@
-namespace SakerWatch.Analysis.Infrastructure;
+namespace SakerWatch.Watchlist.Domain;
 
 /// <summary>Anchor type used by architecture tests to locate this assembly.</summary>
-public sealed class AssemblyMarker;
+public interface IAssemblyMarker;

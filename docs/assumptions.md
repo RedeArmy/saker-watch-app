@@ -23,4 +23,5 @@
 | A-016 | Local dev guardrails (hooks) are defence in depth, not a sandbox. Real boundary = permission rules + OS sandbox + server-side branch protection. | — | — |
 | A-017 | DECIDED 2026-10-12: account deletion also deletes the Clavaris identity via a Worker-only saga and a dedicated PlatformClient credential; configuration deferred to Phase 6 (Phase 1 reserves the `IIdentityProviderAdmin` port + fake). Unconfirmed: PlatformClient scope name and `:delete` idempotency. | Local-only deletion until configured | Phase 6 |
 | A-018 | CodeQL uploads to GitHub code scanning, which needs a public repository or GitHub Advanced Security. On a private repo the CI analyzes locally and keeps the SARIF as an artifact (14 days). Enable code scanning (or make the repo public) to see alerts in the Security tab. | SARIF artifact only | Repo visibility decision |
+| A-019 | SonarCloud free-tier limits for private repositories were not verified; check before importing the project. Fallback: analyzers in the build only (ADR-0019). | Analyzers in build | Before SonarCloud import |
 

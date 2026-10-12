@@ -66,3 +66,5 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/roadmap.md | Roadmap and phase gates | Eder | approved | 0 | 2026-10-12 |
 | docs/glossary.md | Glossary | Eder | draft | 1 | 2026-10-12 |
 | BannedSymbols.txt | Banned APIs enforced by the compiler | Eder | approved | 0 | 2026-10-12 |
+| docs/adr/0019-quality-gates-sonarcloud.md | ADR 0019 | Eder | draft | 1 | 2026-10-12 |
+| docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
