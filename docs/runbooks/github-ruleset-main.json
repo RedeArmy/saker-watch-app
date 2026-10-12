@@ -30,12 +30,12 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "docs-and-config" },
-          { "context": "secrets" },
-          { "context": "dotnet" },
-          { "context": "sonarcloud" },
-          { "context": "codeql" },
-          { "context": "trivy" }
+          { "context": "docs-and-config", "integration_id": 15368 },
+          { "context": "secrets", "integration_id": 15368 },
+          { "context": "dotnet", "integration_id": 15368 },
+          { "context": "sonarcloud", "integration_id": 15368 },
+          { "context": "codeql", "integration_id": 15368 },
+          { "context": "trivy", "integration_id": 15368 }
         ]
       }
     }

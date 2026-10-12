@@ -47,5 +47,7 @@ Notes:
 - A job that is *skipped* (for example `sonarcloud` without a token) reports as passed. Do not rely on that: keep `SONAR_TOKEN` configured.
 - Emergency exit: temporarily set the ruleset to *Disabled* (Settings → Rules), fix, and re-enable; or add yourself under **Bypass list** with mode *Pull request only* if you want a documented escape hatch.
 - Optional extras (not enabled): *Require signed commits*; a second ruleset on tags `v*` (block deletion and force update) once releases start; *Require deployments to succeed* once a deploy environment exists. Code-scanning results as a merge rule need a public repository or Advanced Security (A-018).
+- Each required check is pinned to the GitHub Actions app (`integration_id` 15368), so no other app or API call can post a fake green status under the same name.
+- `docs/runbooks/github-ruleset-tags.json` (`protect-release-tags`) makes `v*` tags immutable; import it the same way before the first release.
 - Required check names are the workflow job ids in `.github/workflows/ci.yml`; renaming a job requires updating the ruleset.
 
