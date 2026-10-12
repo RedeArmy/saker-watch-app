@@ -15,9 +15,9 @@ public sealed class ModuleBoundaryTests
     [Fact]
     public void Domain_DoesNotDependOnOtherLayers()
     {
-        foreach (var m in _modules)
+        foreach (string m in _modules)
         {
-            var result = Types.InAssembly(Load(m, "Domain"))
+            TestResult result = Types.InAssembly(Load(m, "Domain"))
                 .ShouldNot().HaveDependencyOnAny(
                     $"SakerWatch.{m}.Application", $"SakerWatch.{m}.Infrastructure", "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "Serilog", "MongoDB.Driver", "Npgsql")
                 .GetResult();
@@ -28,7 +28,7 @@ public sealed class ModuleBoundaryTests
     [Fact]
     public void Layers_RespectDependencyDirection()
     {
-        foreach (var m in _modules)
+        foreach (string m in _modules)
         {
             Types.InAssembly(Load(m, "Application")).ShouldNot()
                 .HaveDependencyOn($"SakerWatch.{m}.Infrastructure").GetResult().IsSuccessful.Should().BeTrue();
@@ -41,8 +41,8 @@ public sealed class ModuleBoundaryTests
     [Fact]
     public void AllModuleAssemblies_AreLoadable_SoRulesAreNotVacuouslySkipped()
     {
-        foreach (var m in _modules)
-            foreach (var layer in new[] { "Domain", "Application", "Infrastructure", "Contracts" })
+        foreach (string m in _modules)
+            foreach (string layer in new[] { "Domain", "Application", "Infrastructure", "Contracts" })
             {
                 Types.InAssembly(Load(m, layer)).GetTypes().Should().NotBeEmpty($"{m}.{layer} must contain types");
             }
@@ -51,14 +51,14 @@ public sealed class ModuleBoundaryTests
     [Fact]
     public void Modules_OnlyUseOtherModulesContracts()
     {
-        foreach (var m in _modules)
-            foreach (var layer in new[] { "Domain", "Application", "Infrastructure" })
+        foreach (string m in _modules)
+            foreach (string layer in new[] { "Domain", "Application", "Infrastructure" })
             {
-                var others = _modules.Where(o => o != m).SelectMany(o => new[]
+                string[] others = _modules.Where(o => o != m).SelectMany(o => new[]
                 {
-                $"SakerWatch.{o}.Domain", $"SakerWatch.{o}.Application", $"SakerWatch.{o}.Infrastructure",
-            }).ToArray();
-                var result = Types.InAssembly(Load(m, layer)).ShouldNot().HaveDependencyOnAny(others).GetResult();
+                    $"SakerWatch.{o}.Domain", $"SakerWatch.{o}.Application", $"SakerWatch.{o}.Infrastructure",
+                }).ToArray();
+                TestResult result = Types.InAssembly(Load(m, layer)).ShouldNot().HaveDependencyOnAny(others).GetResult();
                 result.IsSuccessful.Should().BeTrue($"{m}.{layer} may only use other modules' Contracts");
             }
     }
