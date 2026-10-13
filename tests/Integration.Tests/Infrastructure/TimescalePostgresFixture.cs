@@ -1,3 +1,4 @@
+using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace SakerWatch.Integration.Tests.Infrastructure;
@@ -19,4 +20,15 @@ public sealed class TimescalePostgresFixture : IAsyncLifetime
 
     /// <inheritdoc />
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+
+    /// <summary>Creates an empty database so each test class migrates from scratch, and returns its superuser connection string.</summary>
+    public async Task<string> CreateDatabaseAsync()
+    {
+        string name = $"t_{Guid.CreateVersion7():N}";
+        await using NpgsqlDataSource server = NpgsqlDataSource.Create(ConnectionString);
+        await using NpgsqlCommand create = server.CreateCommand($"CREATE DATABASE {name}");
+        await create.ExecuteNonQueryAsync();
+
+        return new NpgsqlConnectionStringBuilder(ConnectionString) { Database = name }.ConnectionString;
+    }
 }

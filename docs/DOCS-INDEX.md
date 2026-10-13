@@ -68,6 +68,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | BannedSymbols.txt | Banned APIs enforced by the compiler | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0019-quality-gates-sonarcloud.md | ADR 0019 | Eder | draft | 1 | 2026-10-12 |
 | docs/adr/0020-phase-1-tooling-and-dispatcher.md | ADR 0020 | Eder | draft | 1 | 2026-10-12 |
+| docs/adr/0021-persistence-ef-core-and-migrator.md | ADR 0021 | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | draft | 1 | 2026-10-12 |

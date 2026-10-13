@@ -11,6 +11,11 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="../../src/Hosts/Host.Migrator/SakerWatch.Hosts.Migrator.csproj" />
   </ItemGroup>
 </Project>
