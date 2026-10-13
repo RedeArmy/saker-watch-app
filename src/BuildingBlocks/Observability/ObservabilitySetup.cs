@@ -37,7 +37,8 @@ public static class ObservabilitySetup
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
-        builder.Services.AddSerilog(logger => logger.ApplySakerDefaults(serviceName));
+        string? otlpEndpoint = builder.Configuration[_otlpEndpointKey];
+        builder.Services.AddSerilog(logger => logger.ApplySakerDefaults(serviceName, otlpEndpoint: otlpEndpoint));
 
         IOpenTelemetryBuilder telemetry = builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
@@ -54,7 +55,7 @@ public static class ObservabilitySetup
                 configureMetrics?.Invoke(metrics);
             });
 
-        if (!string.IsNullOrWhiteSpace(builder.Configuration[_otlpEndpointKey]))
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
             telemetry.UseOtlpExporter();
         }

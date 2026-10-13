@@ -1,6 +1,7 @@
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using Serilog.Sinks.OpenTelemetry;
 
 namespace SakerWatch.BuildingBlocks.Observability.Logging;
 
@@ -16,7 +17,12 @@ public static class SakerLogging
     /// <param name="configuration">Logger configuration to extend.</param>
     /// <param name="serviceName">Logical service name (for example <c>saker-api</c>).</param>
     /// <param name="writeToConsole">False in tests that attach their own sink.</param>
-    public static LoggerConfiguration ApplySakerDefaults(this LoggerConfiguration configuration, string serviceName, bool writeToConsole = true)
+    /// <param name="otlpEndpoint">When set, logs are also exported over OTLP/gRPC (with trace context) to the Collector.</param>
+    public static LoggerConfiguration ApplySakerDefaults(
+        this LoggerConfiguration configuration,
+        string serviceName,
+        bool writeToConsole = true,
+        string? otlpEndpoint = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
@@ -31,6 +37,21 @@ public static class SakerLogging
             .Enrich.With<ActivityEnricher>()
             .Enrich.With<RedactionEnricher>();
 
-        return writeToConsole ? configured.WriteTo.Console(new RenderedCompactJsonFormatter()) : configured;
+        if (writeToConsole)
+        {
+            configured = configured.WriteTo.Console(new RenderedCompactJsonFormatter());
+        }
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            configured = configured.WriteTo.OpenTelemetry(options =>
+            {
+                options.Endpoint = otlpEndpoint;
+                options.Protocol = OtlpProtocol.Grpc;
+                options.ResourceAttributes = new Dictionary<string, object> { ["service.name"] = serviceName };
+            });
+        }
+
+        return configured;
     }
 }

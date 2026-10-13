@@ -8,6 +8,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SakerWatch.BuildingBlocks.Application.Telemetry;
 using SakerWatch.BuildingBlocks.Observability;
+using SakerWatch.BuildingBlocks.Observability.Logging;
 using Serilog.Events;
 
 namespace SakerWatch.Observability.Tests;
@@ -89,5 +90,17 @@ public sealed class EnrichmentAndSetupTests
         using IHost host = builder.Build();
 
         host.Services.GetRequiredService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ApplySakerDefaults_WithOtlpEndpoint_BuildsALoggerThatNeverThrowsWhenTheCollectorIsDown()
+    {
+        using Serilog.Core.Logger logger = new Serilog.LoggerConfiguration()
+            .ApplySakerDefaults("saker-test", writeToConsole: false, otlpEndpoint: "http://127.0.0.1:1")
+            .CreateLogger();
+
+        Action act = () => logger.Information("collector is unreachable {Attempt}", 1);
+
+        act.Should().NotThrow();
     }
 }

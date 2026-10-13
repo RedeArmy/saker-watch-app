@@ -1,0 +1,64 @@
+{
+  "uid": "saker-overview",
+  "title": "Saker Watch — Overview",
+  "tags": ["saker-watch"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Use-case rate by outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (outcome) (rate({__name__=~\"sakerwatch_.+_usecase_duration_seconds_count\"}[5m]))", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Use-case p95 latency",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, usecase) (rate({__name__=~\"sakerwatch_.+_usecase_duration_seconds_bucket\"}[5m])))", "legendFormat": "{{usecase}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Rate-limited requests",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (policy) (rate(sakerwatch_http_rate_limited_total[5m]))", "legendFormat": "{{policy}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HTTP server requests by status class",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count[5m]))", "legendFormat": "{{http_response_status_code}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Errors and warnings",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "{service_name=~\"saker-.+\"} | detected_level=~\"error|warn|warning\"" }
+      ],
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true }
+    }
+  ]
+}
