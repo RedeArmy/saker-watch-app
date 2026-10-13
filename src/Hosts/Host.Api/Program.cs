@@ -11,6 +11,8 @@ using SakerWatch.BuildingBlocks.Persistence.Platform;
 using SakerWatch.BuildingBlocks.Redis;
 using SakerWatch.BuildingBlocks.Web;
 using SakerWatch.BuildingBlocks.Web.Health;
+using SakerWatch.BuildingBlocks.Web.Security;
+using SakerWatch.Identity.Infrastructure.Clavaris;
 using SakerWatch.Identity.Infrastructure.Persistence;
 using Serilog;
 using Serilog.Events;
@@ -22,7 +24,7 @@ builder.AddSakerObservability(
     tracing => tracing.AddAspNetCoreInstrumentation(),
     metrics => metrics.AddAspNetCoreInstrumentation());
 builder.Services.AddSakerWeb(builder.Configuration);
-builder.Services.AddApplicationPipeline();
+builder.Services.AddApplicationPipeline(typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly);
 builder.Services.AddIdempotency(builder.Configuration);
 builder.Services.AddIntegrationEvents();
 builder.Services.AddJobs();
@@ -34,11 +36,19 @@ builder.Services.AddSakerDbContext<IdentityDbContext>(IdentityDbContext.Schema);
 builder.Services.AddSakerMongo(builder.Configuration);
 builder.Services.AddSakerRedis(builder.Configuration);
 
+// Authentication (Clavaris bearer tokens), the resolved internal user, and default-deny authorization.
+builder.Services.AddClavarisAuth(builder.Configuration);
+builder.Services.AddSakerCurrentUser();
+builder.Services.AddSakerAuthorization();
+
 WebApplication app = builder.Build();
 
 app.UseSakerWeb();
 app.UseSerilogRequestLogging(options => options.GetLevel = RequestLogLevel);
 app.UseRouting();
+app.UseAuthentication();
+app.UseSakerUserResolution();
+app.UseAuthorization();
 app.UseSakerRateLimiting();
 app.MapSakerHealth();
 

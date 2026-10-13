@@ -73,7 +73,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
                     services.AddClavarisAuth(context.Configuration);
                     services.AddHttpClient(ClavarisAuthProvider.MetadataClientName).ConfigurePrimaryHttpMessageHandler(idp.CreateHandler);
                     services.AddSakerCurrentUser();
-                    services.AddAuthorization();
+                    services.AddSakerAuthorization();
                     configureServices?.Invoke(services);
                 })
                 .Configure(app =>

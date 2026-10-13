@@ -80,14 +80,19 @@ public sealed class ClavarisBearerHandler : AuthenticationHandler<Authentication
     }
 
     /// <inheritdoc />
-    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
     {
-        Response.StatusCode = StatusCodes.Status401Unauthorized;
         Response.Headers.WWWAuthenticate = Context.Items.ContainsKey(_failureKey)
             ? "Bearer realm=\"saker-watch\", error=\"invalid_token\""
             : "Bearer realm=\"saker-watch\"";
-        return Task.CompletedTask;
+        await Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Authentication required.", type: "urn:sakerwatch:error:auth.unauthorized", extensions: new Dictionary<string, object?> { ["code"] = "auth.unauthorized" })
+            .ExecuteAsync(Context);
     }
+
+    /// <inheritdoc />
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties) =>
+        Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Access denied.", type: "urn:sakerwatch:error:auth.forbidden", extensions: new Dictionary<string, object?> { ["code"] = "auth.forbidden" })
+            .ExecuteAsync(Context);
 
     // Remembers that a credential was presented and refused, so the challenge can say invalid_token.
     private AuthenticateResult Refuse(string reason)

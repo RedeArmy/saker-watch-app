@@ -59,3 +59,11 @@ Token validation lives in `Identity.Infrastructure/Clavaris` behind `IAuthProvid
 | `Clavaris:RequireHttpsMetadata` | HTTPS for the Authority and discovery; turn off only for a local fake | true |
 Behavior: RS256 only (any other `alg`, including `none` and HMAC, is refused before a key is looked up); keys come from the discovered JWKS and only RSA signing keys are used; the discovery document must name the configured Authority as its issuer; a token naming an unknown `kid` triggers one awaited, rate-limited refresh, so the first token signed with a freshly rotated key is accepted; if keys cannot be obtained the token is refused (fail closed). Refusal reasons are recorded in the metric `sakerwatch_auth_attempts_total` and never returned to the client.
 
+
+## Authorization (milestone 1.4c)
+
+- **Default-deny**: `AddSakerAuthorization` sets the fallback policy to "authenticated user", so an endpoint that declares nothing is protected. Only health endpoints are `AllowAnonymous`.
+- **Policies**: `authenticated`, `active-user`, `owner` (resource ownership via `IOwnedResource`) and scope policies (`AddScopePolicy`).
+- **Object-level access**: `RequireOwnerAsync` reports another user's resource as `404 resource.not_found`, never `403`, so existence is not revealed (OWASP API1). Row-level security remains the second line of defence.
+- **Errors**: `401` carries `WWW-Authenticate: Bearer` (`error="invalid_token"` when a credential was refused) and `403` an inactive account or a missing scope; both are ProblemDetails with `code` `auth.unauthorized` / `auth.forbidden`.
+- Pipeline order in `Host.Api`: `UseAuthentication` → `UseSakerUserResolution` → `UseAuthorization` → rate limiting.
