@@ -32,7 +32,7 @@ Both hosts also need a secret pepper for the audit log, generated once and kept 
 ```
 Audit__ActorPepper=<base64, at least 32 bytes>
 ```
-The API needs the Clavaris settings (`docs/clavaris-contract.md`): `Clavaris__Authority` (the Organization issuer URL), `Clavaris__Audience`, and `Clavaris__RequireHttpsMetadata=false` only against a local fake. On the first valid token of a new account the API creates the internal user and writes `user.provisioned` to the audit log.
+The API needs the Clavaris settings (`docs/clavaris-contract.md`): `Clavaris__Authority` (the Organization issuer URL), `Clavaris__Audience`, and `Clavaris__RequireHttpsMetadata=false` only against a local fake or a local Clavaris. `Clavaris__Audience` is the OAuth client id (A-021), and the issuer is `http://localhost:8080/o/{organizationId}` for a Clavaris on port 8080. On the first valid token of a new account the API creates the internal user and writes `user.provisioned` to the audit log.
 
 Both hosts fail at startup when a connection string is missing:
 ```

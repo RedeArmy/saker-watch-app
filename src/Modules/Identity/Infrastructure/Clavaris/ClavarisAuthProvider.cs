@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -146,7 +147,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
             return Rejected(AuthFailureReason.MissingSubject);
         }
 
-        string[] scopes = (Claim(token, "scope") ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] scopes = Scopes(token);
         return new AuthResult.Authenticated(new ValidatedIdentity(
             token.Issuer,
             subject,
@@ -179,6 +180,28 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         }
 
         return true;
+    }
+
+    // Clavaris emits "scope" as a JSON array (verified against a running instance, A-022); RFC 9068 and most providers use a
+    // space-delimited string. Accept both so a provider change cannot silently strip every scope.
+    private static string[] Scopes(JsonWebToken token)
+    {
+        IEnumerable<string> raw = [];
+        if (token.TryGetPayloadValue("scope", out JsonElement element))
+        {
+            raw = element.ValueKind switch
+            {
+                JsonValueKind.String => (element.GetString() ?? string.Empty).Split(' '),
+                JsonValueKind.Array => element.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString() ?? string.Empty),
+                _ => [],
+            };
+        }
+        else if (token.TryGetPayloadValue("scope", out string text))
+        {
+            raw = text.Split(' ');
+        }
+
+        return raw.Select(scope => scope.Trim()).Where(scope => scope.Length is > 0 and <= _maxClaimLength && !scope.Any(char.IsControl)).Distinct(StringComparer.Ordinal).ToArray();
     }
 
     // Claims become profile data and log context; bound and clean them before they travel further.

@@ -28,6 +28,9 @@ public sealed record TokenSpec
     /// <summary>The <c>scope</c> claim.</summary>
     public string Scope { get; init; } = "openid profile email";
 
+    /// <summary>True emits <c>scope</c> as a JSON array, as Clavaris does; false as an RFC 9068 space-delimited string.</summary>
+    public bool ScopeAsArray { get; init; } = true;
+
     /// <summary>The <c>aud</c> claim; <see langword="null"/> uses the provider's audience, an empty string omits it.</summary>
     public string? Audience { get; init; }
 
@@ -166,7 +169,7 @@ public sealed class FakeIdentityProvider : IAsyncDisposable
         {
             ["iss"] = s.Issuer ?? Issuer,
             ["iat"] = now.ToUnixTimeSeconds(),
-            ["scope"] = s.Scope,
+            ["scope"] = s.ScopeAsArray ? s.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries) : s.Scope,
         };
         if (s.Subject is not null)
         {

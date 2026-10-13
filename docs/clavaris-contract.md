@@ -27,7 +27,7 @@ Sources (read-only, in the Clavaris repository; ADR numbers below are Clavaris's
 
 ## Provisioning checklist for Saker Watch (operator steps in Clavaris)
 1. Create an `Organization` for Saker Watch (dev, then production) and note its id → issuer URL.
-2. Register an `OAuthClient` under it: confidential, `authorization_code` + `refresh_token`, scopes `openid profile email` (email scope UNCONFIRMED), exact BFF redirect URIs and post-logout redirect URIs, `requireConsent=false` (first-party).
+2. Register an `OAuthClient` under it: confidential, `authorization_code` + `refresh_token`, scopes `openid profile email` (email scope accepted; see "Verified" below for what is actually emitted), exact BFF redirect URIs and post-logout redirect URIs, `requireConsent=false` (first-party).
 3. Store `client_id`/`client_secret` as secrets for the BFF only (never the API, never the browser).
 
 ## Design impact on Saker Watch
@@ -39,9 +39,19 @@ Sources (read-only, in the Clavaris repository; ADR numbers below are Clavaris's
 - **Webhooks (optional, Phase 6):** a signed-webhook receiver could react to `account.session_revoked`/deletion; requires HMAC verification and `event.id` dedupe through the inbox table (ADR-0017).
 - **Testing:** CI uses the fake IdP (same contract: per-org issuer path, RS256, discovery); local E2E can run against a real Clavaris instance. Contract tests use recorded discovery/JWKS fixtures from Clavaris.
 
+## Verified against a running Clavaris (2026-10-13, local instance)
+Set up with the management API: Organization, one confidential `OAuthClient` (`authorization_code` + `refresh_token`, scopes `openid profile email`, `requireConsent=false`), one account registered through the hosted form, then a real Authorization Code + PKCE (S256) login and token exchange with `client_secret_basic`.
+- Issuer `{base}/o/{organizationId}` (no trailing slash); discovery at `{issuer}/.well-known/openid-configuration`; JWKS at `{issuer}/oauth2/jwks`; RS256 only; header carries `kid`.
+- **Access token `aud` is the OAuth `client_id`** (for example `client_6ac1...`), a single value, not a fixed API name. `Clavaris:Audience` must therefore be the client id of the client whose tokens the API accepts (A-021).
+- **Lifetime 300 s** (`expires_in: 299`); a refresh token is issued. The BFF must refresh before expiry.
+- **`scope` is a JSON array** (`["openid","profile","email"]`), not a space-delimited string. The provider accepts both.
+- Access-token claims: `sub` (account UUID), `aud`, `iss`, `scope`, `iat`, `nbf`, `exp`, `jti`, `picture`. **No `email`, `name` or `locale`.** The ID token adds `amr`, `acr`, `azp`, `sid`, `auth_time`, `nonce`; it has no `email` either, and `/userinfo` returned only `sub` and `picture` for an account that has an email and the `email` scope (A-022). The API must not depend on email.
+- Sign-up needs an email verification link; a local instance without SMTP logs `account_registered_verification_email_send_failed`, so a dev account is verified by setting `email_verified_at` in the Clavaris database.
+- Platform token: `client_credentials` at `{base}/oauth2/token` (issuer `{base}`, `aud` = the platform client id, TTL 300 s). Creating an Organization needs scope `platform:organizations:write` and an `ownerPlatformAccountId`. Registering an OAuth client is `POST /api/v1/admin/organizations/{id}/clients` with `redirectUris`, `allowedGrantTypes`, `allowedScopes` (`/secret-keys` mints machine clients instead).
+- Opt-in check: `CLAVARIS_LIVE_AUTHORITY`, `CLAVARIS_LIVE_AUDIENCE`, `CLAVARIS_LIVE_TOKEN_FILE` enable `ClavarisLiveTests`.
+
 ## Still UNCONFIRMED (verify against a running Clavaris instance)
-- [ ] Access-token `aud` value(s) and whether a resource indicator can be requested; access-token TTL (Spring Authorization Server default is 5 minutes unless overridden).
-- [ ] Exact claims on the ID token/userinfo for scopes `email` (`email`, `email_verified`) and `locale`.
+- [ ] Whether a resource indicator (RFC 8707) can be requested to get a stable `aud` instead of the client id.
 - [ ] `clavarisBaseUrl` and `organizationId` per environment; whether production uses a custom domain (ADR-0009).
 - [ ] Rate limits applying to our BFF's token/refresh calls (per-client refresh limit exists in config).
 - [ ] Whether `post_logout_redirect_uri` requires `id_token_hint`.

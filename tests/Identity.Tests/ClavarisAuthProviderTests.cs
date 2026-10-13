@@ -36,6 +36,30 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Scope_IsReadFromAJsonArray_AndFromASpaceDelimitedString(bool asArray)
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+
+        AuthResult result = await harness.AuthenticateAsync(new TokenSpec { Subject = "account-scope", Scope = "openid  watchlist:read watchlist:read", ScopeAsArray = asArray });
+
+        result.Should().BeOfType<AuthResult.Authenticated>().Subject.Identity.Scopes.Should().BeEquivalentTo("openid", "watchlist:read");
+    }
+
+    [Fact]
+    public async Task TokenWithoutEmailOrName_IsAuthenticated_BecauseClavarisDoesNotEmitThem()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+
+        AuthResult result = await harness.AuthenticateAsync(new TokenSpec { Subject = "account-bare", Email = null, Name = null, Locale = null });
+
+        ValidatedIdentity identity = result.Should().BeOfType<AuthResult.Authenticated>().Subject.Identity;
+        identity.Email.Should().BeNull();
+        identity.DisplayName.Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not-a-jwt")]
