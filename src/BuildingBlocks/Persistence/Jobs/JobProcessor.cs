@@ -40,6 +40,8 @@ public sealed partial class JobProcessor
     private static readonly ActivitySource _activities = new("SakerWatch");
 
     // Recording a failure or releasing a lease happens while the worker may be shutting down; a hung database must not block it.
+    private const string _tokenParameter = "token";
+
     private static readonly TimeSpan _cleanupTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IServiceScopeFactory _scopes;
@@ -212,7 +214,7 @@ public sealed partial class JobProcessor
             RETURNING j.id, j.job_key, j.type, j.payload::text, j.attempts, j.max_attempts, j.correlation_id, j.trace_id, j.lease_token
             """,
             connection);
-        claim.Parameters.AddWithValue("token", Guid.CreateVersion7());
+        claim.Parameters.AddWithValue(_tokenParameter, Guid.CreateVersion7());
         claim.Parameters.AddWithValue("expires", now + _options.LeaseDuration);
         claim.Parameters.AddWithValue("worker", _worker);
         claim.Parameters.AddWithValue("now", now);
@@ -268,7 +270,7 @@ public sealed partial class JobProcessor
             session.Transaction);
         complete.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
         complete.Parameters.AddWithValue("id", job.Id);
-        complete.Parameters.AddWithValue("token", job.LeaseToken);
+        complete.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
         if (await complete.ExecuteNonQueryAsync(cancellationToken) != 1)
         {
             throw new LeaseLostException(job.Id);
@@ -284,7 +286,7 @@ public sealed partial class JobProcessor
             connection);
         renew.Parameters.AddWithValue("expires", _timeProvider.GetUtcNow() + _options.LeaseDuration);
         renew.Parameters.AddWithValue("id", job.Id);
-        renew.Parameters.AddWithValue("token", job.LeaseToken);
+        renew.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
         return await renew.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
@@ -309,7 +311,7 @@ public sealed partial class JobProcessor
         fail.Parameters.AddWithValue("error", Describe(exception));
         fail.Parameters.AddWithValue("finished", dead ? now : DBNull.Value);
         fail.Parameters.AddWithValue("id", job.Id);
-        fail.Parameters.AddWithValue("token", job.LeaseToken);
+        fail.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
         if (await fail.ExecuteNonQueryAsync(cleanup.Token) != 1)
         {
             LeaseLost(job.Type, job.Id);
@@ -343,7 +345,7 @@ public sealed partial class JobProcessor
             connection);
         release.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
         release.Parameters.AddWithValue("id", job.Id);
-        release.Parameters.AddWithValue("token", job.LeaseToken);
+        release.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
         await release.ExecuteNonQueryAsync(cleanup.Token);
     }
 
