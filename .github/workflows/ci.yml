@@ -132,10 +132,13 @@ jobs:
       - run: dotnet build --no-incremental -warnaserror
       # Code scanning (the upload target) needs a public repo or GitHub Advanced Security. On a private repo
       # without it, analyze locally and keep the SARIF as a build artifact instead of failing the job.
+      # `upload` only covers the SARIF; the CodeQL database is uploaded separately (`upload-database`) and needs
+      # code scanning too, so both are switched off together on a private repo.
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           output: sarif-results
           upload: ${{ github.event.repository.private && 'never' || 'always' }}
+          upload-database: ${{ !github.event.repository.private }}
       - name: Keep SARIF results (private repo)
         if: github.event.repository.private
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
