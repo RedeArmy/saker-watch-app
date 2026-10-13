@@ -42,7 +42,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
             return await next();
         }
 
-        Dictionary<string, string[]> details = failures
+        var details = failures
             .GroupBy(f => f.PropertyName, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(f => f.ErrorMessage).Distinct(StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
 

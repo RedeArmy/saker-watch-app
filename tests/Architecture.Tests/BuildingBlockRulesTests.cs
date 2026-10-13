@@ -44,7 +44,7 @@ public sealed class BuildingBlockRulesTests
     {
         foreach (string module in _modules)
         {
-            Assembly domain = Assembly.Load($"SakerWatch.{module}.Domain");
+            var domain = Assembly.Load($"SakerWatch.{module}.Domain");
 
             TestResult result = Types.InAssembly(domain).ShouldNot().HaveDependencyOnAny(
                 "SakerWatch.BuildingBlocks.Application", "SakerWatch.BuildingBlocks.Web", "SakerWatch.BuildingBlocks.Observability")

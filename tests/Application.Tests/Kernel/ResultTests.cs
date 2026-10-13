@@ -10,7 +10,7 @@ public sealed class ResultTests
     [Fact]
     public void Success_WithoutValue_IsSuccessWithoutError()
     {
-        Result result = Result.Success();
+        var result = Result.Success();
 
         result.IsSuccess.Should().BeTrue();
         result.Error.Should().BeNull();
@@ -25,7 +25,7 @@ public sealed class ResultTests
     [Fact]
     public void Success_WithValue_ExposesValue()
     {
-        Result<int> result = Result.Success(42);
+        var result = Result.Success(42);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(42);
@@ -34,7 +34,7 @@ public sealed class ResultTests
     [Fact]
     public void Failure_Generic_ExposesErrorAndRejectsValueAccess()
     {
-        Result<int> result = Result.Failure<int>(_notFound);
+        var result = Result.Failure<int>(_notFound);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().Be(_notFound);
