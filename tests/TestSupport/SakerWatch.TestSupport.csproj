@@ -8,4 +8,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
+  </ItemGroup>
 </Project>

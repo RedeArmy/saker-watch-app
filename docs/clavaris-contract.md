@@ -67,3 +67,7 @@ Behavior: RS256 only (any other `alg`, including `none` and HMAC, is refused bef
 - **Object-level access**: `RequireOwnerAsync` reports another user's resource as `404 resource.not_found`, never `403`, so existence is not revealed (OWASP API1). Row-level security remains the second line of defence.
 - **Errors**: `401` carries `WWW-Authenticate: Bearer` (`error="invalid_token"` when a credential was refused) and `403` an inactive account or a missing scope; both are ProblemDetails with `code` `auth.unauthorized` / `auth.forbidden`.
 - Pipeline order in `Host.Api`: `UseAuthentication` → `UseSakerUserResolution` → `UseAuthorization` → rate limiting.
+
+## Identity provider admin port (milestone 1.4d)
+
+`IIdentityProviderAdmin` (`Identity.Contracts`) is the port the Phase 6 account-deletion saga will use to delete the Clavaris identity. It is separate from `IAuthProvider` because it needs a different, far more privileged credential that only the Worker holds (A-017). `DeleteIdentityAsync` is idempotent: an identity that is already gone reports `AlreadyAbsent`; failures are classified `TransientFailure` (retry) or `PermanentFailure` (dead-letter). Phase 1 ships the port and `FakeIdentityProviderAdmin` (TestSupport); the real adapter and its configuration arrive in Phase 6.
