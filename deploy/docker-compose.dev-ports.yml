@@ -1,9 +1,10 @@
 # Optional dev override for running Host.Api/Host.Worker from the IDE: publishes datastores on loopback only.
 #   docker compose -f docker-compose.yml -f docker-compose.dev-ports.yml --profile dev up -d
+# Host ports are configurable (POSTGRES_PORT, MONGO_PORT, REDIS_PORT) for machines where the defaults are taken.
 services:
-  postgres: { ports: ["127.0.0.1:5432:5432"] }
-  mongo:    { ports: ["127.0.0.1:27017:27017"] }
-  redis:    { ports: ["127.0.0.1:6379:6379"] }
+  postgres: { ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"] }
+  mongo:    { ports: ["127.0.0.1:${MONGO_PORT:-27017}:27017"] }
+  redis:    { ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"] }
 networks:
   backend:
     internal: false

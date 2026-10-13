@@ -4,6 +4,9 @@
   <Project Path="src/BuildingBlocks/Web/SakerWatch.BuildingBlocks.Web.csproj" />
   <Project Path="src/BuildingBlocks/Resilience/SakerWatch.BuildingBlocks.Resilience.csproj" />
   <Project Path="src/BuildingBlocks/Observability/SakerWatch.BuildingBlocks.Observability.csproj" />
+  <Project Path="src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+  <Project Path="src/BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
+  <Project Path="src/BuildingBlocks/Redis/SakerWatch.BuildingBlocks.Redis.csproj" />
   <Project Path="src/Modules/Identity/Domain/SakerWatch.Identity.Domain.csproj" />
   <Project Path="src/Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
   <Project Path="src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />
@@ -34,6 +37,7 @@
   <Project Path="src/Modules/Retention/Infrastructure/SakerWatch.Retention.Infrastructure.csproj" />
   <Project Path="src/Hosts/Host.Api/SakerWatch.Hosts.Api.csproj" />
   <Project Path="src/Hosts/Host.Worker/SakerWatch.Hosts.Worker.csproj" />
+  <Project Path="src/Hosts/Host.Migrator/SakerWatch.Hosts.Migrator.csproj" />
   <Project Path="tests/Architecture.Tests/SakerWatch.Architecture.Tests.csproj" />
   <Project Path="tests/Application.Tests/SakerWatch.Application.Tests.csproj" />
   <Project Path="tests/Web.Tests/SakerWatch.Web.Tests.csproj" />

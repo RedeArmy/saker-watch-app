@@ -3,7 +3,10 @@ using AwesomeAssertions;
 using NetArchTest.Rules;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.BuildingBlocks.Mongo;
 using SakerWatch.BuildingBlocks.Observability;
+using SakerWatch.BuildingBlocks.Persistence;
+using SakerWatch.BuildingBlocks.Redis;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.BuildingBlocks.Web;
 
@@ -30,7 +33,7 @@ public sealed class BuildingBlockRulesTests
     {
         string[] modules = [.. _modules.Select(m => $"SakerWatch.{m}")];
 
-        foreach (Assembly buildingBlock in new[] { typeof(ISender).Assembly, typeof(WebSetup).Assembly, typeof(HttpClientResilienceOptions).Assembly, typeof(ObservabilitySetup).Assembly })
+        foreach (Assembly buildingBlock in new[] { typeof(ISender).Assembly, typeof(WebSetup).Assembly, typeof(HttpClientResilienceOptions).Assembly, typeof(ObservabilitySetup).Assembly, typeof(PostgresOptions).Assembly, typeof(MongoOptions).Assembly, typeof(RedisOptions).Assembly })
         {
             TestResult result = Types.InAssembly(buildingBlock).ShouldNot().HaveDependencyOnAny(modules).GetResult();
 
@@ -55,7 +58,7 @@ public sealed class BuildingBlockRulesTests
             var domain = Assembly.Load($"SakerWatch.{module}.Domain");
 
             TestResult result = Types.InAssembly(domain).ShouldNot().HaveDependencyOnAny(
-                "SakerWatch.BuildingBlocks.Application", "SakerWatch.BuildingBlocks.Web", "SakerWatch.BuildingBlocks.Observability")
+                "SakerWatch.BuildingBlocks.Application", "SakerWatch.BuildingBlocks.Web", "SakerWatch.BuildingBlocks.Observability", "SakerWatch.BuildingBlocks.Persistence")
                 .GetResult();
 
             result.IsSuccessful.Should().BeTrue($"{module}.Domain may use only BuildingBlocks.Kernel");

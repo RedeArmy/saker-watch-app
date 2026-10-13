@@ -37,6 +37,10 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9004 | Error | `Use case {UseCase} threw after {ElapsedMs} ms` (with exception) | `LoggingBehavior` |
 | 9201 | Information | `Worker started` | `WorkerLifecycleService` |
 | 9202 | Information | `Worker stopping gracefully` | `WorkerLifecycleService` |
+| 9301 | Information | `Migration run started with {StepCount} steps` | `MigrationPipeline` |
+| 9302 | Information | `Migration step {Step} completed, {Applied} migrations applied` | `MigrationPipeline` |
+| 9303 | Error | `Migration step {Step} failed` (with exception) | `MigrationPipeline` |
+| 9311 | Information | `Mongo migration {Version} {Name} applied` | `MongoMigrationRunner` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction
@@ -45,7 +49,7 @@ Every host calls `AddSakerObservability(serviceName)`: Serilog writes **JSON lin
 Telemetry export: traces and metrics leave the process only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (OTLP to the Collector, ADR-0016); otherwise nothing is exported.
 
 ### Local observability stack (profile `obs`)
-`make up-obs` starts the OpenTelemetry Collector, Tempo, Loki, Prometheus and Grafana next to the dev infrastructure (configs and the starter dashboard live in `deploy/observability/`; images and sizing are dev-only and reviewed in Phase 5). Set `GRAFANA_ADMIN_PASSWORD` in `deploy/.env`. Ports are published on loopback only: Grafana `127.0.0.1:3000`, OTLP `127.0.0.1:4317` (gRPC) and `4318` (HTTP).
+`make up-obs` starts the OpenTelemetry Collector, Tempo, Loki, Prometheus and Grafana next to the dev infrastructure (services in `deploy/docker-compose.obs.yml`, configs and the starter dashboard in `deploy/observability/`; images and sizing are dev-only and reviewed in Phase 5). Set `GRAFANA_ADMIN_PASSWORD` in `deploy/.env`. Ports are published on loopback only: Grafana `127.0.0.1:3000`, OTLP `127.0.0.1:4317` (gRPC) and `4318` (HTTP).
 Run a host against it with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` (and `OTEL_METRIC_EXPORT_INTERVAL=5000` for quick feedback). Traces go app -> Collector -> Tempo, metrics app -> Collector -> Prometheus (scraped on `:8889`), logs app (Serilog OTLP sink) -> Collector -> Loki; Loki lines and Tempo traces share the same trace id, which is how Grafana jumps from a log to its trace. The Collector also deletes `Authorization`/`Cookie` headers and URL query strings from traces and logs. Verified end to end with `Host.Api` on 2026-10-12 (metrics in Prometheus, log lines in Loki and traces in Tempo for the same request).
 
 ### Spans

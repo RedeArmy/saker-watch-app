@@ -12,6 +12,20 @@
 - `platform.idempotency_keys` (definition in ADR-0017), `platform.inbox_messages`, `platform.outbox_messages`, `platform.job_queue` (with `trace_id`, `correlation_id`, lease token), `platform.audit_log` (append-only, hash chain, `actor_ref` = HMAC-SHA256 of the internal user id with a secret pepper; never email, name or raw user id, so account deletion needs no audit rewrite). See ADR-0005, ADR-0016, ADR-0017.
 - Row-Level Security on every user-owned table with `api_role` and `worker_role`; cross-user worker access only through the security-definer functions and per-table policies listed in ADR-0010 (e.g. `watchlist.tracked_stock_ids()`).
 
+### 1.1 Security objects (ADR-0010, listed here as ADR-0010 requires)
+| Object | Kind | Who | Purpose |
+|---|---|---|---|
+| `identity.users` policy `users_self` | RLS policy | `api_role` | a user sees and updates only their own row (`id = app.current_user_id`); no direct insert or delete |
+| `identity.provision_user(...)` | security-definer function | `api_role` | just-in-time provisioning keyed by `(issuer, subject)`; idempotent and race-safe; the id passed in is used only for a new user |
+| `platform.idempotency_keys` policy `idempotency_keys_owner` | RLS policy | `api_role` | keys are visible and writable only for the current user |
+| `platform.purge_expired_idempotency_keys(before, batch)` | security-definer function | `worker_role` | retention purge across users without table access |
+| `platform.enqueue_job(...)` | security-definer function | `api_role`, `worker_role` | `INSERT ... ON CONFLICT (job_key) DO NOTHING`; the API has no table access to the queue |
+| `platform.append_audit(...)` | security-definer function | `api_role`, `worker_role` | the only way to write the audit log; serializes writers and extends the SHA-256 hash chain |
+| `platform.verify_audit_chain()` | security-definer function | `worker_role` | returns the first broken entry id, or null |
+| `platform.audit_log` triggers | triggers | everyone, owner included | reject UPDATE, DELETE and TRUNCATE (append-only) |
+| `platform.outbox_messages` | grants | `api_role` insert; `worker_role` full | the API writes events with the state change; the worker publishes and purges |
+| `platform.inbox_messages`, `platform.job_queue` | grants | `worker_role` | consumer dedupe and job leases |
+
 ## 2. MongoDB (heavy, variable, write-once documents)
 All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) come from versioned migrations.
 - `llm_interactions`: rendered prompt, model id and params, raw response, parsed JSON, token counts, latency. TTL 12 months.
@@ -19,10 +33,11 @@ All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) com
 - `analysis_context`: the exact data package given to the LLM (reproducibility).
 - `eval_runs`: golden-set evaluation results.
 - `job_events`: execution audit trail. TTL 30 days.
+- Enforcement (migration `V0001 base-collections`): every collection has a `$jsonSchema` validator requiring `schemaVersion` (int) and `createdAt` (date), and a TTL index `ttl_created_at` on `createdAt`: `llm_interactions` 365 days, `analysis_context` 365 days, `provider_payloads` 90 days (the maximum; Retention can tighten it with `collMod`), `job_events` 30 days, `eval_runs` none.
 - Cross-store consistency: Mongo document first with deterministic `_id` (`stockId:promptVersion:runDate`), then Postgres row plus outbox in one transaction; janitor removes orphans (ADR-0004).
 
 ## 3. Redis
-Cache and rate limiting only, with versioned key prefixes (`v1:price:{ticker}`) and TTLs; no migrations.
+Cache and rate limiting only, with versioned key prefixes (`v1:price:{ticker}`) and TTLs; no migrations. Keys are built only through `RedisKeys.For(...)` (version prefix `v1`, segments limited to letters, digits and `-_.`). The API rate limiter stays in memory because there is a single API instance (ADR-0021).
 
 ## 4. Migrations
 Postgres: EF Core migrations committed; Timescale features as raw-SQL migrations; EF migration bundle run as a separate deploy step, never on API startup; forward-only with expand/contract. Mongo: custom idempotent runner (`IMongoMigration`, ordered, `_migrations` with checksum and lock) plus read-side upcasters. Every migration is tested on an empty database and on one seeded at the previous version.

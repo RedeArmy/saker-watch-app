@@ -11,4 +11,6 @@
 /.editorconfig                 @RedeArmy
 /docs/adr/                     @RedeArmy
 /docs/threat-model/            @RedeArmy
-/src/Modules/*/Infrastructure/Migrations/ @RedeArmy
+/src/Modules/*/Infrastructure/Persistence/Migrations/ @RedeArmy
+/src/BuildingBlocks/Persistence/Platform/Migrations/ @RedeArmy
+/src/Hosts/Host.Migrator/      @RedeArmy
