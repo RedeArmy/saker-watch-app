@@ -9,7 +9,7 @@ public sealed class TimescaleSmokeTests(TimescalePostgresFixture postgres) : ICl
     [Fact]
     public async Task Container_WithTimescaleExtension_ReportsInstalledVersion()
     {
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(postgres.ConnectionString);
+        await using var dataSource = NpgsqlDataSource.Create(postgres.ConnectionString);
         await using NpgsqlCommand create = dataSource.CreateCommand("CREATE EXTENSION IF NOT EXISTS timescaledb");
         await create.ExecuteNonQueryAsync();
 
