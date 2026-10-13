@@ -1,8 +1,10 @@
 using System.Reflection;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SakerWatch.BuildingBlocks.Application.Behaviors;
 using SakerWatch.BuildingBlocks.Application.Messaging;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 
 namespace SakerWatch.BuildingBlocks.Application;
 
@@ -10,7 +12,7 @@ namespace SakerWatch.BuildingBlocks.Application;
 public static class ApplicationPipelineExtensions
 {
     /// <summary>
-    /// Registers <see cref="ISender"/>, the standard behaviors (outermost first: tracing, logging, validation),
+    /// Registers <see cref="ISender"/>, the standard behaviors (outermost first: tracing, logging, validation, unit of work),
     /// and every request handler and validator found in <paramref name="applicationAssemblies"/>.
     /// Behaviors added later (idempotency, unit of work) must be registered after this call to run closer to the handler.
     /// </summary>
@@ -25,6 +27,8 @@ public static class ApplicationPipelineExtensions
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TracingBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkBehavior<,>));
+        services.TryAddScoped<IUnitOfWork, NoOpUnitOfWork>();
 
         foreach (Assembly assembly in applicationAssemblies)
         {

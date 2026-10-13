@@ -7,12 +7,15 @@ namespace SakerWatch.BuildingBlocks.Application.Messaging;
 public interface IRequest<TResponse>
     where TResponse : IResult<TResponse>;
 
+/// <summary>Marks requests that change state: the pipeline runs them in one unit of work (a database transaction).</summary>
+public interface ITransactionalRequest;
+
 /// <summary>A state-changing request without a value (CQRS command).</summary>
-public interface ICommand : IRequest<Result>;
+public interface ICommand : IRequest<Result>, ITransactionalRequest;
 
 /// <summary>A state-changing request that returns <typeparamref name="T"/> (CQRS command).</summary>
 /// <typeparam name="T">The success value.</typeparam>
-public interface ICommand<T> : IRequest<Result<T>>;
+public interface ICommand<T> : IRequest<Result<T>>, ITransactionalRequest;
 
 /// <summary>A read-only request that returns <typeparamref name="T"/> (CQRS query).</summary>
 /// <typeparam name="T">The success value.</typeparam>

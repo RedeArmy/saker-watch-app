@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
 
@@ -11,7 +13,7 @@ public static class PersistenceServiceCollectionExtensions
     /// <summary>
     /// Registers the validated <see cref="PostgresOptions"/> (fails at startup when the connection string is missing),
     /// the <see cref="UserContextConnectionInterceptor"/>, a readiness check tagged <c>ready</c> and a default anonymous <see cref="IDbUserContext"/>
-    /// (replace it with the web implementation in the API).
+    /// (replace it with the web implementation in the API), the scoped <see cref="DbSession"/> and its <see cref="IUnitOfWork"/>.
     /// </summary>
     public static IServiceCollection AddSakerPostgres(this IServiceCollection services, IConfiguration configuration)
     {
@@ -25,6 +27,11 @@ public static class PersistenceServiceCollectionExtensions
         services.AddHealthChecks().AddCheck<PostgresReadinessCheck>("postgres", tags: ["ready"]);
         services.TryAddScoped<IDbUserContext, AnonymousDbUserContext>();
         services.TryAddScoped<UserContextConnectionInterceptor>();
+        services.TryAddScoped<DbSession>();
+        services.TryAddScoped<AmbientTransactionInterceptor>();
+
+        // Replaces the pipeline's no-op unit of work: commands now run in one database transaction.
+        services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DbSession>());
         return services;
     }
 
@@ -40,10 +47,12 @@ public static class PersistenceServiceCollectionExtensions
 
         services.AddDbContext<TContext>((provider, options) =>
         {
-            string connectionString = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<PostgresOptions>>().Value.Postgres;
+            // Every context of the scope shares the session's connection, so one transaction can span them.
             options
-                .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", historySchema))
-                .AddInterceptors(provider.GetRequiredService<UserContextConnectionInterceptor>());
+                .UseNpgsql(provider.GetRequiredService<DbSession>().Connection, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", historySchema))
+                .AddInterceptors(
+                    provider.GetRequiredService<UserContextConnectionInterceptor>(),
+                    provider.GetRequiredService<AmbientTransactionInterceptor>());
         });
         return services;
     }

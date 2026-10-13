@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.Globalization;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
@@ -16,28 +15,10 @@ public sealed class UserContextConnectionInterceptor(IDbUserContext user) : DbCo
     public const string SettingName = "app.current_user_id";
 
     /// <inheritdoc />
-    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
-    {
-        using DbCommand command = CreateCommand(connection);
-        command.ExecuteNonQuery();
-    }
+    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData) =>
+        UserContextSql.Apply(connection, user.CurrentUserId);
 
     /// <inheritdoc />
-    public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
-    {
-        await using DbCommand command = CreateCommand(connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private DbCommand CreateCommand(DbConnection connection)
-    {
-        DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT set_config('app.current_user_id', @user, false)";
-
-        DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "user";
-        parameter.Value = user.CurrentUserId?.ToString("D", CultureInfo.InvariantCulture) ?? string.Empty;
-        command.Parameters.Add(parameter);
-        return command;
-    }
+    public override Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default) =>
+        UserContextSql.ApplyAsync(connection, user.CurrentUserId, cancellationToken);
 }
