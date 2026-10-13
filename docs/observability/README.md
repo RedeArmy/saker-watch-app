@@ -16,6 +16,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
+| `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
 | `sakerwatch_jobs_queue_depth` / `_oldest_age_seconds` (gauge) | queue | backlog and staleness |
 | `sakerwatch_jobs_dead_letter_total` (counter) | queue | poison messages |
 | `sakerwatch_idempotency_events_total` (counter) | outcome=claimed\|replay\|mismatch\|conflict (`takeover` is reserved for cross-store operations, ADR-0022) | idempotency health |
@@ -44,6 +45,10 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9411 | Information | `Idempotent request replayed from the stored first attempt` | `IdempotencyBehavior` |
 | 9412 | Warning | `Idempotency-Key reused with a different request on {Method} {Route}` | `IdempotencyBehavior` |
 | 9413 | Warning | `Idempotency-Key still in progress on {Method} {Route}` | `IdempotencyBehavior` |
+| 9501 | Debug | `Outbox message {Type} {MessageId} delivered` | `OutboxProcessor` |
+| 9502 | Warning | `Outbox message {Type} {MessageId} failed on attempt {Attempt}; retrying at {NextAttemptAt}` (with exception) | `OutboxProcessor` |
+| 9503 | Error | `Outbox message {Type} {MessageId} parked as dead after {Attempts} attempts` (with exception) | `OutboxProcessor` |
+| 9504 | Error | `Outbox dispatcher iteration failed` (with exception) | `OutboxDispatcherService` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction

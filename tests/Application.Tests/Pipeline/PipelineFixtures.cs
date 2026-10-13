@@ -1,6 +1,8 @@
 using FluentValidation;
+using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Application.Messaging;
+using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
 // The namespace's second segment is the module name the telemetry derives (SakerWatch.<Module>.…).
@@ -92,3 +94,8 @@ public sealed class TouchHandler : IRequestHandler<TouchCommand, Result>
     public ValueTask<Result> Handle(TouchCommand request, CancellationToken cancellationToken) =>
         ValueTask.FromResult(Result.Success());
 }
+
+[IntegrationEventName("demo.ping_happened.v1")]
+public sealed record PingHappened(Guid EventId, DateTimeOffset OccurredAt, string Name) : IDomainEvent;
+
+public sealed record UnnamedHappened(Guid EventId, DateTimeOffset OccurredAt) : IDomainEvent;
