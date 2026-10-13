@@ -29,8 +29,9 @@ jobs:
           fi
       - name: Compose config
         run: |
-          export POSTGRES_PASSWORD=ci MONGO_PASSWORD=ci REDIS_PASSWORD=ci
+          export POSTGRES_PASSWORD=ci MONGO_PASSWORD=ci REDIS_PASSWORD=ci GRAFANA_ADMIN_PASSWORD=ci
           docker compose -f deploy/docker-compose.yml --profile dev config -q
+          docker compose -f deploy/docker-compose.yml --profile obs config -q
           # The fake IdP must exist only behind the dev profile.
           if docker compose -f deploy/docker-compose.yml config --services | grep -q fake-idp; then
             echo "fake-idp is enabled without the dev profile"; exit 1

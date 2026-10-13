@@ -44,6 +44,10 @@ Every host calls `AddSakerObservability(serviceName)`: Serilog writes **JSON lin
 `RedactionEnricher` runs last and masks, at any nesting depth, the value of properties named like `password`, `secret`, `token`, `authorization`, `cookie`, `apikey`, `connectionstring`, `pepper`, `email`, `phone`, `displayname`, `prompt`, `rawresponse`, `requestbody`, `responsebody`, and scrubs JWTs and `Bearer`/`Basic` credentials from any string. Enrichers added after `ApplySakerDefaults` are not covered; add extra enrichers before it. Exception messages are not rewritten, so never put secrets into exception text.
 Telemetry export: traces and metrics leave the process only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (OTLP to the Collector, ADR-0016); otherwise nothing is exported.
 
+### Local observability stack (profile `obs`)
+`make up-obs` starts the OpenTelemetry Collector, Tempo, Loki, Prometheus and Grafana next to the dev infrastructure (configs and the starter dashboard live in `deploy/observability/`; images and sizing are dev-only and reviewed in Phase 5). Set `GRAFANA_ADMIN_PASSWORD` in `deploy/.env`. Ports are published on loopback only: Grafana `127.0.0.1:3000`, OTLP `127.0.0.1:4317` (gRPC) and `4318` (HTTP).
+Run a host against it with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` (and `OTEL_METRIC_EXPORT_INTERVAL=5000` for quick feedback). Traces go app -> Collector -> Tempo, metrics app -> Collector -> Prometheus (scraped on `:8889`), logs app (Serilog OTLP sink) -> Collector -> Loki; Loki lines and Tempo traces share the same trace id, which is how Grafana jumps from a log to its trace. The Collector also deletes `Authorization`/`Cookie` headers and URL query strings from traces and logs. Verified end to end with `Host.Api` on 2026-10-12 (metrics in Prometheus, log lines in Loki and traces in Tempo for the same request).
+
 ### Spans
 One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts do not mark the span as failed).
 
