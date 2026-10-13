@@ -4,7 +4,13 @@
     <RootNamespace>SakerWatch.Identity.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Domain/SakerWatch.Identity.Domain.csproj" />
     <ProjectReference Include="../Contracts/SakerWatch.Identity.Contracts.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Application/SakerWatch.BuildingBlocks.Application.csproj" />
   </ItemGroup>
 </Project>

@@ -1,8 +1,12 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
+using SakerWatch.Identity.Application;
+using SakerWatch.Identity.Application.Features.ProvisionUser;
 using SakerWatch.Identity.Contracts;
+using SakerWatch.Identity.Infrastructure.Persistence;
 
 namespace SakerWatch.Identity.Infrastructure.Clavaris;
 
@@ -41,6 +45,13 @@ public static class ClavarisServiceCollectionExtensions
                 http.MaxResponseBytes = 256 * 1024;
             });
         services.AddSingleton<IAuthProvider, ClavarisAuthProvider>();
+
+        // The "Bearer" scheme is the default: every endpoint authenticates through the validated Clavaris token.
+        services.AddAuthentication(ClavarisBearerHandler.SchemeName)
+            .AddScheme<AuthenticationSchemeOptions, ClavarisBearerHandler>(ClavarisBearerHandler.SchemeName, configureOptions: null);
+
+        services.AddIdentityApplication();
+        services.AddScoped<IUserDirectory, UserDirectory>();
         return services;
     }
 }
