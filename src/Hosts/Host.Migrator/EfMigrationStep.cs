@@ -23,20 +23,23 @@ public sealed class EfMigrationStep<TContext>(
     /// <inheritdoc />
     public Task<int> RunAsync(CancellationToken cancellationToken) => ApplyAsync(targetMigration: null, cancellationToken);
 
-    /// <summary>Migrates up to <paramref name="targetMigration"/> (a migration id), for upgrade-path tests from a previous schema version.</summary>
-    public Task<int> MigrateToAsync(string targetMigration, CancellationToken cancellationToken)
+    /// <summary>
+    /// Migrates up to the migration with the given name (for example <c>CreateUsers</c>), for upgrade-path tests that start
+    /// from a previous schema version. The timestamp prefix of the migration id is resolved automatically.
+    /// </summary>
+    public async Task<int> MigrateToAsync(string migrationName, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetMigration);
-        return ApplyAsync(targetMigration, cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(migrationName);
+
+        await using TContext context = factory(BuildOptions());
+        string target = context.GetService<IMigrationsAssembly>().Migrations.Keys
+            .Single(id => id.EndsWith($"_{migrationName}", StringComparison.Ordinal));
+        return await ApplyAsync(target, cancellationToken);
     }
 
     private async Task<int> ApplyAsync(string? targetMigration, CancellationToken cancellationToken)
     {
-        DbContextOptions<TContext> options = new DbContextOptionsBuilder<TContext>()
-            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", historySchema))
-            .Options;
-
-        await using TContext context = factory(options);
+        await using TContext context = factory(BuildOptions());
         int pending = (await context.Database.GetPendingMigrationsAsync(cancellationToken)).Count();
         if (pending == 0)
         {
@@ -47,4 +50,9 @@ public sealed class EfMigrationStep<TContext>(
         await migrator.MigrateAsync(targetMigration, cancellationToken);
         return pending;
     }
+
+    private DbContextOptions<TContext> BuildOptions() =>
+        new DbContextOptionsBuilder<TContext>()
+            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", historySchema))
+            .Options;
 }
