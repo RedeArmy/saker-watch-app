@@ -31,4 +31,5 @@
   <Project Path="src/Hosts/Host.Api/SakerWatch.Hosts.Api.csproj" />
   <Project Path="src/Hosts/Host.Worker/SakerWatch.Hosts.Worker.csproj" />
   <Project Path="tests/Architecture.Tests/SakerWatch.Architecture.Tests.csproj" />
+  <Project Path="tests/Integration.Tests/SakerWatch.Integration.Tests.csproj" />
 </Solution>

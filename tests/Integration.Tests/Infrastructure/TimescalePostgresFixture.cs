@@ -1,0 +1,22 @@
+using Testcontainers.PostgreSql;
+
+namespace SakerWatch.Integration.Tests.Infrastructure;
+
+/// <summary>
+/// Starts a throwaway PostgreSQL + TimescaleDB container using the exact image declared in
+/// <c>deploy/docker-compose.yml</c>, so integration tests run against the real engine instead of an in-memory substitute.
+/// </summary>
+public sealed class TimescalePostgresFixture : IAsyncLifetime
+{
+    private readonly PostgreSqlContainer _container =
+        new PostgreSqlBuilder(ComposeImages.For("timescale/timescaledb")).Build();
+
+    /// <summary>Connection string of the running container (superuser; tests create their own roles).</summary>
+    public string ConnectionString => _container.GetConnectionString();
+
+    /// <inheritdoc />
+    public Task InitializeAsync() => _container.StartAsync();
+
+    /// <inheritdoc />
+    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+}
