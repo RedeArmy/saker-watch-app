@@ -30,7 +30,7 @@ Phase 1 introduces the use-case pipeline (ADR-0013, ADR-0016, ADR-0017) and many
 | Microsoft.Extensions.TimeProvider.Testing | 10.10.0 | 1.1 |
 | Microsoft.AspNetCore.Mvc.Testing | 10.0.12 | 1.5 |
 
-- **Integration tests use real engines through Testcontainers** (Postgres + TimescaleDB with the same image family as `deploy/docker-compose.yml`). They carry `[Trait("Category", "Integration")]` so they can be filtered, and they need Docker.
+- **Integration tests use real engines through Testcontainers** (Postgres + TimescaleDB; the image is read from `deploy/docker-compose.yml` at run time, so image versions live in one place). They carry `[Trait("Category", "Integration")]` so they can be filtered, and they need Docker.
 - **Test projects are added when they get their first real test**, not as empty shells: `Integration.Tests` now (smoke test proving the container toolchain), `Application.Tests` in milestone 1.1, `Contract.Tests` in milestone 1.5. Structural rules that need types that do not exist yet (aggregates without public setters, endpoint documentation) land with those types, so they are never vacuous.
 
 ## Consequences
