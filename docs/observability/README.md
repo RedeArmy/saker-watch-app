@@ -35,7 +35,14 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9002 | Information | `Use case {UseCase} rejected with {ErrorCode} ({ErrorType}) in {ElapsedMs} ms` | `LoggingBehavior` (expected failure) |
 | 9003 | Error | `Use case {UseCase} failed with {ErrorCode} in {ElapsedMs} ms` | `LoggingBehavior` (`ErrorType.Failure`) |
 | 9004 | Error | `Use case {UseCase} threw after {ElapsedMs} ms` (with exception) | `LoggingBehavior` |
+| 9201 | Information | `Worker started` | `WorkerLifecycleService` |
+| 9202 | Information | `Worker stopping gracefully` | `WorkerLifecycleService` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
+
+### Logging configuration and redaction
+Every host calls `AddSakerObservability(serviceName)`: Serilog writes **JSON lines to the console** (rendered compact format, picked up by the log collector) with the properties `Service`, `TraceId`/`SpanId` (current activity), `CorrelationId` (request scope) and message-template parameters. Framework namespaces (`Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore`, `System.Net.Http.HttpClient`) log at Warning and above. HTTP requests produce one Serilog request-log line (health probes only at Verbose; status >= 500 or an exception at Error).
+`RedactionEnricher` runs last and masks, at any nesting depth, the value of properties named like `password`, `secret`, `token`, `authorization`, `cookie`, `apikey`, `connectionstring`, `pepper`, `email`, `phone`, `displayname`, `prompt`, `rawresponse`, `requestbody`, `responsebody`, and scrubs JWTs and `Bearer`/`Basic` credentials from any string. Enrichers added after `ApplySakerDefaults` are not covered; add extra enrichers before it. Exception messages are not rewritten, so never put secrets into exception text.
+Telemetry export: traces and metrics leave the process only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (OTLP to the Collector, ADR-0016); otherwise nothing is exported.
 
 ### Spans
 One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts do not mark the span as failed).

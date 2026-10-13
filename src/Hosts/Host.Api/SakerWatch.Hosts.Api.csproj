@@ -4,6 +4,14 @@
     <RootNamespace>SakerWatch.Hosts.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Application/SakerWatch.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Observability/SakerWatch.BuildingBlocks.Observability.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Web/SakerWatch.BuildingBlocks.Web.csproj" />
     <ProjectReference Include="../../Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
     <ProjectReference Include="../../Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />
     <ProjectReference Include="../../Modules/MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
