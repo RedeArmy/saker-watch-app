@@ -1,6 +1,7 @@
 using FluentValidation;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
+using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
@@ -99,3 +100,6 @@ public sealed class TouchHandler : IRequestHandler<TouchCommand, Result>
 public sealed record PingHappened(Guid EventId, DateTimeOffset OccurredAt, string Name) : IDomainEvent;
 
 public sealed record UnnamedHappened(Guid EventId, DateTimeOffset OccurredAt) : IDomainEvent;
+
+[JobType("demo.reindex.v1")]
+public sealed record ReindexJob(string Market, int Page);

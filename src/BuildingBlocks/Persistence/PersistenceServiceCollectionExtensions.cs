@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
+using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
+using SakerWatch.BuildingBlocks.Persistence.Jobs;
 using SakerWatch.BuildingBlocks.Persistence.Outbox;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
@@ -36,6 +38,7 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IIdempotencyStore, IdempotencyStore>();
         services.TryAddScoped<IOutbox, OutboxWriter>();
         services.TryAddScoped<IInbox, InboxStore>();
+        services.TryAddScoped<IJobEnqueuer, JobEnqueuer>();
 
         // Replaces the pipeline's no-op unit of work: commands now run in one database transaction.
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DbSession>());
