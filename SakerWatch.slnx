@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+  <Project Path="src/BuildingBlocks/Application/SakerWatch.BuildingBlocks.Application.csproj" />
   <Project Path="src/Modules/Identity/Domain/SakerWatch.Identity.Domain.csproj" />
   <Project Path="src/Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
   <Project Path="src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />
@@ -31,5 +32,6 @@
   <Project Path="src/Hosts/Host.Api/SakerWatch.Hosts.Api.csproj" />
   <Project Path="src/Hosts/Host.Worker/SakerWatch.Hosts.Worker.csproj" />
   <Project Path="tests/Architecture.Tests/SakerWatch.Architecture.Tests.csproj" />
+  <Project Path="tests/Application.Tests/SakerWatch.Application.Tests.csproj" />
   <Project Path="tests/Integration.Tests/SakerWatch.Integration.Tests.csproj" />
 </Solution>

@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Application/SakerWatch.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Domain/SakerWatch.Identity.Domain.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />
