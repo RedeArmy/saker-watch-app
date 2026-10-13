@@ -46,3 +46,16 @@ Sources (read-only, in the Clavaris repository; ADR numbers below are Clavaris's
 - [ ] Rate limits applying to our BFF's token/refresh calls (per-client refresh limit exists in config).
 - [ ] Whether `post_logout_redirect_uri` requires `id_token_hint`.
 - [ ] Exact PlatformClient scope that permits `POST /api/v1/admin/accounts/{id}:delete`, whether `:delete` is idempotent (404/204 on repeat), and how the platform issuer token is requested (`client_credentials` at `{base}/oauth2/token`).
+
+## Implementation in Saker Watch (milestone 1.4a)
+Token validation lives in `Identity.Infrastructure/Clavaris` behind `IAuthProvider` (`Identity.Contracts`) and is configured only through `Clavaris:*`:
+| Key | Meaning | Default |
+|---|---|---|
+| `Clavaris:Authority` | Organization issuer URL (`https://<host>/o/<organizationId>`); tokens must carry exactly this `iss`; its host is the only host the metadata client may call | required |
+| `Clavaris:Audience` | the `aud` tokens must carry for this API | required |
+| `Clavaris:ClockSkew` | tolerance for `exp`/`nbf`, at most 60 s | 60 s |
+| `Clavaris:MetadataLifetime` | how long discovered keys are trusted | 1 h |
+| `Clavaris:MinimumMetadataRefresh` | shortest spacing of forced key refreshes (unknown `kid`) and of retries after a failed fetch | 30 s |
+| `Clavaris:RequireHttpsMetadata` | HTTPS for the Authority and discovery; turn off only for a local fake | true |
+Behavior: RS256 only (any other `alg`, including `none` and HMAC, is refused before a key is looked up); keys come from the discovered JWKS and only RSA signing keys are used; the discovery document must name the configured Authority as its issuer; a token naming an unknown `kid` triggers one awaited, rate-limited refresh, so the first token signed with a freshly rotated key is accepted; if keys cannot be obtained the token is refused (fail closed). Refusal reasons are recorded in the metric `sakerwatch_auth_attempts_total` and never returned to the client.
+

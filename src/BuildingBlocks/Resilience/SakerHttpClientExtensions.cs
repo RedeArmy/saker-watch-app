@@ -54,15 +54,20 @@ public static class SakerHttpClientExtensions
 
             pipeline.AddConcurrencyLimiter(options.MaxConcurrency, queueLimit: options.MaxConcurrency);
             pipeline.AddTimeout(options.TotalTimeout);
-            var retry = new HttpRetryStrategyOptions
+            // Polly rejects zero retries, so "no retries" means no retry strategy at all.
+            if (options.MaxRetries > 0)
             {
-                MaxRetryAttempts = options.MaxRetries,
-                BackoffType = DelayBackoffType.Exponential,
-                UseJitter = true,
-                Delay = options.RetryBaseDelay,
-            };
-            retry.DisableForUnsafeHttpMethods();
-            pipeline.AddRetry(retry);
+                var retry = new HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = options.MaxRetries,
+                    BackoffType = DelayBackoffType.Exponential,
+                    UseJitter = true,
+                    Delay = options.RetryBaseDelay,
+                };
+                retry.DisableForUnsafeHttpMethods();
+                pipeline.AddRetry(retry);
+            }
+
             pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
             {
                 FailureRatio = options.CircuitFailureRatio,

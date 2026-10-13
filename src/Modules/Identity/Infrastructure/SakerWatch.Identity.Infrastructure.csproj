@@ -4,12 +4,16 @@
     <RootNamespace>SakerWatch.Identity.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Application/SakerWatch.Identity.Application.csproj" />
     <ProjectReference Include="../../../BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Resilience/SakerWatch.BuildingBlocks.Resilience.csproj" />
   </ItemGroup>
 </Project>

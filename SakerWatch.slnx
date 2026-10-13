@@ -39,6 +39,8 @@
   <Project Path="src/Hosts/Host.Worker/SakerWatch.Hosts.Worker.csproj" />
   <Project Path="src/Hosts/Host.Migrator/SakerWatch.Hosts.Migrator.csproj" />
   <Project Path="tests/Architecture.Tests/SakerWatch.Architecture.Tests.csproj" />
+  <Project Path="tests/TestSupport/SakerWatch.TestSupport.csproj" />
+  <Project Path="tests/Identity.Tests/SakerWatch.Identity.Tests.csproj" />
   <Project Path="tests/Application.Tests/SakerWatch.Application.Tests.csproj" />
   <Project Path="tests/Web.Tests/SakerWatch.Web.Tests.csproj" />
   <Project Path="tests/Observability.Tests/SakerWatch.Observability.Tests.csproj" />

@@ -49,6 +49,19 @@ public sealed class ResilienceTests
     }
 
     [Fact]
+    public async Task ZeroRetries_IsAllowed_AndMeansASingleAttempt()
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.ServiceUnavailable, HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary, o => o.MaxRetries = 0);
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        HttpResponseMessage response = await client.GetAsync("quote");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        primary.Calls.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Post_TransientServerError_IsNotRetried()
     {
         var primary = new ScriptedHandler(HttpStatusCode.ServiceUnavailable, HttpStatusCode.OK);

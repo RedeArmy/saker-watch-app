@@ -17,6 +17,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
+| `sakerwatch_auth_attempts_total` (counter) | outcome=success\|<refusal reason> (Malformed, InvalidSignature, UnknownKey, UnsupportedAlgorithm, Expired, NotYetValid, InvalidIssuer, InvalidAudience, MissingSubject, KeyDiscoveryFailed, Invalid) | access token validation; a spike of refusals or any `KeyDiscoveryFailed` is a symptom |
 | `sakerwatch_jobs_queue_depth`, `sakerwatch_jobs_queue_oldest_age_seconds`, `sakerwatch_jobs_in_flight`, `sakerwatch_jobs_dead` (gauges, sampled every `Jobs:StatsInterval`) | none | backlog, staleness, running and parked jobs |
 | `sakerwatch_jobs_total` (counter), `sakerwatch_jobs_duration_seconds` (histogram) | type, outcome=success\|retry\|dead\|lease_lost\|released | job attempts |
 | `sakerwatch_jobs_dead_letter_total` (counter) | queue | poison messages |
@@ -57,6 +58,8 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9515 | Warning | `Renewing the lease of job {JobId} failed; it will be retried on the next tick` (with exception) | `JobProcessor` |
 | 9516 | Error | `Job dispatcher iteration failed` (with exception) | `JobDispatcherService` |
 | 9517 | Warning | `Sampling the job queue for metrics failed` (with exception) | `JobDispatcherService` |
+| 9601 | Error | `Could not obtain the identity provider's signing keys; tokens are refused until they can be fetched` (with exception) | `ClavarisAuthProvider` |
+| 9602 | Warning | `Access token rejected for an unclassified reason ({ExceptionType})` (with exception) | `ClavarisAuthProvider` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction
