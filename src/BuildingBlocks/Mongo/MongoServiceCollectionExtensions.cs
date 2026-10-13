@@ -31,7 +31,7 @@ public static class MongoServiceCollectionExtensions
 
         services.AddSingleton<IMongoClient>(provider =>
         {
-            MongoClientSettings settings = MongoClientSettings.FromConnectionString(provider.GetRequiredService<IOptions<MongoOptions>>().Value.ConnectionString);
+            var settings = MongoClientSettings.FromConnectionString(provider.GetRequiredService<IOptions<MongoOptions>>().Value.ConnectionString);
             settings.ApplicationName = "saker-watch";
             settings.ServerSelectionTimeout = TimeSpan.FromSeconds(5);
             return new MongoClient(settings);

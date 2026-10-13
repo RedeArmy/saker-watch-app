@@ -32,7 +32,7 @@ public sealed class TimescalePostgresFixture : IAsyncLifetime
     public async Task<string> CreateDatabaseAsync()
     {
         string name = $"t_{Guid.CreateVersion7():N}";
-        await using NpgsqlDataSource server = NpgsqlDataSource.Create(ConnectionString);
+        await using var server = NpgsqlDataSource.Create(ConnectionString);
         await using NpgsqlCommand create = server.CreateCommand($"CREATE DATABASE {name}");
         await create.ExecuteNonQueryAsync();
 

@@ -188,7 +188,7 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     [Fact]
     public async Task ReadinessCheck_ReportsUnhealthyWithoutDetailsWhenTheServerIsDown()
     {
-        MongoClientSettings settings = MongoClientSettings.FromConnectionString("mongodb://127.0.0.1:1");
+        var settings = MongoClientSettings.FromConnectionString("mongodb://127.0.0.1:1");
         settings.ServerSelectionTimeout = TimeSpan.FromMilliseconds(500);
         var check = new MongoReadinessCheck(new MongoClient(settings).GetDatabase("down"));
 

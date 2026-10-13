@@ -7,7 +7,7 @@ internal static class PostgresTestExtensions
 {
     public static async Task<T?> ScalarAsync<T>(this string connectionString, string sql, params (string Name, object? Value)[] parameters)
     {
-        await using NpgsqlDataSource source = NpgsqlDataSource.Create(connectionString);
+        await using var source = NpgsqlDataSource.Create(connectionString);
         await using NpgsqlCommand command = source.CreateCommand(sql);
         AddParameters(command, parameters);
 
@@ -17,7 +17,7 @@ internal static class PostgresTestExtensions
 
     public static async Task<int> ExecuteAsync(this string connectionString, string sql, params (string Name, object? Value)[] parameters)
     {
-        await using NpgsqlDataSource source = NpgsqlDataSource.Create(connectionString);
+        await using var source = NpgsqlDataSource.Create(connectionString);
         await using NpgsqlCommand command = source.CreateCommand(sql);
         AddParameters(command, parameters);
 

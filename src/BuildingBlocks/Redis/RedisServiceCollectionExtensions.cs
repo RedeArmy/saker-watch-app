@@ -27,7 +27,7 @@ public static class RedisServiceCollectionExtensions
 
         services.AddSingleton<IConnectionMultiplexer>(provider =>
         {
-            ConfigurationOptions options = ConfigurationOptions.Parse(provider.GetRequiredService<IOptions<RedisOptions>>().Value.ConnectionString);
+            var options = ConfigurationOptions.Parse(provider.GetRequiredService<IOptions<RedisOptions>>().Value.ConnectionString);
             options.AbortOnConnectFail = false;
             options.ConnectTimeout = 5000;
             options.ClientName = "saker-watch";

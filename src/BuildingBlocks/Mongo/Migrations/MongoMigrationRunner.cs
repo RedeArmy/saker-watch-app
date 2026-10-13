@@ -62,7 +62,7 @@ public sealed partial class MongoMigrationRunner(IMongoDatabase database, TimePr
     private async Task<int> ApplyPendingAsync(IMongoMigration[] ordered, CancellationToken cancellationToken)
     {
         IMongoCollection<BsonDocument> history = database.GetCollection<BsonDocument>(_historyCollection);
-        Dictionary<int, string> applied = (await history.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync(cancellationToken))
+        var applied = (await history.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync(cancellationToken))
             .ToDictionary(d => d["_id"].AsInt32, d => d["checksum"].AsString);
 
         int count = 0;
