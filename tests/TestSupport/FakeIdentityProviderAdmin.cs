@@ -7,10 +7,11 @@ namespace SakerWatch.TestSupport;
 public sealed class FakeIdentityProviderAdmin : IIdentityProviderAdmin
 {
     private readonly ConcurrentDictionary<(string Issuer, string Subject), byte> _identities = new();
+    private int _calls;
     private int _failuresToInject;
 
     /// <summary>Number of calls received, including failed ones.</summary>
-    public int Calls { get; private set; }
+    public int Calls => Volatile.Read(ref _calls);
 
     /// <summary>The outcome returned while failures are injected.</summary>
     public ProviderDeletionOutcome InjectedFailure { get; set; } = ProviderDeletionOutcome.TransientFailure;
@@ -28,7 +29,7 @@ public sealed class FakeIdentityProviderAdmin : IIdentityProviderAdmin
     public Task<ProviderDeletionOutcome> DeleteIdentityAsync(string issuer, string subject, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Calls++;
+        Interlocked.Increment(ref _calls);
 
         if (Interlocked.Decrement(ref _failuresToInject) >= 0)
         {
