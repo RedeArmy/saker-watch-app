@@ -48,7 +48,7 @@ public sealed class RequestHasherTests
         {
             JsonObject original = RandomObject(random, depth: 3);
             JsonNode? shuffled = Shuffle(original, random);
-            JsonNode? reparsed = JsonNode.Parse(shuffled!.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            var reparsed = JsonNode.Parse(shuffled!.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
 
             RequestHasher.Canonical(reparsed).Should().Be(RequestHasher.Canonical(original), $"round {round}");
         }
