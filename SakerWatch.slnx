@@ -5,6 +5,7 @@
   <Project Path="src/BuildingBlocks/Resilience/SakerWatch.BuildingBlocks.Resilience.csproj" />
   <Project Path="src/BuildingBlocks/Observability/SakerWatch.BuildingBlocks.Observability.csproj" />
   <Project Path="src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+  <Project Path="src/BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
   <Project Path="src/Modules/Identity/Domain/SakerWatch.Identity.Domain.csproj" />
   <Project Path="src/Modules/Identity/Contracts/SakerWatch.Identity.Contracts.csproj" />
   <Project Path="src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />

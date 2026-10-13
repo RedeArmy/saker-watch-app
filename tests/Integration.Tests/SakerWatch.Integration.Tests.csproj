@@ -13,9 +13,14 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.MongoDb" />
+    <PackageReference Include="Testcontainers.Redis" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
     <ProjectReference Include="../../src/Hosts/Host.Migrator/SakerWatch.Hosts.Migrator.csproj" />
   </ItemGroup>
 </Project>

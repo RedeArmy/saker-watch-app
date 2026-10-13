@@ -12,6 +12,7 @@
     <ProjectReference Include="../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Observability/SakerWatch.BuildingBlocks.Observability.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
     <ProjectReference Include="../../Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

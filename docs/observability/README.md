@@ -40,6 +40,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9301 | Information | `Migration run started with {StepCount} steps` | `MigrationPipeline` |
 | 9302 | Information | `Migration step {Step} completed, {Applied} migrations applied` | `MigrationPipeline` |
 | 9303 | Error | `Migration step {Step} failed` (with exception) | `MigrationPipeline` |
+| 9311 | Information | `Mongo migration {Version} {Name} applied` | `MongoMigrationRunner` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction
