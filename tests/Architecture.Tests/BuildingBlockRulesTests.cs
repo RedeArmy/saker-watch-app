@@ -3,6 +3,8 @@ using AwesomeAssertions;
 using NetArchTest.Rules;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.BuildingBlocks.Resilience;
+using SakerWatch.BuildingBlocks.Web;
 
 namespace SakerWatch.Architecture.Tests;
 
@@ -23,20 +25,25 @@ public sealed class BuildingBlockRulesTests
     }
 
     [Fact]
-    public void BuildingBlocksApplication_DoesNotDependOnModulesOrWebFrameworks()
+    public void BuildingBlocks_DoNotDependOnModules()
     {
-        string[] forbidden =
-        [
-            .. _modules.Select(m => $"SakerWatch.{m}"),
-            "Microsoft.AspNetCore",
-            "Microsoft.EntityFrameworkCore",
-            "Npgsql",
-            "MongoDB.Driver",
-        ];
+        string[] modules = [.. _modules.Select(m => $"SakerWatch.{m}")];
 
-        TestResult result = Types.InAssembly(typeof(ISender).Assembly).ShouldNot().HaveDependencyOnAny(forbidden).GetResult();
+        foreach (Assembly buildingBlock in new[] { typeof(ISender).Assembly, typeof(WebSetup).Assembly, typeof(HttpClientResilienceOptions).Assembly })
+        {
+            TestResult result = Types.InAssembly(buildingBlock).ShouldNot().HaveDependencyOnAny(modules).GetResult();
 
-        result.IsSuccessful.Should().BeTrue("building blocks know nothing about modules or infrastructure");
+            result.IsSuccessful.Should().BeTrue($"{buildingBlock.GetName().Name} must know nothing about modules");
+        }
+    }
+
+    [Fact]
+    public void BuildingBlocksApplication_DoesNotDependOnWebOrPersistenceFrameworks()
+    {
+        TestResult result = Types.InAssembly(typeof(ISender).Assembly).ShouldNot().HaveDependencyOnAny(
+            "Microsoft.AspNetCore", "Microsoft.EntityFrameworkCore", "Npgsql", "MongoDB.Driver").GetResult();
+
+        result.IsSuccessful.Should().BeTrue("the application pipeline is transport- and storage-agnostic");
     }
 
     [Fact]

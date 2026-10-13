@@ -14,6 +14,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | Metric (type) | Labels | Purpose |
 |---|---|---|
 | `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
+| `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_jobs_queue_depth` / `_oldest_age_seconds` (gauge) | queue | backlog and staleness |
 | `sakerwatch_jobs_dead_letter_total` (counter) | queue | poison messages |
@@ -34,6 +35,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9002 | Information | `Use case {UseCase} rejected with {ErrorCode} ({ErrorType}) in {ElapsedMs} ms` | `LoggingBehavior` (expected failure) |
 | 9003 | Error | `Use case {UseCase} failed with {ErrorCode} in {ElapsedMs} ms` | `LoggingBehavior` (`ErrorType.Failure`) |
 | 9004 | Error | `Use case {UseCase} threw after {ElapsedMs} ms` (with exception) | `LoggingBehavior` |
+| 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Spans
 One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts do not mark the span as failed).
