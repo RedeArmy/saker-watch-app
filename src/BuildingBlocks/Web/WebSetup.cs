@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Web.Correlation;
+using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
 
@@ -35,6 +36,7 @@ public static class WebSetup
         ArgumentNullException.ThrowIfNull(app);
 
         app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<IdempotencyReplayMiddleware>();
         app.UseExceptionHandler();
         app.UseStatusCodePages();
         return app;

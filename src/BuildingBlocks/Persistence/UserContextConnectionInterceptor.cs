@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
 
@@ -9,16 +10,16 @@ namespace SakerWatch.BuildingBlocks.Persistence;
 /// pooled connection can never carry the previous caller's identity into the next request.
 /// </summary>
 /// <param name="user">Source of the validated user id.</param>
-public sealed class UserContextConnectionInterceptor(IDbUserContext user) : DbConnectionInterceptor
+public sealed class UserContextConnectionInterceptor(ICurrentUser user) : DbConnectionInterceptor
 {
     /// <summary>Name of the session variable the policies read.</summary>
     public const string SettingName = "app.current_user_id";
 
     /// <inheritdoc />
     public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData) =>
-        UserContextSql.Apply(connection, user.CurrentUserId);
+        UserContextSql.Apply(connection, user.UserId);
 
     /// <inheritdoc />
     public override Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default) =>
-        UserContextSql.ApplyAsync(connection, user.CurrentUserId, cancellationToken);
+        UserContextSql.ApplyAsync(connection, user.UserId, cancellationToken);
 }

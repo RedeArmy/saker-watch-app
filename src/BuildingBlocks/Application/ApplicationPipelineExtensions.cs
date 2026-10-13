@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SakerWatch.BuildingBlocks.Application.Behaviors;
 using SakerWatch.BuildingBlocks.Application.Messaging;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 
 namespace SakerWatch.BuildingBlocks.Application;
@@ -29,6 +30,7 @@ public static class ApplicationPipelineExtensions
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkBehavior<,>));
         services.TryAddScoped<IUnitOfWork, NoOpUnitOfWork>();
+        services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
 
         foreach (Assembly assembly in applicationAssemblies)
         {

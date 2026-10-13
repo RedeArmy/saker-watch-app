@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.BuildingBlocks.Persistence.Platform;
@@ -34,9 +35,9 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
         public string Name { get; set; } = string.Empty;
     }
 
-    private sealed class FixedUser(Guid? id) : IDbUserContext
+    private sealed class FixedUser(Guid? id) : ICurrentUser
     {
-        public Guid? CurrentUserId => id;
+        public Guid? UserId => id;
     }
 
     private sealed record TestHost(ServiceProvider Provider, MigratedDatabase Db) : IAsyncDisposable
@@ -54,7 +55,7 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
             .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Postgres"] = db.Api })
             .Build();
         var services = new ServiceCollection();
-        services.AddSingleton<IDbUserContext>(new FixedUser(user));
+        services.AddSingleton<ICurrentUser>(new FixedUser(user));
         services.AddSakerPostgres(configuration);
         services.AddSakerDbContext<PlatformDbContext>(PlatformDbContext.Schema);
         services.AddDbContext<ProbeDbContext>((provider, options) => options

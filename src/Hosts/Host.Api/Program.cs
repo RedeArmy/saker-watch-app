@@ -1,6 +1,7 @@
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using SakerWatch.BuildingBlocks.Application;
+using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Mongo;
 using SakerWatch.BuildingBlocks.Observability;
 using SakerWatch.BuildingBlocks.Persistence;
@@ -20,6 +21,7 @@ builder.AddSakerObservability(
     metrics => metrics.AddAspNetCoreInstrumentation());
 builder.Services.AddSakerWeb(builder.Configuration);
 builder.Services.AddApplicationPipeline();
+builder.Services.AddIdempotency(builder.Configuration);
 
 // Datastores: fail fast at startup when a connection string is missing; readiness reports each one.
 builder.Services.AddSakerPostgres(builder.Configuration);

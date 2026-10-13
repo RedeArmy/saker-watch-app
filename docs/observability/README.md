@@ -18,7 +18,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_jobs_queue_depth` / `_oldest_age_seconds` (gauge) | queue | backlog and staleness |
 | `sakerwatch_jobs_dead_letter_total` (counter) | queue | poison messages |
-| `sakerwatch_idempotency_events_total` (counter) | outcome=replay\|mismatch\|conflict\|takeover | idempotency health |
+| `sakerwatch_idempotency_events_total` (counter) | outcome=claimed\|replay\|mismatch\|conflict (`takeover` is reserved for cross-store operations, ADR-0022) | idempotency health |
 | `sakerwatch_provider_call_duration_seconds` (histogram) | provider, outcome | provider health |
 | `sakerwatch_price_staleness_seconds` (gauge) | market | freshness SLO |
 | `sakerwatch_llm_tokens_total` (counter) | direction=in\|out, model | cost/capacity |
@@ -41,6 +41,9 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9302 | Information | `Migration step {Step} completed, {Applied} migrations applied` | `MigrationPipeline` |
 | 9303 | Error | `Migration step {Step} failed` (with exception) | `MigrationPipeline` |
 | 9311 | Information | `Mongo migration {Version} {Name} applied` | `MongoMigrationRunner` |
+| 9411 | Information | `Idempotent request replayed from the stored first attempt` | `IdempotencyBehavior` |
+| 9412 | Warning | `Idempotency-Key reused with a different request on {Method} {Route}` | `IdempotencyBehavior` |
+| 9413 | Warning | `Idempotency-Key still in progress on {Method} {Route}` | `IdempotencyBehavior` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction

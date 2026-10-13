@@ -1,6 +1,6 @@
 # ADR-0017: Idempotency — detailed design
 
-- **Status:** accepted (extends ADR-0005)
+- **Status:** accepted (extends ADR-0005; the algorithm for Postgres-only operations is refined by ADR-0022)
 - **Date:** 2026-10-12
 - **Deciders:** Eder
 

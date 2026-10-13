@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Npgsql;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
@@ -12,7 +13,7 @@ namespace SakerWatch.BuildingBlocks.Persistence;
 /// </summary>
 public sealed class DbSession : IUnitOfWork, IAsyncDisposable
 {
-    private readonly IDbUserContext _user;
+    private readonly ICurrentUser _user;
     private NpgsqlTransaction? _transaction;
     private int _depth;
     private bool _rollbackOnly;
@@ -20,7 +21,7 @@ public sealed class DbSession : IUnitOfWork, IAsyncDisposable
     /// <summary>Creates a session over the validated runtime connection string.</summary>
     /// <param name="options">Connection settings (least-privilege login).</param>
     /// <param name="user">Source of the validated user id.</param>
-    public DbSession(IOptions<PostgresOptions> options, IDbUserContext user)
+    public DbSession(IOptions<PostgresOptions> options, ICurrentUser user)
     {
         ArgumentNullException.ThrowIfNull(options);
         _user = user;
@@ -49,7 +50,7 @@ public sealed class DbSession : IUnitOfWork, IAsyncDisposable
                 await Connection.OpenAsync(cancellationToken);
             }
 
-            await UserContextSql.ApplyAsync(Connection, _user.CurrentUserId, cancellationToken);
+            await UserContextSql.ApplyAsync(Connection, _user.UserId, cancellationToken);
             _transaction = await Connection.BeginTransactionAsync(cancellationToken);
         }
         catch

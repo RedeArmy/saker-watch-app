@@ -1,4 +1,5 @@
 using FluentValidation;
+using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
@@ -68,3 +69,26 @@ public sealed class ReadHandler : IRequestHandler<ReadQuery, Result<int>>
 }
 
 public sealed record UnhandledCommand : ICommand;
+
+public sealed record ThingDto(Guid Id, string Name);
+
+public sealed record CreateThingCommand(IdempotencyKeyInfo IdempotencyKey, string Name, int Quantity = 1) : ICommand<ThingDto>, IIdempotentRequest;
+
+public sealed class CreateThingHandler(CallLog log) : IRequestHandler<CreateThingCommand, Result<ThingDto>>
+{
+    public ValueTask<Result<ThingDto>> Handle(CreateThingCommand request, CancellationToken cancellationToken)
+    {
+        log.Add("create");
+        return ValueTask.FromResult(request.Name == "fail"
+            ? Result.Failure<ThingDto>(Error.Conflict("demo.thing_exists", "Already exists."))
+            : Result.Success(new ThingDto(Guid.CreateVersion7(), request.Name)));
+    }
+}
+
+public sealed record TouchCommand(IdempotencyKeyInfo IdempotencyKey) : ICommand, IIdempotentRequest;
+
+public sealed class TouchHandler : IRequestHandler<TouchCommand, Result>
+{
+    public ValueTask<Result> Handle(TouchCommand request, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success());
+}

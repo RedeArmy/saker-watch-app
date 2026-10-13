@@ -8,5 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../Application/SakerWatch.BuildingBlocks.Application.csproj" />
   </ItemGroup>
 </Project>
