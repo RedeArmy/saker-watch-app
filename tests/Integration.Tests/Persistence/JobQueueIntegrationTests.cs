@@ -109,6 +109,25 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task Enqueue_AcceptsANonUtcAvailabilityAndRoutesByTheRuntimePayloadType()
+    {
+        await using Env env = await StartAsync();
+        DateTimeOffset available = DateTimeOffset.UtcNow.AddSeconds(-5).ToOffset(TimeSpan.FromHours(-6));
+
+        await using (AsyncServiceScope scope = env.Api.CreateAsyncScope())
+        {
+            object payload = new ComputeJob("through-a-base-type");
+            bool created = await scope.ServiceProvider.GetRequiredService<IJobEnqueuer>()
+                .EnqueueAsync("runtime-type", payload, new JobEnqueueOptions(available), CancellationToken.None);
+            created.Should().BeTrue();
+        }
+
+        (await env.Db.Admin.ScalarAsync<string>("SELECT type FROM platform.job_queue")).Should().Be("demo.compute.v1");
+        (await env.Processor.ProcessNextAsync(CancellationToken.None)).Should().BeTrue("the job was already due, whatever offset it was given in");
+        (await env.State("runtime-type")).Should().Be("succeeded");
+    }
+
+    [Fact]
     public async Task EnqueueingTheSameKeyTwice_CreatesOneJob_AndReportsIt()
     {
         await using Env env = await StartAsync();

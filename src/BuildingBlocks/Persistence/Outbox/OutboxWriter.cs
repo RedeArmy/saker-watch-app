@@ -37,7 +37,8 @@ public sealed class OutboxWriter(DbSession session, ICurrentUser user, ICorrelat
         insert.Parameters.AddWithValue("id", message.EventId);
         insert.Parameters.AddWithValue("type", registry.NameOf(message));
         insert.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Jsonb) { Value = IntegrationEventRegistry.Serialize(message) });
-        insert.Parameters.AddWithValue("occurred", message.OccurredAt);
+        // PostgreSQL timestamptz accepts only UTC offsets; producers may hold any offset.
+        insert.Parameters.AddWithValue("occurred", message.OccurredAt.ToUniversalTime());
         insert.Parameters.AddWithValue("trace", (object?)System.Diagnostics.Activity.Current?.TraceId.ToString() ?? DBNull.Value);
         insert.Parameters.AddWithValue("correlation", (object?)correlation.CorrelationId ?? DBNull.Value);
         insert.Parameters.AddWithValue("user", (object?)user.UserId ?? DBNull.Value);

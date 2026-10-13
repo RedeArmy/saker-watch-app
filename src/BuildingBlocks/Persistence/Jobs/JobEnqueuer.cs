@@ -45,9 +45,10 @@ public sealed class JobEnqueuer(DbSession session, JobRegistry registry, ICorrel
                 session.Transaction);
             command.Parameters.AddWithValue("id", ids.NewGuid());
             command.Parameters.AddWithValue("key", jobKey);
-            command.Parameters.AddWithValue("type", registry.NameOf(typeof(TPayload)));
+            // The runtime type names the job, so enqueuing through a base type or interface still routes correctly.
+            command.Parameters.AddWithValue("type", registry.NameOf(payload.GetType()));
             command.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Jsonb) { Value = JobRegistry.Serialize(payload) });
-            command.Parameters.AddWithValue("available", settings.AvailableAt ?? now);
+            command.Parameters.AddWithValue("available", (settings.AvailableAt ?? now).ToUniversalTime());
             command.Parameters.AddWithValue("max", settings.MaxAttempts);
             command.Parameters.AddWithValue("trace", (object?)System.Diagnostics.Activity.Current?.TraceId.ToString() ?? DBNull.Value);
             command.Parameters.AddWithValue("correlation", (object?)correlation.CorrelationId ?? DBNull.Value);

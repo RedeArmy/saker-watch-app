@@ -39,6 +39,9 @@ public sealed partial class JobProcessor
         description: "Duration of job attempts by type and outcome.");
     private static readonly ActivitySource _activities = new("SakerWatch");
 
+    // Recording a failure or releasing a lease happens while the worker may be shutting down; a hung database must not block it.
+    private static readonly TimeSpan _cleanupTimeout = TimeSpan.FromSeconds(10);
+
     private readonly IServiceScopeFactory _scopes;
     private readonly JobRegistry _registry;
     private readonly JobOptions _options;
@@ -87,10 +90,10 @@ public sealed partial class JobProcessor
         var session = scope.ServiceProvider.GetRequiredService<DbSession>();
         using var leaseToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var stopHeartbeat = new CancellationTokenSource();
-        bool lost = false;
+        int lost = 0;
         Task heartbeat = HeartbeatAsync(job, () =>
         {
-            lost = true;
+            Volatile.Write(ref lost, 1);
             leaseToken.Cancel();
         }, stopHeartbeat.Token);
 
@@ -123,7 +126,7 @@ public sealed partial class JobProcessor
             outcome = "released";
             throw;
         }
-        catch (OperationCanceledException) when (lost)
+        catch (OperationCanceledException) when (Volatile.Read(ref lost) == 1)
         {
             await session.RollbackAsync(CancellationToken.None);
             outcome = "lease_lost";
@@ -159,9 +162,10 @@ public sealed partial class JobProcessor
                         return;
                     }
                 }
-                catch (Exception ex) when (ex is NpgsqlException or TimeoutException)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    // A database blip must not kill the job; the lease may still be valid.
+                    // Any trouble renewing (a database blip, a disposed connection) must neither kill the job nor fault
+                    // this task, which is awaited in a finally block; the lease may still be valid.
                     RenewFailed(ex, job.Id);
                 }
             }
@@ -289,8 +293,9 @@ public sealed partial class JobProcessor
     {
         bool dead = job.Attempts >= job.MaxAttempts;
         DateTimeOffset now = _timeProvider.GetUtcNow();
+        using var cleanup = new CancellationTokenSource(_cleanupTimeout);
         await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(CancellationToken.None);
+        await connection.OpenAsync(cleanup.Token);
         await using var fail = new NpgsqlCommand(
             """
             UPDATE platform.job_queue
@@ -305,7 +310,7 @@ public sealed partial class JobProcessor
         fail.Parameters.AddWithValue("finished", dead ? now : DBNull.Value);
         fail.Parameters.AddWithValue("id", job.Id);
         fail.Parameters.AddWithValue("token", job.LeaseToken);
-        if (await fail.ExecuteNonQueryAsync(CancellationToken.None) != 1)
+        if (await fail.ExecuteNonQueryAsync(cleanup.Token) != 1)
         {
             LeaseLost(job.Type, job.Id);
             return "lease_lost";
@@ -325,8 +330,9 @@ public sealed partial class JobProcessor
     // Shutdown: the interrupted attempt does not count, and the job is immediately available to another worker.
     private async Task ReleaseAsync(ClaimedJob job)
     {
+        using var cleanup = new CancellationTokenSource(_cleanupTimeout);
         await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(CancellationToken.None);
+        await connection.OpenAsync(cleanup.Token);
         await using var release = new NpgsqlCommand(
             """
             UPDATE platform.job_queue
@@ -338,7 +344,7 @@ public sealed partial class JobProcessor
         release.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
         release.Parameters.AddWithValue("id", job.Id);
         release.Parameters.AddWithValue("token", job.LeaseToken);
-        await release.ExecuteNonQueryAsync(CancellationToken.None);
+        await release.ExecuteNonQueryAsync(cleanup.Token);
     }
 
     private static string Describe(Exception exception)

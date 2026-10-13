@@ -117,6 +117,19 @@ public sealed class OutboxIntegrationTests(TimescalePostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task Commit_AcceptsAnEventTimestampedWithAnyUtcOffset()
+    {
+        await using Env env = await StartAsync();
+        var occurred = new DateTimeOffset(2026, 10, 13, 18, 30, 0, TimeSpan.FromHours(5));
+        var message = new ThingCreated(Guid.CreateVersion7(), occurred, "offset");
+
+        await env.PublishAsync(message);
+
+        (await env.Db.Admin.ScalarAsync<DateTime>("SELECT occurred_at AT TIME ZONE 'UTC' FROM platform.outbox_messages"))
+            .Should().Be(occurred.UtcDateTime, "the instant is preserved even though PostgreSQL stores only UTC");
+    }
+
+    [Fact]
     public async Task Rollback_LeavesNoMessage()
     {
         await using Env env = await StartAsync();
