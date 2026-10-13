@@ -10,7 +10,7 @@ public static class PersistenceServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the validated <see cref="PostgresOptions"/> (fails at startup when the connection string is missing),
-    /// the <see cref="UserContextConnectionInterceptor"/> and a default anonymous <see cref="IDbUserContext"/>
+    /// the <see cref="UserContextConnectionInterceptor"/>, a readiness check tagged <c>ready</c> and a default anonymous <see cref="IDbUserContext"/>
     /// (replace it with the web implementation in the API).
     /// </summary>
     public static IServiceCollection AddSakerPostgres(this IServiceCollection services, IConfiguration configuration)
@@ -22,6 +22,7 @@ public static class PersistenceServiceCollectionExtensions
             .Bind(configuration.GetSection(PostgresOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddHealthChecks().AddCheck<PostgresReadinessCheck>("postgres", tags: ["ready"]);
         services.TryAddScoped<IDbUserContext, AnonymousDbUserContext>();
         services.TryAddScoped<UserContextConnectionInterceptor>();
         return services;

@@ -37,7 +37,7 @@ All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) com
 - Cross-store consistency: Mongo document first with deterministic `_id` (`stockId:promptVersion:runDate`), then Postgres row plus outbox in one transaction; janitor removes orphans (ADR-0004).
 
 ## 3. Redis
-Cache and rate limiting only, with versioned key prefixes (`v1:price:{ticker}`) and TTLs; no migrations.
+Cache and rate limiting only, with versioned key prefixes (`v1:price:{ticker}`) and TTLs; no migrations. Keys are built only through `RedisKeys.For(...)` (version prefix `v1`, segments limited to letters, digits and `-_.`). The API rate limiter stays in memory because there is a single API instance (ADR-0021).
 
 ## 4. Migrations
 Postgres: EF Core migrations committed; Timescale features as raw-SQL migrations; EF migration bundle run as a separate deploy step, never on API startup; forward-only with expand/contract. Mongo: custom idempotent runner (`IMongoMigration`, ordered, `_migrations` with checksum and lock) plus read-side upcasters. Every migration is tested on an empty database and on one seeded at the previous version.

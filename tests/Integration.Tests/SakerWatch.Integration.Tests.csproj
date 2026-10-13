@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
     <ProjectReference Include="../../src/BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Redis/SakerWatch.BuildingBlocks.Redis.csproj" />
     <ProjectReference Include="../../src/Hosts/Host.Migrator/SakerWatch.Hosts.Migrator.csproj" />
   </ItemGroup>
 </Project>

@@ -72,3 +72,4 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | draft | 1 | 2026-10-12 |
+| docs/runbooks/local-development.md | Local development: infrastructure, migrations and runtime logins | Eder | draft | 1 | 2026-10-13 |

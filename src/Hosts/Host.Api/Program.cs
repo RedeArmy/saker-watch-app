@@ -1,9 +1,14 @@
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using SakerWatch.BuildingBlocks.Application;
+using SakerWatch.BuildingBlocks.Mongo;
 using SakerWatch.BuildingBlocks.Observability;
+using SakerWatch.BuildingBlocks.Persistence;
+using SakerWatch.BuildingBlocks.Persistence.Platform;
+using SakerWatch.BuildingBlocks.Redis;
 using SakerWatch.BuildingBlocks.Web;
 using SakerWatch.BuildingBlocks.Web.Health;
+using SakerWatch.Identity.Infrastructure.Persistence;
 using Serilog;
 using Serilog.Events;
 
@@ -15,6 +20,13 @@ builder.AddSakerObservability(
     metrics => metrics.AddAspNetCoreInstrumentation());
 builder.Services.AddSakerWeb(builder.Configuration);
 builder.Services.AddApplicationPipeline();
+
+// Datastores: fail fast at startup when a connection string is missing; readiness reports each one.
+builder.Services.AddSakerPostgres(builder.Configuration);
+builder.Services.AddSakerDbContext<PlatformDbContext>(PlatformDbContext.Schema);
+builder.Services.AddSakerDbContext<IdentityDbContext>(IdentityDbContext.Schema);
+builder.Services.AddSakerMongo(builder.Configuration);
+builder.Services.AddSakerRedis(builder.Configuration);
 
 WebApplication app = builder.Build();
 

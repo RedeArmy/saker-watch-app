@@ -1,6 +1,5 @@
 # Dev stack. Caddy publishes a port (loopback); datastores live on an internal network.
-# Profile `obs` (observability, ADR-0016) additionally publishes Grafana (3000) and the OTLP receiver (4317/4318)
-# on loopback so hosts running outside Docker can export telemetry; nothing is reachable from other machines.
+# The observability stack (ADR-0016) lives in docker-compose.obs.yml and is added with `make up-obs`.
 # TODO(phase-5): pin image digests (supply-chain requirement) once versions are chosen.
 name: saker-watch
 services:
@@ -70,79 +69,10 @@ services:
     cap_add: [NET_BIND_SERVICE]
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
-  otel-collector:
-    profiles: [obs]
-    image: otel/opentelemetry-collector-contrib:0.162.0
-    command: ["--config=/etc/otelcol/config.yaml"]
-    ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
-    volumes: ["./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro"]
-    networks: [obs, edge]    # edge only provides the loopback-published OTLP ports; backends are reached over obs
-    mem_limit: 384m
-    cap_drop: [ALL]
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-  tempo:
-    profiles: [obs]
-    image: grafana/tempo:2.10.8
-    command: ["-config.file=/etc/tempo/tempo.yaml"]
-    volumes:
-      - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
-      - tempodata:/var/tempo
-    networks: [obs]
-    mem_limit: 512m
-    cap_drop: [ALL]
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-  loki:
-    profiles: [obs]
-    image: grafana/loki:3.7.8
-    command: ["-config.file=/etc/loki/loki.yaml"]
-    volumes:
-      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
-      - lokidata:/loki
-    networks: [obs]
-    mem_limit: 512m
-    cap_drop: [ALL]
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-  prometheus:
-    profiles: [obs]
-    image: prom/prometheus:v3.15.0
-    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
-    volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - promdata:/prometheus
-    networks: [obs]
-    mem_limit: 384m
-    cap_drop: [ALL]
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-  grafana:
-    profiles: [obs]
-    image: grafana/grafana:13.2.3
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in deploy/.env}
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_ANALYTICS_REPORTING_ENABLED: "false"
-      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-    ports: ["127.0.0.1:3000:3000"]
-    volumes:
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafanadata:/var/lib/grafana
-    networks: [obs, edge]    # edge only provides the published loopback port; obs holds the data sources
-    mem_limit: 384m
-    cap_drop: [ALL]
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
 networks:
   backend:
     internal: true
   idp:
-    internal: true
-  obs:
     internal: true
   edge: {}
 volumes:
@@ -150,7 +80,3 @@ volumes:
   mongodata: {}
   redisdata: {}
   caddydata: {}
-  tempodata: {}
-  lokidata: {}
-  promdata: {}
-  grafanadata: {}

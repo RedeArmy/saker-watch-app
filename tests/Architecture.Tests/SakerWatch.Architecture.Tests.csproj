@@ -20,6 +20,7 @@
     <ProjectReference Include="../../src/BuildingBlocks/Observability/SakerWatch.BuildingBlocks.Observability.csproj" />
     <ProjectReference Include="../../src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
     <ProjectReference Include="../../src/BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Redis/SakerWatch.BuildingBlocks.Redis.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Domain/SakerWatch.Identity.Domain.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />

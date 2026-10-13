@@ -5,9 +5,9 @@ up:        ## start dev infrastructure (Postgres+Timescale, Mongo, Redis, Caddy,
 up-no-avx: ## same as up, with Mongo 4.4 for CPUs without AVX
 	$(COMPOSE) -f deploy/docker-compose.no-avx.yml up -d
 up-obs:    ## dev infrastructure plus the observability stack (Collector, Tempo, Loki, Prometheus, Grafana on 127.0.0.1:3000)
-	$(COMPOSE) --profile obs up -d
+	$(COMPOSE) -f deploy/docker-compose.obs.yml --profile obs up -d
 down:
-	$(COMPOSE) --profile obs down
+	GRAFANA_ADMIN_PASSWORD="$${GRAFANA_ADMIN_PASSWORD:-down}" $(COMPOSE) -f deploy/docker-compose.obs.yml --profile obs down
 logs:
 	$(COMPOSE) logs -f
 test:
