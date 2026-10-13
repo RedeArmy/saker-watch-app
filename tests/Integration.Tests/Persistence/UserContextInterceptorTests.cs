@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
 
@@ -11,13 +12,13 @@ public sealed class UserContextInterceptorTests(TimescalePostgresFixture postgre
 {
     private sealed class ProbeDbContext(DbContextOptions<ProbeDbContext> options) : DbContext(options);
 
-    private sealed class FixedUser(Guid? id) : IDbUserContext
+    private sealed class FixedUser(Guid? id) : ICurrentUser
     {
-        public Guid? CurrentUserId => id;
+        public Guid? UserId => id;
     }
 
     // A pool of one connection forces every context to reuse the same physical session.
-    private static async Task<string> ReadSettingAsync(string connectionString, IDbUserContext user)
+    private static async Task<string> ReadSettingAsync(string connectionString, ICurrentUser user)
     {
         string pooled = new NpgsqlConnectionStringBuilder(connectionString) { Pooling = true, MaxPoolSize = 1 }.ConnectionString;
         var options = new DbContextOptionsBuilder<ProbeDbContext>()
@@ -42,7 +43,7 @@ public sealed class UserContextInterceptorTests(TimescalePostgresFixture postgre
     [Fact]
     public async Task Open_WithoutUser_LeavesTheVariableEmpty()
     {
-        string value = await ReadSettingAsync(postgres.ConnectionString, new AnonymousDbUserContext());
+        string value = await ReadSettingAsync(postgres.ConnectionString, new AnonymousCurrentUser());
 
         value.Should().BeEmpty();
     }
@@ -53,7 +54,7 @@ public sealed class UserContextInterceptorTests(TimescalePostgresFixture postgre
         var first = new FixedUser(Guid.CreateVersion7());
 
         string asUser = await ReadSettingAsync(postgres.ConnectionString, first);
-        string afterwards = await ReadSettingAsync(postgres.ConnectionString, new AnonymousDbUserContext());
+        string afterwards = await ReadSettingAsync(postgres.ConnectionString, new AnonymousCurrentUser());
 
         asUser.Should().NotBeEmpty();
         afterwards.Should().BeEmpty("the interceptor resets the variable on every open");

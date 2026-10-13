@@ -42,6 +42,8 @@ dotnet_diagnostic.CA1707.severity = none
 # ADR-0016: log message templates only; banned APIs are errors
 dotnet_diagnostic.CA2254.severity = error
 dotnet_diagnostic.RS0030.severity = error
+# SonarCloud's quality profile (S1192) fails the CI build on repeated string literals; enable it locally so it fails before pushing
+dotnet_diagnostic.S1192.severity = error
 # C#-only code base: "Error" is the established name for the Result error type (VB keyword clash is irrelevant)
 dotnet_diagnostic.CA1716.severity = none
 

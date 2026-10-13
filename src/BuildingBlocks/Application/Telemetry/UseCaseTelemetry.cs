@@ -17,7 +17,7 @@ public static class UseCaseTelemetry
     /// <summary>Name of the <see cref="Meter"/> that owns every Saker Watch instrument.</summary>
     public const string MeterName = "SakerWatch";
 
-    private static readonly Meter _meter = new(MeterName);
+    internal static readonly Meter Meter = new(MeterName);
     private static readonly ConcurrentDictionary<string, Histogram<double>> _durations = new();
 
     /// <summary>The activity source used for use-case spans.</summary>
@@ -31,7 +31,7 @@ public static class UseCaseTelemetry
     public static Histogram<double> Duration(string metricModule) =>
         _durations.GetOrAdd(
             metricModule,
-            static module => _meter.CreateHistogram<double>(
+            static module => Meter.CreateHistogram<double>(
                 $"sakerwatch_{module}_usecase_duration_seconds",
                 unit: "s",
                 description: "Duration of use-case executions through the application pipeline."));

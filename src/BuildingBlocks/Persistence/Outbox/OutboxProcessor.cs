@@ -1,0 +1,218 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Globalization;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Npgsql;
+using SakerWatch.BuildingBlocks.Application.Events;
+using SakerWatch.BuildingBlocks.Kernel.Domain;
+using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.BuildingBlocks.Kernel.Tracing;
+
+namespace SakerWatch.BuildingBlocks.Persistence.Outbox;
+
+/// <summary>
+/// Delivers one due outbox message at a time (ADR-0005, ADR-0017). The message is claimed with
+/// <c>FOR UPDATE SKIP LOCKED</c> and processed in a single unit of work together with every consumer's effect and its
+/// inbox mark, then marked processed: parallel workers never take the same row, a crash redelivers it, and the inbox keeps
+/// redelivery from repeating an effect. A failing message rolls back everything it wrote and retries with backoff and
+/// jitter until <see cref="OutboxOptions.MaxAttempts"/>, after which it is parked as dead for a human.
+/// </summary>
+public sealed partial class OutboxProcessor
+{
+    private const int _maxErrorLength = 500;
+
+    private static readonly Meter _meter = new("SakerWatch");
+    private static readonly Counter<long> _messages = _meter.CreateCounter<long>(
+        "sakerwatch_outbox_messages_total",
+        description: "Outbox messages by delivery outcome (published, retry, dead).");
+    private static readonly ActivitySource _activities = new("SakerWatch");
+
+    private readonly IServiceScopeFactory _scopes;
+    private readonly IntegrationEventRegistry _registry;
+    private readonly OutboxOptions _options;
+    private readonly string _connectionString;
+    private readonly TimeProvider _timeProvider;
+    private readonly ExponentialBackoff _backoff;
+    private readonly ILogger<OutboxProcessor> _logger;
+
+    /// <summary>Creates a processor.</summary>
+    public OutboxProcessor(
+        IServiceScopeFactory scopes,
+        IntegrationEventRegistry registry,
+        IOptions<OutboxOptions> options,
+        IOptions<PostgresOptions> postgres,
+        TimeProvider timeProvider,
+        ExponentialBackoff backoff,
+        ILogger<OutboxProcessor> logger)
+    {
+        _scopes = scopes;
+        _registry = registry;
+        _options = options.Value;
+        _connectionString = postgres.Value.Postgres;
+        _timeProvider = timeProvider;
+        _backoff = backoff;
+        _logger = logger;
+    }
+
+    /// <summary>Claims and delivers the next due message. Returns <see langword="false"/> when none is due.</summary>
+    public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
+    {
+        await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
+        var session = scope.ServiceProvider.GetRequiredService<DbSession>();
+        await session.BeginAsync(cancellationToken);
+
+        ClaimedMessage? claimed = await ClaimAsync(session, cancellationToken);
+        if (claimed is null)
+        {
+            await session.CommitAsync(cancellationToken);
+            return false;
+        }
+
+        using Activity? activity = _activities.StartActivity($"Outbox.Deliver {claimed.Type}");
+        activity?.SetTag("saker.outbox.type", claimed.Type);
+        activity?.SetTag("saker.origin_trace_id", claimed.TraceId);
+        try
+        {
+            scope.ServiceProvider.GetRequiredService<CorrelationContext>().CorrelationId = claimed.CorrelationId;
+            IDomainEvent message = _registry.Deserialize(claimed.Type, claimed.Payload);
+            await DeliverAsync(scope.ServiceProvider, message, cancellationToken);
+            await MarkProcessedAsync(session, claimed.Id, cancellationToken);
+            await session.CommitAsync(cancellationToken);
+
+            _messages.Add(1, new KeyValuePair<string, object?>("outcome", "published"));
+            Delivered(claimed.Type, claimed.Id);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Shutdown: roll back and leave the message pending for the next worker.
+            await session.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await session.RollbackAsync(CancellationToken.None);
+            await RecordFailureAsync(claimed, ex, cancellationToken);
+        }
+
+        return true;
+    }
+
+    private static async Task DeliverAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken)
+    {
+        Type consumerType = typeof(IIntegrationEventConsumer<>).MakeGenericType(message.GetType());
+        MethodInfo consume = consumerType.GetMethod(nameof(IIntegrationEventConsumer<IDomainEvent>.ConsumeAsync))!;
+        var inbox = services.GetRequiredService<IInbox>();
+
+        foreach (object consumer in services.GetServices(consumerType).Cast<object>())
+        {
+            // Redelivery after a crash must not repeat this consumer's effect.
+            if (!await inbox.TryBeginAsync(consumer.GetType().FullName!, message.EventId, cancellationToken))
+            {
+                continue;
+            }
+
+            try
+            {
+                await (Task)consume.Invoke(consumer, [message, cancellationToken])!;
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                // Reflection wraps the consumer's own failure; surface that one so logs and last_error name the real cause.
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            }
+        }
+    }
+
+    private async Task<ClaimedMessage?> ClaimAsync(DbSession session, CancellationToken cancellationToken)
+    {
+        await using var select = new NpgsqlCommand(
+            """
+            SELECT id, type, payload::text, trace_id, correlation_id, attempts
+            FROM platform.outbox_messages
+            WHERE processed_at IS NULL AND next_attempt_at <= @now AND attempts < @max
+            ORDER BY next_attempt_at, id
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+            """,
+            session.Connection,
+            session.Transaction);
+        select.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
+        select.Parameters.AddWithValue("max", _options.MaxAttempts);
+        await using NpgsqlDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ClaimedMessage(
+            reader.GetGuid(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.GetInt32(5));
+    }
+
+    private async Task MarkProcessedAsync(DbSession session, Guid id, CancellationToken cancellationToken)
+    {
+        await using var update = new NpgsqlCommand(
+            "UPDATE platform.outbox_messages SET processed_at = @now, last_error = NULL WHERE id = @id",
+            session.Connection,
+            session.Transaction);
+        update.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
+        update.Parameters.AddWithValue("id", id);
+        await update.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    // The failure is written on its own connection, after the failed unit of work rolled back.
+    private async Task RecordFailureAsync(ClaimedMessage message, Exception exception, CancellationToken cancellationToken)
+    {
+        int attempts = message.Attempts + 1;
+        bool dead = attempts >= _options.MaxAttempts;
+        DateTimeOffset next = _timeProvider.GetUtcNow() + _backoff.Delay(attempts);
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var update = new NpgsqlCommand(
+            "UPDATE platform.outbox_messages SET attempts = @attempts, next_attempt_at = @next, last_error = @error WHERE id = @id AND processed_at IS NULL",
+            connection);
+        update.Parameters.AddWithValue("attempts", attempts);
+        update.Parameters.AddWithValue("next", next);
+        update.Parameters.AddWithValue("error", Describe(exception));
+        update.Parameters.AddWithValue("id", message.Id);
+        await update.ExecuteNonQueryAsync(cancellationToken);
+
+        if (dead)
+        {
+            _messages.Add(1, new KeyValuePair<string, object?>("outcome", "dead"));
+            Parked(exception, message.Type, message.Id, attempts);
+        }
+        else
+        {
+            _messages.Add(1, new KeyValuePair<string, object?>("outcome", "retry"));
+            WillRetry(exception, message.Type, message.Id, attempts, next.ToString("O", CultureInfo.InvariantCulture));
+        }
+    }
+
+    // Type and a short message only: never the stack, which can embed values.
+    private static string Describe(Exception exception)
+    {
+        string text = $"{exception.GetType().Name}: {exception.Message}";
+        return text.Length <= _maxErrorLength ? text : text[.._maxErrorLength];
+    }
+
+    [LoggerMessage(EventId = 9501, Level = LogLevel.Debug, Message = "Outbox message {Type} {MessageId} delivered")]
+    private partial void Delivered(string type, Guid messageId);
+
+    [LoggerMessage(EventId = 9502, Level = LogLevel.Warning, Message = "Outbox message {Type} {MessageId} failed on attempt {Attempt}; retrying at {NextAttemptAt}")]
+    private partial void WillRetry(Exception exception, string type, Guid messageId, int attempt, string nextAttemptAt);
+
+    [LoggerMessage(EventId = 9503, Level = LogLevel.Error, Message = "Outbox message {Type} {MessageId} parked as dead after {Attempts} attempts")]
+    private partial void Parked(Exception exception, string type, Guid messageId, int attempts);
+
+    private sealed record ClaimedMessage(Guid Id, string Type, string Payload, string? TraceId, string? CorrelationId, int Attempts);
+}

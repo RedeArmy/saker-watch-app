@@ -1,6 +1,6 @@
 using System.Data.Common;
-using System.Globalization;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
 
@@ -10,34 +10,16 @@ namespace SakerWatch.BuildingBlocks.Persistence;
 /// pooled connection can never carry the previous caller's identity into the next request.
 /// </summary>
 /// <param name="user">Source of the validated user id.</param>
-public sealed class UserContextConnectionInterceptor(IDbUserContext user) : DbConnectionInterceptor
+public sealed class UserContextConnectionInterceptor(ICurrentUser user) : DbConnectionInterceptor
 {
     /// <summary>Name of the session variable the policies read.</summary>
     public const string SettingName = "app.current_user_id";
 
     /// <inheritdoc />
-    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
-    {
-        using DbCommand command = CreateCommand(connection);
-        command.ExecuteNonQuery();
-    }
+    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData) =>
+        UserContextSql.Apply(connection, user.UserId);
 
     /// <inheritdoc />
-    public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
-    {
-        await using DbCommand command = CreateCommand(connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private DbCommand CreateCommand(DbConnection connection)
-    {
-        DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT set_config('app.current_user_id', @user, false)";
-
-        DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "user";
-        parameter.Value = user.CurrentUserId?.ToString("D", CultureInfo.InvariantCulture) ?? string.Empty;
-        command.Parameters.Add(parameter);
-        return command;
-    }
+    public override Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default) =>
+        UserContextSql.ApplyAsync(connection, user.UserId, cancellationToken);
 }

@@ -261,6 +261,37 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task NoFunctionOfTheApplicationSchemas_IsExecutableByPublic()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        string? exposed = await db.Admin.ScalarAsync<string>(
+            """
+            SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname IN ('platform', 'identity') AND has_function_privilege('public', p.oid, 'EXECUTE')
+            """);
+
+        exposed.Should().BeNull("every function must be granted explicitly to the roles that need it");
+    }
+
+    [Fact]
+    public async Task EverySecurityDefinerFunction_PinsItsSearchPath()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        string? unpinned = await db.Admin.ScalarAsync<string>(
+            """
+            SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname IN ('platform', 'identity') AND p.prosecdef
+              AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%')
+            """);
+
+        unpinned.Should().BeNull("an unpinned search_path lets a caller shadow objects used by a privileged function");
+    }
+
+    [Fact]
     public async Task UpgradeFromThePreviousVersion_KeepsDataAndAppliesSecurity()
     {
         string admin = await postgres.CreateDatabaseAsync();

@@ -7,9 +7,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Web;
 using SakerWatch.BuildingBlocks.Web.Health;
+using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
 
@@ -30,6 +32,10 @@ internal static class WebTestServer
                 {
                     services.AddRouting();
                     services.AddSakerWeb(context.Configuration);
+                    services.AddHttpContextAccessor();
+                    // Stands in for the idempotency behavior: ?replayed marks the response as replayed.
+                    services.AddScoped<IIdempotencyContext>(provider => new FakeIdempotencyContext(
+                        provider.GetRequiredService<IHttpContextAccessor>().HttpContext!.Request.Query.ContainsKey("replayed")));
                     services.AddHealthChecks().AddCheck("db", () => readyFails ? HealthCheckResult.Unhealthy("db down") : HealthCheckResult.Healthy(), tags: [HealthEndpoints.ReadyTag]);
                 })
                 .Configure(app =>
@@ -57,6 +63,10 @@ internal static class WebTestServer
                             (type == ErrorType.Validation
                                 ? Error.Validation("demo.invalid", "Bad input", new Dictionary<string, string[]> { ["name"] = ["required"] })
                                 : new Error("demo.error", "Something", type)).ToProblem());
+                        endpoints.MapPost("/idem", (HttpContext http) => IdempotencyKeyReader.Require(http).ToHttpResult(key => Results.Ok(key)));
+                        endpoints.MapPost("/idem/{id}", (HttpContext http, string id) => IdempotencyKeyReader.Require(http).ToHttpResult(key => Results.Ok(key)));
+                        endpoints.MapGet("/busy", () => Error.Conflict(IdempotencyErrors.InProgress, "still running").ToProblem());
+                        endpoints.MapGet("/reuse", () => Error.Unprocessable(IdempotencyErrors.KeyReuse, "different request").ToProblem());
                         endpoints.MapGet("/result/ok", () => Result.Success(5).ToHttpResult(v => Results.Ok(v)));
                         endpoints.MapDelete("/result/none", () => Result.Success().ToHttpResult());
                     });
@@ -65,4 +75,9 @@ internal static class WebTestServer
         await host.StartAsync();
         return host;
     }
+}
+
+internal sealed class FakeIdempotencyContext(bool replayed) : IIdempotencyContext
+{
+    public bool Replayed => replayed;
 }

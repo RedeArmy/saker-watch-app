@@ -45,7 +45,7 @@ public sealed class BuildingBlockRulesTests
     public void BuildingBlocksApplication_DoesNotDependOnWebOrPersistenceFrameworks()
     {
         TestResult result = Types.InAssembly(typeof(ISender).Assembly).ShouldNot().HaveDependencyOnAny(
-            "Microsoft.AspNetCore", "Microsoft.EntityFrameworkCore", "Npgsql", "MongoDB.Driver").GetResult();
+            "Microsoft.AspNetCore", "Microsoft.EntityFrameworkCore", "Npgsql", "MongoDB.Driver", "SakerWatch.BuildingBlocks.Persistence").GetResult();
 
         result.IsSuccessful.Should().BeTrue("the application pipeline is transport- and storage-agnostic");
     }

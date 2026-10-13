@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.BuildingBlocks.Kernel.Tracing;
 
 namespace SakerWatch.BuildingBlocks.Web.Correlation;
 
@@ -31,6 +33,11 @@ public sealed class CorrelationIdMiddleware(RequestDelegate next, IIdGenerator i
         context.Items[ItemKey] = correlationId;
         context.Response.Headers[HeaderName] = correlationId;
         Activity.Current?.SetTag("saker.correlation_id", correlationId);
+        if (context.RequestServices.GetService<CorrelationContext>() is { } scoped)
+        {
+            scoped.CorrelationId = correlationId;
+        }
+
 
         using IDisposable? scope = logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId });
         await next(context);

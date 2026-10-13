@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
 namespace SakerWatch.BuildingBlocks.Web.Problems;
@@ -47,11 +48,23 @@ public static class ResultHttpExtensions
             extensions["errors"] = error.Details;
         }
 
-        return Results.Problem(
+        IResult problem = Results.Problem(
             statusCode: status,
             title: error.Type == ErrorType.Failure ? "An unexpected error occurred." : error.Message,
             detail: error.Type == ErrorType.Failure ? null : error.Message,
             type: ProblemTypeBase + error.Code,
             extensions: extensions);
+
+        // A duplicate that arrived while the first request is still running should retry shortly (ADR-0017).
+        return error.Code == IdempotencyErrors.InProgress ? new HeaderResult(problem, "Retry-After", "1") : problem;
+    }
+
+    private sealed class HeaderResult(IResult inner, string name, string value) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.Headers[name] = value;
+            return inner.ExecuteAsync(httpContext);
+        }
     }
 }

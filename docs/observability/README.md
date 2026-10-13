@@ -16,9 +16,11 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
-| `sakerwatch_jobs_queue_depth` / `_oldest_age_seconds` (gauge) | queue | backlog and staleness |
+| `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
+| `sakerwatch_jobs_queue_depth`, `sakerwatch_jobs_queue_oldest_age_seconds`, `sakerwatch_jobs_in_flight`, `sakerwatch_jobs_dead` (gauges, sampled every `Jobs:StatsInterval`) | none | backlog, staleness, running and parked jobs |
+| `sakerwatch_jobs_total` (counter), `sakerwatch_jobs_duration_seconds` (histogram) | type, outcome=success\|retry\|dead\|lease_lost\|released | job attempts |
 | `sakerwatch_jobs_dead_letter_total` (counter) | queue | poison messages |
-| `sakerwatch_idempotency_events_total` (counter) | outcome=replay\|mismatch\|conflict\|takeover | idempotency health |
+| `sakerwatch_idempotency_events_total` (counter) | outcome=claimed\|replay\|mismatch\|conflict (`takeover` is reserved for cross-store operations, ADR-0022) | idempotency health |
 | `sakerwatch_provider_call_duration_seconds` (histogram) | provider, outcome | provider health |
 | `sakerwatch_price_staleness_seconds` (gauge) | market | freshness SLO |
 | `sakerwatch_llm_tokens_total` (counter) | direction=in\|out, model | cost/capacity |
@@ -41,6 +43,20 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9302 | Information | `Migration step {Step} completed, {Applied} migrations applied` | `MigrationPipeline` |
 | 9303 | Error | `Migration step {Step} failed` (with exception) | `MigrationPipeline` |
 | 9311 | Information | `Mongo migration {Version} {Name} applied` | `MongoMigrationRunner` |
+| 9411 | Information | `Idempotent request replayed from the stored first attempt` | `IdempotencyBehavior` |
+| 9412 | Warning | `Idempotency-Key reused with a different request on {Method} {Route}` | `IdempotencyBehavior` |
+| 9413 | Warning | `Idempotency-Key still in progress on {Method} {Route}` | `IdempotencyBehavior` |
+| 9501 | Debug | `Outbox message {Type} {MessageId} delivered` | `OutboxProcessor` |
+| 9502 | Warning | `Outbox message {Type} {MessageId} failed on attempt {Attempt}; retrying at {NextAttemptAt}` (with exception) | `OutboxProcessor` |
+| 9503 | Error | `Outbox message {Type} {MessageId} parked as dead after {Attempts} attempts` (with exception) | `OutboxProcessor` |
+| 9504 | Error | `Outbox dispatcher iteration failed` (with exception) | `OutboxDispatcherService` |
+| 9511 | Warning | `Job {Type} {JobId} failed on attempt {Attempt}; it will retry` (with exception) | `JobProcessor` |
+| 9512 | Error | `Job {Type} {JobId} parked as dead after {Attempts} attempts` (with exception) | `JobProcessor` |
+| 9513 | Warning | `Job {Type} {JobId} lost its lease; this attempt was rolled back` | `JobProcessor` |
+| 9514 | Error | `{Count} job(s) parked as dead because their lease expired on the last allowed attempt` | `JobProcessor` |
+| 9515 | Warning | `Renewing the lease of job {JobId} failed; it will be retried on the next tick` (with exception) | `JobProcessor` |
+| 9516 | Error | `Job dispatcher iteration failed` (with exception) | `JobDispatcherService` |
+| 9517 | Warning | `Sampling the job queue for metrics failed` (with exception) | `JobDispatcherService` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction
