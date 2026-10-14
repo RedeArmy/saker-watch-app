@@ -46,7 +46,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<ApiTestHost> StartAsync(TimescalePostgresFixture postgres, Action<IEndpointRouteBuilder>? mapEndpoints = null, Action<IServiceCollection>? configureServices = null)
+    public static async Task<ApiTestHost> StartAsync(TimescalePostgresFixture postgres, Action<IEndpointRouteBuilder>? mapEndpoints = null, Action<IServiceCollection>? configureServices = null, (string Authority, string Audience)? live = null)
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
         FakeIdentityProvider idp = await FakeIdentityProvider.StartAsync();
@@ -58,8 +58,8 @@ internal sealed class ApiTestHost : IAsyncDisposable
                 {
                     ["ConnectionStrings:Postgres"] = db.Api,
                     ["Audit:ActorPepper"] = PepperBase64,
-                    ["Clavaris:Authority"] = idp.Issuer,
-                    ["Clavaris:Audience"] = FakeIdentityProvider.Audience,
+                    ["Clavaris:Authority"] = live?.Authority ?? idp.Issuer,
+                    ["Clavaris:Audience"] = live?.Audience ?? FakeIdentityProvider.Audience,
                     ["Clavaris:RequireHttpsMetadata"] = "false",
                 }))
                 .ConfigureServices((context, services) =>
@@ -71,7 +71,11 @@ internal sealed class ApiTestHost : IAsyncDisposable
                     services.AddSakerPostgres(context.Configuration);
                     services.AddSakerDbContext<IdentityDbContext>(IdentityDbContext.Schema);
                     services.AddClavarisAuth(context.Configuration);
-                    services.AddHttpClient(ClavarisAuthProvider.MetadataClientName).ConfigurePrimaryHttpMessageHandler(idp.CreateHandler);
+                    if (live is null)
+                    {
+                        services.AddHttpClient(ClavarisAuthProvider.MetadataClientName).ConfigurePrimaryHttpMessageHandler(idp.CreateHandler);
+                    }
+
                     services.AddSakerCurrentUser();
                     services.AddSakerAuthorization();
                     configureServices?.Invoke(services);
