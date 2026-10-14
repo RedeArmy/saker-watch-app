@@ -42,6 +42,9 @@ public static class SakerHttpClientExtensions
             client.Timeout = options.TotalTimeout + TimeSpan.FromSeconds(5);
         });
 
+        // A redirect would be followed below the allow-list check and could reach a host that is not on it, so none is followed.
+        builder.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+
         builder.AddHttpMessageHandler(provider =>
         {
             HttpClientResilienceOptions options = provider.GetRequiredService<IOptionsMonitor<HttpClientResilienceOptions>>().Get(name);
@@ -54,15 +57,20 @@ public static class SakerHttpClientExtensions
 
             pipeline.AddConcurrencyLimiter(options.MaxConcurrency, queueLimit: options.MaxConcurrency);
             pipeline.AddTimeout(options.TotalTimeout);
-            var retry = new HttpRetryStrategyOptions
+            // Polly rejects zero retries, so "no retries" means no retry strategy at all.
+            if (options.MaxRetries > 0)
             {
-                MaxRetryAttempts = options.MaxRetries,
-                BackoffType = DelayBackoffType.Exponential,
-                UseJitter = true,
-                Delay = options.RetryBaseDelay,
-            };
-            retry.DisableForUnsafeHttpMethods();
-            pipeline.AddRetry(retry);
+                var retry = new HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = options.MaxRetries,
+                    BackoffType = DelayBackoffType.Exponential,
+                    UseJitter = true,
+                    Delay = options.RetryBaseDelay,
+                };
+                retry.DisableForUnsafeHttpMethods();
+                pipeline.AddRetry(retry);
+            }
+
             pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
             {
                 FailureRatio = options.CircuitFailureRatio,

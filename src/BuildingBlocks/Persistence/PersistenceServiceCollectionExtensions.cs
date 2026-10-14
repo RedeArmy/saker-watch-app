@@ -3,11 +3,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Application.Audit;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
+using SakerWatch.BuildingBlocks.Persistence.Audit;
 using SakerWatch.BuildingBlocks.Persistence.Jobs;
 using SakerWatch.BuildingBlocks.Persistence.Outbox;
 
@@ -39,6 +41,14 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IOutbox, OutboxWriter>();
         services.TryAddScoped<IInbox, InboxStore>();
         services.TryAddScoped<IJobEnqueuer, JobEnqueuer>();
+
+        // The audit trail needs a secret pepper (Audit:ActorPepper); a host that cannot audit does not start.
+        services.AddOptions<AuditOptions>()
+            .Bind(configuration.GetSection(AuditOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AuditOptions>, AuditOptionsValidator>();
+        services.TryAddScoped<IAuditTrail, AuditTrail>();
 
         // Replaces the pipeline's no-op unit of work: commands now run in one database transaction.
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DbSession>());

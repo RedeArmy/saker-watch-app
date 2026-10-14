@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Web.Problems;
 
 namespace SakerWatch.BuildingBlocks.Web.RateLimiting;
@@ -88,7 +89,7 @@ public static class RateLimitingSetup
     // The user id comes only from the validated principal; the client IP is the fallback for anonymous callers.
     private static string PartitionKey(HttpContext context)
     {
-        string? user = context.User.FindFirstValue("sub") ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        string? user = context.User.FindFirstValue(SakerClaims.UserId) ?? context.User.FindFirstValue(SakerClaims.Subject) ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         return user is not null ? $"user:{user}" : $"ip:{context.Connection.RemoteIpAddress}";
     }
 

@@ -39,6 +39,19 @@ public sealed class ModuleBoundaryTests
     }
 
     [Fact]
+    public void Contracts_AreFrameworkFree()
+    {
+        foreach (string m in _modules)
+        {
+            TestResult result = Types.InAssembly(Load(m, "Contracts"))
+                .ShouldNot().HaveDependencyOnAny("Microsoft.AspNetCore", "Microsoft.EntityFrameworkCore", "Npgsql", "MongoDB.Driver", "StackExchange.Redis", "Microsoft.IdentityModel")
+                .GetResult();
+
+            result.IsSuccessful.Should().BeTrue($"{m}.Contracts is the public surface other modules compile against");
+        }
+    }
+
+    [Fact]
     public void AllModuleAssemblies_AreLoadable_SoRulesAreNotVacuouslySkipped()
     {
         foreach (string m in _modules)

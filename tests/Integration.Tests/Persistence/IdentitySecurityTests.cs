@@ -9,7 +9,7 @@ namespace SakerWatch.Integration.Tests.Persistence;
 public sealed class IdentitySecurityTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
 {
     private const string _provision =
-        "SELECT identity.provision_user(@id, @issuer, @sub, @email, @name, 'es-GT', now())";
+        "SELECT user_id FROM identity.provision_user(@id, @issuer, @sub, @email, @name, 'es-GT', now())";
 
     private const string _issuer = "https://clavaris.example/o/org-1";
 

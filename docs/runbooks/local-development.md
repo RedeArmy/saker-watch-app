@@ -28,6 +28,12 @@ API_DB_PASSWORD=... WORKER_DB_PASSWORD=... MONGO_APP_PASSWORD=... bash scripts/d
 creates `saker_api` (member of `api_role`), `saker_worker` (member of `worker_role`) and the MongoDB user `saker_app` (`readWrite` on the application database), and sets per-login timeouts (role settings are not inherited through membership, so they live on the logins). It is idempotent. Production creates the same logins with its own secret manager.
 
 ## 5. Run the hosts
+Both hosts also need a secret pepper for the audit log, generated once and kept out of the repository (`openssl rand -base64 32`):
+```
+Audit__ActorPepper=<base64, at least 32 bytes>
+```
+The API needs the Clavaris settings (`docs/clavaris-contract.md`): `Clavaris__Authority` (the Organization issuer URL), `Clavaris__Audience`, and `Clavaris__RequireHttpsMetadata=false` only against a local fake or a local Clavaris. `Clavaris__Audience` is the OAuth client id (A-021), and the issuer is `http://localhost:8080/o/{organizationId}` for a Clavaris on port 8080. On the first valid token of a new account the API creates the internal user and writes `user.provisioned` to the audit log.
+
 Both hosts fail at startup when a connection string is missing:
 ```
 ConnectionStrings__Postgres="Host=127.0.0.1;Database=saker;Username=saker_api;Password=<API_DB_PASSWORD>"      # worker: saker_worker
