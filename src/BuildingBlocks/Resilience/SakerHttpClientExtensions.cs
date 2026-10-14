@@ -42,6 +42,9 @@ public static class SakerHttpClientExtensions
             client.Timeout = options.TotalTimeout + TimeSpan.FromSeconds(5);
         });
 
+        // A redirect would be followed below the allow-list check and could reach a host that is not on it, so none is followed.
+        builder.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+
         builder.AddHttpMessageHandler(provider =>
         {
             HttpClientResilienceOptions options = provider.GetRequiredService<IOptionsMonitor<HttpClientResilienceOptions>>().Get(name);
