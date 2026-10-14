@@ -77,7 +77,7 @@ internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, 
         try
         {
             string authority = options.Authority.TrimEnd('/');
-            using JsonDocument discovery = JsonDocument.Parse(await http.GetStringAsync($"{authority}/.well-known/openid-configuration", cancellationToken));
+            using var discovery = JsonDocument.Parse(await http.GetStringAsync($"{authority}/.well-known/openid-configuration", cancellationToken));
             string? issuer = discovery.RootElement.TryGetProperty("issuer", out JsonElement i) ? i.GetString() : null;
             string? jwksUri = discovery.RootElement.TryGetProperty("jwks_uri", out JsonElement j) ? j.GetString() : null;
             if (!string.Equals(issuer?.TrimEnd('/'), authority, StringComparison.Ordinal) || string.IsNullOrWhiteSpace(jwksUri))

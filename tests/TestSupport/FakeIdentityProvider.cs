@@ -269,7 +269,7 @@ public sealed class FakeIdentityProvider : IAsyncDisposable
     private static string Tamper(string token)
     {
         string[] parts = token.Split('.');
-        using JsonDocument doc = JsonDocument.Parse(Convert.FromBase64String(Pad(parts[1])));
+        using var doc = JsonDocument.Parse(Convert.FromBase64String(Pad(parts[1])));
         var payload = doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object)p.Value.Clone());
         payload["sub"] = "someone-else";
         return $"{parts[0]}.{Encode(payload)}.{parts[2]}";
