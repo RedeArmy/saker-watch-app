@@ -48,6 +48,22 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task IdToken_WithoutScope_IsRefused_EvenWithTheRightSignatureAndAudience()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+
+        (await RejectionOf(harness, new TokenSpec { Subject = "account-id-token", Scope = null, AsIdToken = true })).Should().Be(AuthFailureReason.NotAnAccessToken);
+    }
+
+    [Fact]
+    public async Task DelegatedToken_WithAnActClaim_IsRefused()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+
+        (await RejectionOf(harness, new TokenSpec { Subject = "account-impersonated", Delegated = true })).Should().Be(AuthFailureReason.NotAnAccessToken);
+    }
+
+    [Fact]
     public async Task TokenWithoutEmailOrName_IsAuthenticated_BecauseClavarisDoesNotEmitThem()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();

@@ -147,6 +147,14 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
             return Rejected(AuthFailureReason.MissingSubject);
         }
 
+        // Clavaris signs ID tokens with the same key and the same audience (the client id), so signature and audience alone cannot
+        // tell them from an access token (verified live: an ID token was accepted). An access token always carries "scope"; an
+        // ID token never does. A delegated token ("act", operator impersonation) is refused until the API can attribute it.
+        if (!token.TryGetClaim("scope", out _) || token.TryGetClaim("act", out _))
+        {
+            return Rejected(AuthFailureReason.NotAnAccessToken);
+        }
+
         string[] scopes = Scopes(token);
         return new AuthResult.Authenticated(new ValidatedIdentity(
             token.Issuer,

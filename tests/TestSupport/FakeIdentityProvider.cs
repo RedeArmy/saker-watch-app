@@ -26,7 +26,13 @@ public sealed record TokenSpec
     public string? Locale { get; init; } = "es-GT";
 
     /// <summary>The <c>scope</c> claim.</summary>
-    public string Scope { get; init; } = "openid profile email";
+    public string? Scope { get; init; } = "openid profile email";
+
+    /// <summary>Adds an <c>act</c> (delegation) claim, as an operator impersonation token carries.</summary>
+    public bool Delegated { get; init; }
+
+    /// <summary>Adds the ID-token-only <c>nonce</c> claim.</summary>
+    public bool AsIdToken { get; init; }
 
     /// <summary>True emits <c>scope</c> as a JSON array, as Clavaris does; false as an RFC 9068 space-delimited string.</summary>
     public bool ScopeAsArray { get; init; } = true;
@@ -169,8 +175,22 @@ public sealed class FakeIdentityProvider : IAsyncDisposable
         {
             ["iss"] = s.Issuer ?? Issuer,
             ["iat"] = now.ToUnixTimeSeconds(),
-            ["scope"] = s.ScopeAsArray ? s.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries) : s.Scope,
         };
+        if (s.Scope is not null)
+        {
+            payload["scope"] = s.ScopeAsArray ? s.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries) : s.Scope;
+        }
+
+        if (s.Delegated)
+        {
+            payload["act"] = new Dictionary<string, object> { ["sub"] = "platform-operator" };
+        }
+
+        if (s.AsIdToken)
+        {
+            payload["nonce"] = "n1";
+        }
+
         if (s.Subject is not null)
         {
             payload["sub"] = s.Subject;

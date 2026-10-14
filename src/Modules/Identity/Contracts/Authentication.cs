@@ -31,6 +31,10 @@ public enum AuthFailureReason
     MissingSubject,
 
     /// <summary>The provider's signing keys could not be obtained; validation fails closed.</summary>
+    /// <summary>The token is validly signed but is not an end-user access token: an ID token (no <c>scope</c>) or a delegated/impersonation token (<c>act</c>).</summary>
+    NotAnAccessToken,
+
+    /// <summary>Discovery or the key set could not be fetched; fail closed.</summary>
     KeyDiscoveryFailed,
 
     /// <summary>Any other validation failure.</summary>
