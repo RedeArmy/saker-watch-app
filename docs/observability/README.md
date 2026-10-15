@@ -67,6 +67,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9702 | Information | `Retention is disabled; no daily run will be scheduled` | `RetentionScheduler` |
 | 9703 | Information | `Retention run enqueued for today ({Mode})` | `RetentionScheduler` |
 | 9704 | Warning | `Could not enqueue today's retention run; it will be retried shortly (after at most one minute)` (with exception) | `RetentionScheduler` |
+| 9705 | Warning | `Retention is in dry-run mode in the {Environment} environment: nothing is deleted, so expired data accumulates until Retention:DryRun is switched off` (logged at every start outside Development) | `RetentionScheduler` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction

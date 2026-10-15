@@ -19,6 +19,7 @@
     <PackageReference Include="Testcontainers.MongoDb" />
     <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />

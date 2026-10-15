@@ -118,6 +118,24 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task Worker_CanRemoveEveryIdempotencyKeyOfOneUser_AndNobodyElses()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var alice = Guid.CreateVersion7();
+        var bob = Guid.CreateVersion7();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await db.Admin.ExecuteAsync(_insertKey, KeyParams(alice, "a-1", now.AddHours(5)));
+        await db.Admin.ExecuteAsync(_insertKey, KeyParams(alice, "a-2", now.AddHours(-5)));
+        await db.Admin.ExecuteAsync(_insertKey, KeyParams(bob, "b-1", now.AddHours(5)));
+
+        int removed = await db.Worker.AsUserScalarAsync<int>(null, "SELECT platform.purge_user_idempotency_keys(@user)", ("user", alice));
+
+        removed.Should().Be(2, "fresh and expired keys alike");
+        (await db.Admin.ScalarAsync<string>("SELECT key FROM platform.idempotency_keys")).Should().Be("b-1");
+        await ExpectDeniedAsync(() => db.Api.AsUserScalarAsync<int>(bob, "SELECT platform.purge_user_idempotency_keys(@user)", ("user", bob)));
+    }
+
+    [Fact]
     public async Task Api_CannotRunThePurgeFunction()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

@@ -57,6 +57,7 @@ public sealed class RetentionIntegrationTests(TimescalePostgresFixture postgres)
         IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
         services.AddSingleton(clock ?? TimeProvider.System);
         services.AddSingleton<IIdGenerator, TimeProviderIdGenerator>();
         services.AddScoped<ICurrentUser, AnonymousCurrentUser>();

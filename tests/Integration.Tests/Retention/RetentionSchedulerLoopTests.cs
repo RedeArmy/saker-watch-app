@@ -1,9 +1,12 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.Retention.Application;
 using SakerWatch.Retention.Infrastructure;
 
@@ -41,6 +44,31 @@ public sealed class RetentionSchedulerLoopTests
         return advanced;
     }
 
+    [Theory]
+    [InlineData("Production", true, true)]
+    [InlineData("Production", false, false)]
+    [InlineData("Development", true, false)]
+    public async Task DryRunOutsideDevelopment_IsWarnedAboutAtStart(string environment, bool dryRun, bool warned)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 14, 3, 0, 0, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddScoped<IJobEnqueuer>(_ => new FlakyEnqueuer(failures: 0));
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        var logger = new FakeLogger<RetentionScheduler>();
+        using var scheduler = new RetentionScheduler(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new RetentionOptions { DryRun = dryRun }),
+            clock,
+            new TestHostEnvironment(environment),
+            logger);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await AdvanceUntilAsync(clock, () => false, TimeSpan.Zero, TimeSpan.Zero);
+        await scheduler.StopAsync(CancellationToken.None);
+
+        logger.Collector.GetSnapshot().Any(r => r.Id.Id == 9705).Should().Be(warned);
+    }
+
     [Fact]
     public async Task AfterAFailure_TheScheduleIsRetriedWithinMinutes_ThenKeepsTheNormalSpacing()
     {
@@ -50,7 +78,7 @@ public sealed class RetentionSchedulerLoopTests
         services.AddScoped<IJobEnqueuer>(_ => enqueuer);
         await using ServiceProvider provider = services.BuildServiceProvider();
         var settings = new RetentionOptions { CheckInterval = TimeSpan.FromHours(1) };
-        using var scheduler = new RetentionScheduler(provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(settings), clock, NullLogger<RetentionScheduler>.Instance);
+        using var scheduler = new RetentionScheduler(provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(settings), clock, new TestHostEnvironment(Environments.Production), NullLogger<RetentionScheduler>.Instance);
 
         await scheduler.StartAsync(CancellationToken.None);
         await AdvanceUntilAsync(clock, () => enqueuer.Calls >= 1, TimeSpan.Zero, TimeSpan.Zero);
