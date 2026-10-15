@@ -18,12 +18,22 @@ namespace SakerWatch.Integration.Tests.Api;
 internal sealed class RealApiHost : WebApplicationFactory<HostApi::Program>
 {
     private readonly bool _ownsIdp;
+    private readonly (string Authority, string Audience)? _live;
 
-    private RealApiHost(MigratedDatabase db, FakeIdentityProvider idp, bool ownsIdp)
+    private RealApiHost(MigratedDatabase db, FakeIdentityProvider idp, bool ownsIdp, (string Authority, string Audience)? live = null)
     {
+        _live = live;
         Db = db;
         Idp = idp;
         _ownsIdp = ownsIdp;
+    }
+
+    /// <summary>Starts a host that validates tokens against a <b>running</b> Clavaris instead of the fake (opt-in live checks).</summary>
+    public static async Task<RealApiHost> StartLiveAsync(TimescalePostgresFixture postgres, string authority, string audience)
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        FakeIdentityProvider idp = await FakeIdentityProvider.StartAsync();
+        return new RealApiHost(db, idp, ownsIdp: true, (authority, audience));
     }
 
     public MigratedDatabase Db { get; }
@@ -57,10 +67,13 @@ internal sealed class RealApiHost : WebApplicationFactory<HostApi::Program>
         builder.UseSetting("ConnectionStrings:Redis", "127.0.0.1:1,abortConnect=false");
         builder.UseSetting("OpenApi:Anonymous", "true");
         builder.UseSetting("Audit:ActorPepper", ApiTestHost.PepperBase64);
-        builder.UseSetting("Clavaris:Authority", Idp.Issuer);
-        builder.UseSetting("Clavaris:Audience", FakeIdentityProvider.Audience);
+        builder.UseSetting("Clavaris:Authority", _live?.Authority ?? Idp.Issuer);
+        builder.UseSetting("Clavaris:Audience", _live?.Audience ?? FakeIdentityProvider.Audience);
         builder.UseSetting("Clavaris:RequireHttpsMetadata", "false");
-        builder.ConfigureTestServices(services =>
-            services.AddHttpClient(ClavarisAuthProvider.MetadataClientName).ConfigurePrimaryHttpMessageHandler(Idp.CreateHandler));
+        if (_live is null)
+        {
+            builder.ConfigureTestServices(services =>
+                services.AddHttpClient(ClavarisAuthProvider.MetadataClientName).ConfigurePrimaryHttpMessageHandler(Idp.CreateHandler));
+        }
     }
 }

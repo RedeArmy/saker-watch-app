@@ -39,6 +39,28 @@ jobs:
           if docker compose -f deploy/docker-compose.yml config --services | grep -q fake-idp; then
             echo "fake-idp is enabled without the dev profile"; exit 1
           fi
+  api-contract:
+    # Contract.Tests (in the dotnet job) already fail when docs/api/openapi.v1.json does not match the code. This job compares the
+    # committed contract with the one on the base branch and fails on a breaking change (ADR-0014); additive changes pass.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: Breaking changes against the base branch
+        run: |
+          mkdir -p "$RUNNER_TEMP/base"
+          if ! git show "origin/${BASE_REF}:docs/api/openapi.v1.json" > "$RUNNER_TEMP/base/openapi.v1.json" 2>/dev/null; then
+            echo "The base branch has no committed contract yet; nothing to compare."
+            exit 0
+          fi
+          # tufin/oasdiff v1.33.0, pinned by digest.
+          docker run --rm -v "$RUNNER_TEMP/base:/base:ro" -v "$PWD/docs/api:/head:ro" \
+            tufin/oasdiff@sha256:6263a96dd2ef0726c54e21fea9b8e1607eac4841add0079324b424c1f52b819c \
+            breaking /base/openapi.v1.json /head/openapi.v1.json --fail-on ERR
   secrets:
     runs-on: ubuntu-latest
     timeout-minutes: 10

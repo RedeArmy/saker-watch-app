@@ -51,7 +51,7 @@ Set up with the management API: Organization, one confidential `OAuthClient` (`a
 - Discovery now advertises only `client_secret_basic` and `client_secret_post`, scopes `openid profile email offline_access`, `RS256`, PKCE `S256`.
 - Sign-up needs an email verification link; a local instance without SMTP logs `account_registered_verification_email_send_failed`, so a dev account is verified by setting `email_verified_at` in the Clavaris database.
 - Platform token: `client_credentials` at `{base}/oauth2/token` (issuer `{base}`, `aud` = the platform client id, TTL 300 s). Creating an Organization needs scope `platform:organizations:write` and an `ownerPlatformAccountId`. Registering an OAuth client is `POST /api/v1/admin/organizations/{id}/clients` with `redirectUris`, `allowedGrantTypes`, `allowedScopes` (`/secret-keys` mints machine clients instead).
-- Opt-in checks: `CLAVARIS_LIVE_AUTHORITY`, `CLAVARIS_LIVE_AUDIENCE`, `CLAVARIS_LIVE_TOKEN_FILE` enable `ClavarisLiveTests` (provider) and `ClavarisLiveApiTests` (full API: authentication, provisioning, audit, RLS). A token for another audience or another Organization's issuer is refused (checked live).
+- Opt-in checks: `CLAVARIS_LIVE_AUTHORITY`, `CLAVARIS_LIVE_AUDIENCE`, `CLAVARIS_LIVE_TOKEN_FILE` enable `ClavarisLiveTests` (provider) and `ClavarisLiveApiTests` (the real `Host.Api`: authentication, `GET /v1/me`, the idempotent `PUT /v1/me/preferences`, provisioning, audit, RLS). A token for another audience or another Organization's issuer is refused (checked live).
 
 ## Still UNCONFIRMED (verify against a running Clavaris instance)
 - [ ] Whether a resource indicator (RFC 8707) can be requested to get a stable `aud` instead of the client id.
