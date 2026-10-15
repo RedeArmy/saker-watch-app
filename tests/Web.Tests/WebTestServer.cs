@@ -22,7 +22,7 @@ internal static class WebTestServer
 {
     public const string TestUserHeader = "X-Test-User";
 
-    public static async Task<IHost> StartAsync(Dictionary<string, string?>? settings = null, bool readyFails = false)
+    public static async Task<IHost> StartAsync(Dictionary<string, string?>? settings = null, bool readyFails = false, ReadyCheckCounter? counter = null, TimeProvider? clock = null)
     {
         IHost host = new HostBuilder()
             .ConfigureWebHost(web => web
@@ -32,11 +32,21 @@ internal static class WebTestServer
                 {
                     services.AddRouting();
                     services.AddSakerWeb(context.Configuration);
+                    // Registered after AddSakerWeb so it replaces the system clock.
+                    if (clock is not null)
+                    {
+                        services.AddSingleton(clock);
+                    }
+
                     services.AddHttpContextAccessor();
                     // Stands in for the idempotency behavior: ?replayed marks the response as replayed.
                     services.AddScoped<IIdempotencyContext>(provider => new FakeIdempotencyContext(
                         provider.GetRequiredService<IHttpContextAccessor>().HttpContext!.Request.Query.ContainsKey("replayed")));
-                    services.AddHealthChecks().AddCheck("db", () => readyFails ? HealthCheckResult.Unhealthy("db down") : HealthCheckResult.Healthy(), tags: [HealthEndpoints.ReadyTag]);
+                    services.AddHealthChecks().AddCheck("db", () =>
+                    {
+                        counter?.Increment();
+                        return readyFails ? HealthCheckResult.Unhealthy("db down") : HealthCheckResult.Healthy();
+                    }, tags: [HealthEndpoints.ReadyTag]);
                 })
                 .Configure(app =>
                 {
@@ -81,4 +91,14 @@ internal static class WebTestServer
 internal sealed class FakeIdempotencyContext(bool replayed) : IIdempotencyContext
 {
     public bool Replayed => replayed;
+}
+
+/// <summary>Counts how many times the readiness check really ran.</summary>
+internal sealed class ReadyCheckCounter
+{
+    private int _runs;
+
+    public int Runs => Volatile.Read(ref _runs);
+
+    public void Increment() => Interlocked.Increment(ref _runs);
 }

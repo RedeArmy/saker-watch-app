@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Web.Correlation;
+using SakerWatch.BuildingBlocks.Web.Health;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
@@ -34,6 +35,7 @@ public static class WebSetup
             options.IncludeSubDomains = true;
         });
         services.AddHealthChecks();
+        services.AddSakerReadiness();
         return services;
     }
 

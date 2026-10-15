@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Web.Correlation;
 using SakerWatch.BuildingBlocks.Web.Problems;
@@ -240,6 +241,49 @@ public sealed class WebBuildingBlockTests
         using var host = await WebTestServer.StartAsync();
 
         (await host.GetTestClient().GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Readiness_RunsTheChecksOncePerCacheWindow_HoweverManyProbesArrive()
+    {
+        var counter = new ReadyCheckCounter();
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        using var host = await WebTestServer.StartAsync(new() { ["Health:ReadinessCacheSeconds"] = "5" }, counter: counter, clock: clock);
+        HttpClient client = host.GetTestClient();
+
+        HttpResponseMessage[] burst = await Task.WhenAll(Enumerable.Range(0, 50).Select(_ => client.GetAsync("/health/ready")));
+
+        burst.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
+        counter.Runs.Should().Be(1, "a burst of probes costs one run of the checks");
+
+        clock.Advance(TimeSpan.FromSeconds(6));
+        (await client.GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
+        counter.Runs.Should().Be(2, "the result is refreshed once the window has passed");
+    }
+
+    [Fact]
+    public async Task Readiness_WithTheCacheOff_RunsTheChecksOnEveryProbe()
+    {
+        var counter = new ReadyCheckCounter();
+        using var host = await WebTestServer.StartAsync(new() { ["Health:ReadinessCacheSeconds"] = "0" }, counter: counter);
+        HttpClient client = host.GetTestClient();
+
+        await client.GetAsync("/health/ready");
+        await client.GetAsync("/health/ready");
+
+        counter.Runs.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Readiness_IsNotRateLimited_BecauseItIsCheap()
+    {
+        using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PermitLimit"] = "1", ["RateLimiting:PreAuthenticationPermitLimit"] = "1" });
+        HttpClient client = host.GetTestClient();
+
+        for (int i = 0; i < 5; i++)
+        {
+            (await client.GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
     }
 
     [Fact]
