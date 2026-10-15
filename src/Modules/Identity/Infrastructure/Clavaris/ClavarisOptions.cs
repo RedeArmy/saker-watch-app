@@ -41,6 +41,13 @@ public sealed class ClavarisOptions
     [Range(typeof(TimeSpan), "00:00:01", "7.00:00:00")]
     public TimeSpan MaximumKeyAge { get; set; } = TimeSpan.FromHours(24);
 
+    /// <summary>
+    /// How long a key refresh waits for the provider while usable keys are already cached. A slow or unreachable provider then
+    /// delays one request per refresh interval by at most this long; the others carry on with the cached keys.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:00:00.100", "00:00:30")]
+    public TimeSpan StaleRefreshTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>Require HTTPS for the Authority and its discovery documents. Turn off only for a local fake provider.</summary>
     public bool RequireHttpsMetadata { get; set; } = true;
 }

@@ -320,6 +320,50 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task ASlowProvider_DelaysOnlyTheRefreshingRequest_AndOnlyForTheStaleRefreshTimeout()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?>
+        {
+            ["Clavaris:MetadataLifetime"] = "00:10:00",
+            ["Clavaris:StaleRefreshTimeout"] = "00:00:02",
+        });
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue();
+        harness.Clock.Advance(TimeSpan.FromMinutes(11));
+        var neverAnswers = new TaskCompletionSource();
+        harness.Idp.Stall = neverAnswers.Task;
+
+        Task<AuthResult> refreshing = harness.AuthenticateAsync();
+        await harness.Idp.WaitForStalledRequestsAsync();
+
+        AuthResult[] others = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => harness.AuthenticateAsync())).WaitAsync(TimeSpan.FromSeconds(5));
+        others.Should().OnlyContain(r => r.IsSuccess, "callers with usable keys do not queue behind a slow refresh");
+        refreshing.IsCompleted.Should().BeFalse("the refreshing request is still waiting for the provider");
+
+        harness.Clock.Advance(TimeSpan.FromSeconds(3));
+        (await refreshing.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess.Should().BeTrue("after the timeout it carries on with the cached keys");
+        harness.Logs.GetSnapshot().Should().Contain(r => r.Id.Id == 9603);
+        neverAnswers.SetResult();
+    }
+
+    [Fact]
+    public async Task WithoutAnyCachedKeys_CallersWaitForTheFirstFetch()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+        var release = new TaskCompletionSource();
+        harness.Idp.Stall = release.Task;
+
+        Task<AuthResult> first = harness.AuthenticateAsync();
+        await harness.Idp.WaitForStalledRequestsAsync();
+        Task<AuthResult> second = harness.AuthenticateAsync();
+
+        second.IsCompleted.Should().BeFalse("there is nothing to validate with yet");
+        release.SetResult();
+        (await first.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess.Should().BeTrue();
+        (await second.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess.Should().BeTrue();
+        harness.Idp.JwksRequests.Should().Be(1, "the second caller reuses the first fetch");
+    }
+
+    [Fact]
     public async Task TokenWithoutASubject_IsRefused()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();

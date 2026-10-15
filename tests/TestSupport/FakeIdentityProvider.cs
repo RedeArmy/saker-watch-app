@@ -80,6 +80,7 @@ public sealed class FakeIdentityProvider : IAsyncDisposable
     private readonly Lock _gate = new();
     private int _discoveryRequests;
     private int _jwksRequests;
+    private int _stalledRequests;
 
     private FakeIdentityProvider(string organization, TimeProvider clock)
     {
@@ -103,6 +104,23 @@ public sealed class FakeIdentityProvider : IAsyncDisposable
 
     /// <summary>When true, discovery and JWKS answer 503 (the provider is down).</summary>
     public bool Unavailable { get; set; }
+
+    /// <summary>When set, discovery and key requests wait for this task before answering (a slow provider); cancel the caller's token to abandon them.</summary>
+    public Task? Stall { get; set; }
+
+    /// <summary>How many requests have reached <see cref="Stall"/> so far.</summary>
+    public int StalledRequests => Volatile.Read(ref _stalledRequests);
+
+    /// <summary>Completes once <paramref name="count"/> requests are waiting on <see cref="Stall"/>; fails after five real seconds.</summary>
+    public async Task WaitForStalledRequestsAsync(int count = 1)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (StalledRequests < count)
+        {
+            await Task.Yield();
+            timeout.Token.ThrowIfCancellationRequested();
+        }
+    }
 
     /// <summary>When set, the discovery document claims this issuer instead of the real one (a misdirected or hostile document).</summary>
     public string? DiscoveryIssuerOverride { get; set; }
@@ -292,6 +310,12 @@ public sealed class FakeIdentityProvider : IAsyncDisposable
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             return;
+        }
+
+        if (Stall is { } stall)
+        {
+            Interlocked.Increment(ref _stalledRequests);
+            await stall.WaitAsync(context.RequestAborted);
         }
 
         if (context.Request.Path == $"{prefix}/.well-known/openid-configuration")
