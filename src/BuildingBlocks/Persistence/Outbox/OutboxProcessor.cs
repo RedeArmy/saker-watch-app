@@ -168,6 +168,8 @@ public sealed partial class OutboxProcessor
         await update.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    // A parked message gets next_attempt_at = infinity: the claim query orders by that column through a partial index, so parked rows
+    // (which are never purged automatically) sit at the end of the index instead of being walked past on every poll.
     // The failure is written on its own connection, after the failed unit of work rolled back. It only applies while the attempt
     // count is still the one this worker claimed, so another worker that took the message in between is not overwritten.
     private async Task RecordFailureAsync(ClaimedMessage message, Exception exception, CancellationToken cancellationToken)
@@ -179,9 +181,14 @@ public sealed partial class OutboxProcessor
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var update = new NpgsqlCommand(
-            "UPDATE platform.outbox_messages SET attempts = @attempts, next_attempt_at = @next, last_error = @error WHERE id = @id AND processed_at IS NULL AND attempts = @expected",
+            """
+            UPDATE platform.outbox_messages
+            SET attempts = @attempts, next_attempt_at = CASE WHEN @dead THEN 'infinity'::timestamptz ELSE @next END, last_error = @error
+            WHERE id = @id AND processed_at IS NULL AND attempts = @expected
+            """,
             connection);
         update.Parameters.AddWithValue("attempts", attempts);
+        update.Parameters.AddWithValue("dead", dead);
         update.Parameters.AddWithValue("next", next);
         update.Parameters.AddWithValue("error", Describe(exception));
         update.Parameters.AddWithValue("id", message.Id);
