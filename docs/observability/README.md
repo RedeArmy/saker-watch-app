@@ -14,14 +14,14 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | Metric (type) | Labels | Purpose |
 |---|---|---|
 | `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
-| `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive | requests rejected by the rate limiter |
+| `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive\|pre-authentication | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
 | `sakerwatch_auth_attempts_total` (counter) | outcome=success\|<refusal reason> (Malformed, InvalidSignature, UnknownKey, UnsupportedAlgorithm, Expired, NotYetValid, InvalidIssuer, InvalidAudience, MissingSubject, NotAnAccessToken, KeyDiscoveryFailed, Invalid) | access token validation; a spike of refusals or any `KeyDiscoveryFailed` is a symptom |
 | `sakerwatch_retention_rows_total` (counter) | target=IdempotencyKeys\|OutboxProcessed\|InboxProcessed\|JobsSucceeded\|JobsDead, mode=dry_run\|delete | rows removed by a retention run, or that a dry run found removable; a delete run that keeps reporting `more remaining` means the backlog outgrows the batch limit |
 | `sakerwatch_jobs_queue_depth`, `sakerwatch_jobs_queue_oldest_age_seconds`, `sakerwatch_jobs_in_flight`, `sakerwatch_jobs_dead` (gauges, sampled every `Jobs:StatsInterval`) | none | backlog, staleness, running and parked jobs |
 | `sakerwatch_jobs_total` (counter), `sakerwatch_jobs_duration_seconds` (histogram) | type, outcome=success\|retry\|dead\|lease_lost\|released | job attempts |
-| `sakerwatch_jobs_dead_letter_total` (counter) | queue | poison messages |
+| `sakerwatch_jobs_dead_letter_total` (counter) | none | poison messages |
 | `sakerwatch_idempotency_events_total` (counter) | outcome=claimed\|replay\|mismatch\|conflict (`takeover` is reserved for cross-store operations, ADR-0022) | idempotency health |
 | `sakerwatch_provider_call_duration_seconds` (histogram) | provider, outcome | provider health |
 | `sakerwatch_price_staleness_seconds` (gauge) | market | freshness SLO |
@@ -61,6 +61,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9517 | Warning | `Sampling the job queue for metrics failed` (with exception) | `JobDispatcherService` |
 | 9601 | Error | `Could not obtain the identity provider's signing keys; tokens are refused until they can be fetched` (with exception) | `ClavarisAuthProvider` |
 | 9602 | Warning | `Access token rejected for an unclassified reason ({ExceptionType})` (with exception) | `ClavarisAuthProvider` |
+| 9603 | Warning | `Could not refresh the identity provider's signing keys; serving the cached keys, fetched {AgeMinutes} minutes ago` (with exception) | `ClavarisAuthProvider` |
 | 9701 | Information | `Retention {Target} ({Mode}): {Rows} rows, more remaining: {MoreRemaining}` | `RetentionRunner` |
 | 9702 | Information | `Retention is disabled; no daily run will be scheduled` | `RetentionScheduler` |
 | 9703 | Information | `Retention run enqueued for today ({Mode})` | `RetentionScheduler` |
@@ -83,4 +84,4 @@ One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch
 Watchlist read p95 < 300 ms @ 500 items · API availability ≥ 99.5 %/month · price staleness < 24 h on trading days · nightly analysis completes in the configured window.
 
 ## Alerts (symptom-first, each linked to a runbook)
-Burn-rate (availability, latency) · queue oldest-age · dead-letter > 0 · provider error rate · price staleness · LLM failure rate · readiness failing · idempotency `in_progress` stuck.
+Burn-rate (availability, latency) · queue oldest-age · dead-letter > 0 · provider error rate · price staleness · LLM failure rate · readiness failing · signing-key refresh failing (event 9603) · outbox rows parked (`attempts >= max`). An idempotency `in_progress` alert returns with the cross-store operations of Phase 4 (ADR-0022).

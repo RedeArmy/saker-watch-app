@@ -27,7 +27,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0012-ci-cd-and-deployment.md | ADR 0012 | Eder | approved | 0 | 2026-10-12 |
 | docs/runbooks/provider-outage.md | Runbook provider-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
-| docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | stub | 5 | 2026-10-12 |
+| docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | draft | 5 | 2026-10-15 |
 | docs/runbooks/restore.md | Runbook restore | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/key-rotation.md | Runbook key-rotation | Eder | stub | 5 | 2026-10-12 |
 | README.md | Local setup (10 minutes) | Eder | approved | 0 | 2026-10-12 |
