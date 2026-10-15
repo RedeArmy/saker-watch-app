@@ -46,6 +46,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9302 | Information | `Migration step {Step} completed, {Applied} migrations applied` | `MigrationPipeline` |
 | 9303 | Error | `Migration step {Step} failed` (with exception) | `MigrationPipeline` |
 | 9311 | Information | `Mongo migration {Version} {Name} applied` | `MongoMigrationRunner` |
+| 9312 | Warning | `Renewing the Mongo migration lock failed; it will be retried on the next tick` (with exception) | `MongoMigrationRunner` |
 | 9411 | Information | `Idempotent request replayed from the stored first attempt` | `IdempotencyBehavior` |
 | 9412 | Warning | `Idempotency-Key reused with a different request on {Method} {Route}` | `IdempotencyBehavior` |
 | 9413 | Warning | `Idempotency-Key still in progress on {Method} {Route}` | `IdempotencyBehavior` |
