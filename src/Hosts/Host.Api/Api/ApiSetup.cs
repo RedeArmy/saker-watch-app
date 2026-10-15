@@ -3,6 +3,7 @@ using Asp.Versioning.Builder;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
+using SakerWatch.BuildingBlocks.Web.Idempotency;
 
 namespace SakerWatch.Hosts.Api.Api;
 
@@ -66,6 +67,19 @@ internal static class ApiSetup
                     [
                         new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("bearer", context.Document)] = [] },
                     ];
+                }
+
+                if (context.Description.ActionDescriptor.EndpointMetadata.OfType<RequiresIdempotencyKeyMetadata>().Any())
+                {
+                    operation.Parameters ??= [];
+                    operation.Parameters.Add(new OpenApiParameter
+                    {
+                        Name = IdempotencyKeyReader.HeaderName,
+                        In = ParameterLocation.Header,
+                        Required = true,
+                        Description = "Client-generated key (16-64 letters, digits, '-' or '_') that makes the request safe to retry. A repeat with the same key and body replays the first response.",
+                        Schema = new OpenApiSchema { Type = JsonSchemaType.String, Pattern = "^[A-Za-z0-9_-]{16,64}$" },
+                    });
                 }
 
                 return Task.CompletedTask;

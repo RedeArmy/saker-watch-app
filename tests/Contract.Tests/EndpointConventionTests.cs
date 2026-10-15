@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using SakerWatch.BuildingBlocks.Web.Idempotency;
 
 namespace SakerWatch.Contract.Tests;
 
@@ -71,6 +72,35 @@ public sealed class EndpointConventionTests(ApiFactory factory) : IClassFixture<
         foreach (RouteEndpoint endpoint in ApiEndpoints())
         {
             endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull($"{endpoint.DisplayName} must not be open to anonymous callers (default-deny)");
+        }
+    }
+
+    [Fact]
+    public void EveryMutatingEndpoint_RequiresAnIdempotencyKey_OrIsExplicitlyExempt()
+    {
+        string[] safe = [HttpMethods.Get, HttpMethods.Head, HttpMethods.Options];
+        foreach (RouteEndpoint endpoint in ApiEndpoints())
+        {
+            string[] methods = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.ToArray();
+            if (methods.All(method => safe.Contains(method, StringComparer.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            bool declared = endpoint.Metadata.GetMetadata<RequiresIdempotencyKeyMetadata>() is not null
+                || endpoint.Metadata.GetMetadata<IdempotencyExemptMetadata>() is not null;
+            declared.Should().BeTrue($"{endpoint.DisplayName} mutates state and must call RequireIdempotencyKey() or ExemptFromIdempotencyKey(reason)");
+        }
+    }
+
+    [Fact]
+    public void EveryMutatingEndpoint_DocumentsTheIdempotencyResponses()
+    {
+        foreach (RouteEndpoint endpoint in ApiEndpoints().Where(e => e.Metadata.GetMetadata<RequiresIdempotencyKeyMetadata>() is not null))
+        {
+            int[] statuses = endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>().Select(m => m.StatusCode).ToArray();
+
+            statuses.Should().Contain([StatusCodes.Status400BadRequest, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity], $"{endpoint.DisplayName} must document 400, 409 and 422");
         }
     }
 }
