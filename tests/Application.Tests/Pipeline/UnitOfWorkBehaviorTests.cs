@@ -8,6 +8,8 @@ using SakerWatch.Demo.Features;
 
 namespace SakerWatch.Application.Tests.Pipeline;
 
+// The span and metric listeners are process-wide, so classes that send the shared ReadQuery must not run at the same time.
+[Collection(PipelineTelemetryGroup.Name)]
 public sealed class UnitOfWorkBehaviorTests : IDisposable
 {
     private sealed class RecordingUnitOfWork : IUnitOfWork

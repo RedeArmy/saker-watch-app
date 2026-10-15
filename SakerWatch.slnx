@@ -45,4 +45,5 @@
   <Project Path="tests/Web.Tests/SakerWatch.Web.Tests.csproj" />
   <Project Path="tests/Observability.Tests/SakerWatch.Observability.Tests.csproj" />
   <Project Path="tests/Integration.Tests/SakerWatch.Integration.Tests.csproj" />
+  <Project Path="tests/Contract.Tests/SakerWatch.Contract.Tests.csproj" />
 </Solution>

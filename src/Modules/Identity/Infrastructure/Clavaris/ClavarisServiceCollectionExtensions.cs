@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.Identity.Application;
+using SakerWatch.Identity.Application.Features.GetMe;
 using SakerWatch.Identity.Application.Features.ProvisionUser;
+using SakerWatch.Identity.Application.Features.UpdatePreferences;
 using SakerWatch.Identity.Contracts;
 using SakerWatch.Identity.Infrastructure.Persistence;
 
@@ -52,6 +54,8 @@ public static class ClavarisServiceCollectionExtensions
 
         services.AddIdentityApplication();
         services.AddScoped<IUserDirectory, UserDirectory>();
+        services.AddScoped<IUserProfileReader, UserProfileReader>();
+        services.AddScoped<IUserPreferencesWriter, UserPreferencesWriter>();
         return services;
     }
 }

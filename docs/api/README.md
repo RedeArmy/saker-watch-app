@@ -10,6 +10,19 @@
 ## Every endpoint must declare
 `WithName`, `WithSummary`, `WithDescription`, `WithTags`, typed `Produces<T>` for every status code, `ProducesProblem` (RFC 9457) for errors, auth requirement, request/response examples, and `Idempotency-Key`/pagination/ETag behavior where relevant.
 
+## Contract workflow (implemented, milestone 1.5a)
+- The document is generated from code by `Asp.Versioning.OpenApi` + `Microsoft.AspNetCore.OpenApi` and served at `/openapi/v1.json`. It declares the `bearer` scheme and a `security` requirement on every operation that is not anonymous; it pins no `servers` entry.
+- `tests/Contract.Tests` hosts `Host.Api` in memory and fails when the generated document differs from `docs/api/openapi.v1.json`. After an intentional API change run `UPDATE_OPENAPI=1 dotnet test tests/Contract.Tests`, review the diff and commit it with the change.
+- The same project enforces the conventions below on every mapped endpoint: versioned route, `WithName`, `WithSummary`, `WithDescription`, `WithTags`, a documented success response, 401 and 500 as problems, and no anonymous API endpoint.
+- Exposure: the document is anonymous only in Development or with `OpenApi:Anonymous=true`; elsewhere it needs a valid token. Swagger UI (`/swagger`) is served in Development only.
+
+## HTTP hardening (milestone 1.5c)
+- **Headers on every response**, errors included: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`, `Cross-Origin-Resource-Policy: same-site`, `Permissions-Policy`, and `Cache-Control: no-store` unless the endpoint sets its own. Only the Swagger UI (Development) is exempt from the CSP. No `Server` header.
+- **HSTS** (`max-age=31536000; includeSubDomains`, no preload) is sent over HTTPS outside Development. TLS ends at Caddy, so the API does not redirect to HTTPS itself.
+- **Forwarded headers** (`X-Forwarded-For/Proto/Host`) are believed only from the proxies in `ForwardedHeaders:KnownProxies` / `ForwardedHeaders:KnownNetworks` (loopback when unset), one hop deep. Set them to the proxy's address or network in every deployment, otherwise the per-IP limit sees the proxy for everyone.
+- **CORS is closed.** The Next.js BFF calls the API server to server, so no browser origin needs access. `Cors:AllowedOrigins` may list exact origins (https; http only for localhost) for a deliberate exception; no wildcard, path or credentials. Malformed security configuration stops the startup.
+- **Request bodies** above 1 MiB get 413.
+
 ## Versioning
 URL segment `/v1`. Additive changes are non-breaking; anything else needs `/v2`. Deprecation: `deprecated: true`, `Deprecation` and `Sunset` headers, at least one release cycle of overlap.
 
@@ -20,8 +33,12 @@ Plural kebab-case resources (computations are named as actions, e.g. `/v1/calcul
 304 not modified (ETag), 400 validation, 401/403 auth, 404 not found, 409 conflict/concurrent duplicate, 412 `If-Match` mismatch, 422 idempotency-key payload mismatch, 428 `If-Match` required, 429 rate limit, 503 dependency unavailable (with `Retry-After`), other 5xx never leak internals; every error carries a correlation id. A replayed idempotent response carries `Idempotent-Replayed: true`. Pure computations such as the calculator are exempt from `Idempotency-Key`.
 
 ## Pipeline order (Host.Api)
-`UseSakerWeb()` (correlation id, exception handler, status-code pages) first, then routing, authentication/authorization, then `UseSakerRateLimiting()` and the endpoints. The rate limiter must follow authentication so callers are partitioned by user id (client IP only for anonymous callers) and must follow routing so per-endpoint policies and `DisableRateLimiting` (health endpoints) apply. Behind Caddy the real client IP requires forwarded-header handling, which the API host adds when it is composed.
+`UseSakerWeb()` first: forwarded headers, HSTS (outside Development), security headers, correlation id, idempotent-replay header, exception handler, status-code pages. Then request logging, `UseRouting`, CORS, Swagger UI (Development only), authentication, user resolution, authorization (default-deny), `UseSakerRateLimiting()` and the endpoints. The rate limiter follows authentication so callers are partitioned by user id (client IP only for anonymous callers, which is the real client address only for proxies listed in `ForwardedHeaders`) and follows routing so per-endpoint policies and `DisableRateLimiting` (health endpoints) apply. CORS comes before authentication so a preflight is answered without a token.
 Problem responses use `type = urn:sakerwatch:error:<code>` plus `code`, `correlationId`, `traceId` and, for validation, `errors`; unexpected failures never include their message.
+
+## Reference endpoints (milestone 1.5)
+- `GET /v1/me`: the caller's profile; creates the account on first sight.
+- `PUT /v1/me/preferences`: sets the UI locale (`es-GT` or `en-US`); the worked example of a mutating endpoint. It calls `.RequireIdempotencyKey()`, which adds the required `Idempotency-Key` header to the OpenAPI operation. `Contract.Tests` fail for any mutating endpoint that neither calls `RequireIdempotencyKey()` nor `ExemptFromIdempotencyKey(reason)` and for one that does not document 400, 409 and 422.
 
 ## Idempotency in code (ADR-0017, ADR-0022)
 A command that creates or triggers work implements `IIdempotentRequest`; its endpoint builds the key with `IdempotencyKeyReader.Require(httpContext)`, which returns `400` with `idempotency.key_required` or `idempotency.key_invalid` when the header is missing or not 16-64 characters of letters, digits, `-` or `_`. The key is scoped by user, HTTP method and route template, and recorded in the same transaction as the effect. A repeated key with the same request replays the first successful result with `Idempotent-Replayed: true` and does not run the handler again; a different request under the same key returns `422` (`idempotency.key_reuse`); a duplicate that arrives while the first is still running waits for it and, if it cannot get the lock in time, returns `409` (`idempotency.in_progress`) with `Retry-After: 1`. Only successes are stored: a failure rolls back and leaves no key, so the client may retry. A first response larger than 64 KB is not stored and its replay returns `409` (`idempotency.replay_unavailable`); fetch the resource with `GET`.
