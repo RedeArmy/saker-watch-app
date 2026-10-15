@@ -168,7 +168,8 @@ public sealed partial class OutboxProcessor
         await update.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    // The failure is written on its own connection, after the failed unit of work rolled back.
+    // The failure is written on its own connection, after the failed unit of work rolled back. It only applies while the attempt
+    // count is still the one this worker claimed, so another worker that took the message in between is not overwritten.
     private async Task RecordFailureAsync(ClaimedMessage message, Exception exception, CancellationToken cancellationToken)
     {
         int attempts = message.Attempts + 1;
@@ -178,12 +179,13 @@ public sealed partial class OutboxProcessor
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var update = new NpgsqlCommand(
-            "UPDATE platform.outbox_messages SET attempts = @attempts, next_attempt_at = @next, last_error = @error WHERE id = @id AND processed_at IS NULL",
+            "UPDATE platform.outbox_messages SET attempts = @attempts, next_attempt_at = @next, last_error = @error WHERE id = @id AND processed_at IS NULL AND attempts = @expected",
             connection);
         update.Parameters.AddWithValue("attempts", attempts);
         update.Parameters.AddWithValue("next", next);
         update.Parameters.AddWithValue("error", Describe(exception));
         update.Parameters.AddWithValue("id", message.Id);
+        update.Parameters.AddWithValue("expected", message.Attempts);
         await update.ExecuteNonQueryAsync(cancellationToken);
 
         if (dead)

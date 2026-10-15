@@ -2,6 +2,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using SakerWatch.Integration.Tests.Identity;
 using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.TestSupport;
@@ -23,6 +25,23 @@ public sealed class ApiRobustnessTests(TimescalePostgresFixture postgres) : ICla
         }
 
         return request;
+    }
+
+    [Fact]
+    public async Task AFloodOfInvalidTokens_IsRateLimitedBeforeTheyAreValidated()
+    {
+        await using RealApiHost api = await RealApiHost.StartAsync(postgres);
+        using var limited = api.WithWebHostBuilder(builder => builder.UseSetting("RateLimiting:PreAuthenticationPermitLimit", "5"));
+        using HttpClient client = limited.CreateClient();
+
+        var statuses = new List<HttpStatusCode>();
+        for (int i = 0; i < 8; i++)
+        {
+            statuses.Add((await client.SendAsync(ApiTestHost.Get("/v1/me", "not-a-valid-token"))).StatusCode);
+        }
+
+        statuses.Take(5).Should().AllBeEquivalentTo(HttpStatusCode.Unauthorized);
+        statuses.Skip(5).Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests, "the limiter runs before authentication, so refused requests count");
     }
 
     [Theory]

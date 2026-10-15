@@ -52,6 +52,7 @@ internal static class WebTestServer
                         await next();
                     });
                     app.UseRouting();
+                    app.UseSakerPreAuthenticationRateLimiting();
                     app.UseSakerRateLimiting();
                     app.UseEndpoints(endpoints =>
                     {

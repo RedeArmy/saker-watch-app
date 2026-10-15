@@ -289,6 +289,37 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task WhenTheProviderGoesDownAfterTheKeysExpire_TheLastKeysKeepWorking_ForAWhile_ThenFailClosed()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?>
+        {
+            ["Clavaris:MetadataLifetime"] = "00:10:00",
+            ["Clavaris:MaximumKeyAge"] = "02:00:00",
+        });
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue();
+        harness.Idp.Unavailable = true;
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(11));
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue("the keys are stale but the provider is down");
+        harness.Logs.GetSnapshot().Should().Contain(r => r.Id.Id == 9603, "serving stale keys is logged");
+
+        int requests = harness.Idp.JwksRequests;
+        for (int i = 0; i < 5; i++)
+        {
+            (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue();
+        }
+
+        harness.Idp.JwksRequests.Should().Be(requests, "a failed refresh is not retried on every request");
+
+        harness.Clock.Advance(TimeSpan.FromHours(2));
+        (await RejectionOf(harness, new TokenSpec())).Should().Be(AuthFailureReason.KeyDiscoveryFailed, "keys older than MaximumKeyAge are not trusted");
+
+        harness.Idp.Unavailable = false;
+        harness.Clock.Advance(TimeSpan.FromSeconds(31));
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue("the provider is back");
+    }
+
+    [Fact]
     public async Task TokenWithoutASubject_IsRefused()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();

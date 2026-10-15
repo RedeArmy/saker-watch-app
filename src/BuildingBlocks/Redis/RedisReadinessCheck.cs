@@ -17,7 +17,7 @@ public sealed class RedisReadinessCheck(IConnectionMultiplexer connection) : IHe
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
-            return HealthCheckResult.Unhealthy("Redis is not reachable.");
+            return HealthCheckResult.Unhealthy("Redis is not reachable.", ex);
         }
     }
 }

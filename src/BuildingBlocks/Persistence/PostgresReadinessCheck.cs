@@ -21,7 +21,7 @@ public sealed class PostgresReadinessCheck(IOptions<PostgresOptions> options) : 
         }
         catch (Exception ex) when (ex is NpgsqlException or TimeoutException or InvalidOperationException)
         {
-            return HealthCheckResult.Unhealthy("PostgreSQL is not reachable.");
+            return HealthCheckResult.Unhealthy("PostgreSQL is not reachable.", ex);
         }
     }
 }

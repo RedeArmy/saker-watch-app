@@ -28,6 +28,13 @@ public sealed class RateLimitingOptions
     [Range(1, 100_000)]
     public int ExpensivePermitLimit { get; set; } = 10;
 
+    /// <summary>
+    /// Requests per window and client IP before authentication. It stops floods of invalid tokens, which would otherwise cost
+    /// signature validation each; it is higher than <see cref="PermitLimit"/> because several users may share an address.
+    /// </summary>
+    [Range(1, 1_000_000)]
+    public int PreAuthenticationPermitLimit { get; set; } = 600;
+
     /// <summary>Window length in seconds.</summary>
     [Range(1, 3600)]
     public int WindowSeconds { get; set; } = 60;
@@ -62,10 +69,14 @@ public static class RateLimitingSetup
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddSingleton<PreAuthenticationRateLimiter>();
         services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            limiter.OnRejected = WriteRejectionAsync;
+            limiter.OnRejected = (rejected, _) => WriteRejectionAsync(
+                rejected.HttpContext,
+                rejected.Lease,
+                rejected.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "global");
         });
         services.AddOptions<RateLimiterOptions>().Configure<IOptions<RateLimitingOptions>>((limiter, settings) =>
         {
@@ -76,6 +87,31 @@ public static class RateLimitingSetup
                 RateLimitPartition.GetFixedWindowLimiter(PartitionKey(context), _ => Window(o.ExpensivePermitLimit, o.WindowSeconds)));
         });
         return services;
+    }
+
+    /// <summary>
+    /// Adds the limiter that runs before authentication, keyed by client IP only (no token has been looked at yet). Place it after
+    /// <c>UseRouting</c> so endpoints that opt out with <c>DisableRateLimiting</c> (health probes) are skipped.
+    /// </summary>
+    public static IApplicationBuilder UseSakerPreAuthenticationRateLimiting(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        return app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<DisableRateLimitingAttribute>() is null)
+            {
+                using RateLimitLease lease = await context.RequestServices.GetRequiredService<PreAuthenticationRateLimiter>()
+                    .AcquireAsync(context, context.RequestAborted);
+                if (!lease.IsAcquired)
+                {
+                    await WriteRejectionAsync(context, lease, "pre-authentication");
+                    return;
+                }
+            }
+
+            await next(context);
+        });
     }
 
     private static FixedWindowRateLimiterOptions Window(int permits, int seconds) => new()
@@ -93,12 +129,11 @@ public static class RateLimitingSetup
         return user is not null ? $"user:{user}" : $"ip:{context.Connection.RemoteIpAddress}";
     }
 
-    private static async ValueTask WriteRejectionAsync(OnRejectedContext context, CancellationToken _)
+    private static async ValueTask WriteRejectionAsync(HttpContext http, RateLimitLease lease, string policy)
     {
-        HttpContext http = context.HttpContext;
-        _rejected.Add(1, new KeyValuePair<string, object?>("policy", http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "global"));
+        _rejected.Add(1, new KeyValuePair<string, object?>("policy", policy));
 
-        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
+        if (lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
         {
             http.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
         }
@@ -117,4 +152,34 @@ public static class RateLimitingSetup
             },
         });
     }
+}
+
+/// <summary>Fixed-window limiter per client IP for requests that have not been authenticated yet.</summary>
+public sealed class PreAuthenticationRateLimiter : IDisposable
+{
+    private readonly PartitionedRateLimiter<HttpContext> _limiter;
+
+    /// <summary>Creates the limiter from the configured limits.</summary>
+    public PreAuthenticationRateLimiter(IOptions<RateLimitingOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        RateLimitingOptions o = options.Value;
+        _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context => RateLimitPartition.GetFixedWindowLimiter(
+            $"ip:{context.Connection.RemoteIpAddress}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = o.PreAuthenticationPermitLimit,
+                Window = TimeSpan.FromSeconds(o.WindowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+    }
+
+    /// <summary>Takes one permit for the caller's address.</summary>
+    public ValueTask<RateLimitLease> AcquireAsync(HttpContext context, CancellationToken cancellationToken) =>
+        _limiter.AcquireAsync(context, 1, cancellationToken);
+
+    /// <inheritdoc />
+    public void Dispose() => _limiter.Dispose();
 }

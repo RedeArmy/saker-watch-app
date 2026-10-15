@@ -85,8 +85,10 @@ public static class WebSetup
     }
 
     /// <summary>
-    /// Adds the rate limiter. It must run after <c>UseRouting</c> (so per-endpoint policies and
+    /// Adds the per-caller rate limiter. It must run after <c>UseRouting</c> (so per-endpoint policies and
     /// <c>DisableRateLimiting</c> are honored) and after authentication (so callers are partitioned by user, not by IP).
+    /// Requests refused earlier (invalid or missing token) never reach it; <c>UseSakerPreAuthenticationRateLimiting</c>
+    /// limits those by client IP before authentication.
     /// </summary>
     public static IApplicationBuilder UseSakerRateLimiting(this IApplicationBuilder app)
     {
