@@ -14,6 +14,9 @@ namespace SakerWatch.Observability.Tests;
 [Collection("Console.Out")]
 public sealed class ConsoleSinkTests
 {
+    private static readonly Action<Microsoft.Extensions.Logging.ILogger, Exception?> _lastWords =
+        LoggerMessage.Define(LogLevel.Error, new EventId(1, "LastWords"), "last words before shutdown");
+
     private sealed class BlockingWriter : TextWriter
     {
         private readonly ManualResetEventSlim _release = new(false);
@@ -119,7 +122,7 @@ public sealed class ConsoleSinkTests
             HostApplicationBuilder builder = Host.CreateApplicationBuilder();
             builder.AddSakerObservability("svc-flush");
             using IHost host = builder.Build();
-            host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("test").LogError("last words before shutdown");
+            _lastWords(host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("test"), null);
             return Task.FromResult(0);
         });
 
