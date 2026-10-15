@@ -133,6 +133,49 @@ public sealed class ResilienceTests
         client.MaxResponseContentBufferSize.Should().Be(1234);
     }
 
+    [Theory]
+    [InlineData("https://api.provider.test:8443/quote")]
+    [InlineData("https://api.provider.test:80/quote")]
+    [InlineData("http://api.provider.test:443/quote")]
+    public async Task AHostNameAlone_AllowsOnlyTheDefaultPort(string url)
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary, o => o.AllowInsecureHttp = true);
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        Func<Task> act = () => client.GetAsync(url);
+
+        await act.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+        primary.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AHostWithAPort_AllowsThatPortOnly()
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary, o => o.AllowedHosts = ["api.provider.test:8443"]);
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        (await client.GetAsync("https://api.provider.test:8443/quote")).StatusCode.Should().Be(HttpStatusCode.OK);
+        Func<Task> otherPort = () => client.GetAsync("https://api.provider.test:9443/quote");
+        Func<Task> defaultPort = () => client.GetAsync("https://api.provider.test/quote");
+
+        await otherPort.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+        await defaultPort.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+    }
+
+    [Fact]
+    public async Task ARelativeRequestUri_IsRefusedCleanly()
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary);
+        using var invoker = new HttpMessageInvoker(provider.GetRequiredService<IHttpMessageHandlerFactory>().CreateHandler(_clientName));
+
+        Func<Task> act = () => invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("/quote", UriKind.Relative)), CancellationToken.None);
+
+        await act.Should().ThrowAsync<HttpRequestException>().WithMessage("*not absolute*");
+    }
+
     [Fact]
     public void Options_WithoutAllowedHosts_FailValidationOnResolve()
     {

@@ -37,12 +37,19 @@ public static class ClavarisServiceCollectionExtensions
         var settings = new ClavarisOptions();
         configuration.GetSection(ClavarisOptions.SectionName).Bind(settings);
         Uri.TryCreate(settings.Authority, UriKind.Absolute, out Uri? authority);
+        // Only the Authority's own host and port: a host name alone allows the default port, a local provider on 8080 needs host:port.
+        string allowedAuthority = authority?.Host ?? _unusableHost;
+        if (authority is { IsDefaultPort: false })
+        {
+            allowedAuthority = $"{authority.Host}:{authority.Port}";
+        }
+
         services.AddSakerHttpClient(
             ClavarisAuthProvider.MetadataClientName,
             authority ?? new UriBuilder(Uri.UriSchemeHttps, _unusableHost).Uri,
             http =>
             {
-                http.AllowedHosts = [authority?.Host ?? _unusableHost];
+                http.AllowedHosts = [allowedAuthority];
                 http.AllowInsecureHttp = !settings.RequireHttpsMetadata;
                 http.MaxResponseBytes = 256 * 1024;
             });

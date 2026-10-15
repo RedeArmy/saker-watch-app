@@ -413,6 +413,32 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Theory]
+    [InlineData("http://fake-idp.test:9999/steal")]
+    [InlineData("http://fake-idp.test:8080/steal")]
+    public async Task TheMetadataClient_CanOnlyReachTheAuthoritysPort(string url)
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+        HttpClient client = harness.Services.GetRequiredService<IHttpClientFactory>().CreateClient(ClavarisAuthProvider.MetadataClientName);
+
+        Func<Task> act = () => client.GetAsync(url);
+
+        await act.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+    }
+
+    [Fact]
+    public async Task AnAuthorityOnANonDefaultPort_AllowsThatPort()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?> { ["Clavaris:Authority"] = "http://localhost:8080/o/org-1" });
+        HttpClient client = harness.Services.GetRequiredService<IHttpClientFactory>().CreateClient(ClavarisAuthProvider.MetadataClientName);
+
+        Func<Task> otherPort = () => client.GetAsync("http://localhost:9090/o/org-1");
+
+        await otherPort.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+        harness.Services.GetRequiredService<IOptionsMonitor<SakerWatch.BuildingBlocks.Resilience.HttpClientResilienceOptions>>()
+            .Get(ClavarisAuthProvider.MetadataClientName).AllowedHosts.Should().Equal("localhost:8080");
+    }
+
+    [Theory]
     [InlineData("", "api", "must be an absolute URL")]
     [InlineData("not a url", "api", "must be an absolute URL")]
     [InlineData("http://clavaris.example/o/x", "api", "must use https")]
