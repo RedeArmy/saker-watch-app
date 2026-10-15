@@ -63,6 +63,18 @@ public sealed class ThrowingHandler : IRequestHandler<ThrowingCommand, Result>
         throw new InvalidOperationException("boom");
 }
 
+public sealed record WaitingCommand : ICommand;
+
+/// <summary>Stands in for a handler whose caller disconnects: it honours the token it is given.</summary>
+public sealed class WaitingHandler : IRequestHandler<WaitingCommand, Result>
+{
+    public async ValueTask<Result> Handle(WaitingCommand request, CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+        return Result.Success();
+    }
+}
+
 public sealed record ReadQuery : IQuery<int>;
 
 public sealed class ReadHandler : IRequestHandler<ReadQuery, Result<int>>

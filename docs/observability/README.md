@@ -13,7 +13,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 
 | Metric (type) | Labels | Purpose |
 |---|---|---|
-| `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
+| `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|cancelled\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive\|pre-authentication | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
@@ -39,6 +39,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9002 | Information | `Use case {UseCase} rejected with {ErrorCode} ({ErrorType}) in {ElapsedMs} ms` | `LoggingBehavior` (expected failure) |
 | 9003 | Error | `Use case {UseCase} failed with {ErrorCode} in {ElapsedMs} ms` | `LoggingBehavior` (`ErrorType.Failure`) |
 | 9004 | Error | `Use case {UseCase} threw after {ElapsedMs} ms` (with exception) | `LoggingBehavior` |
+| 9005 | Debug | `Use case {UseCase} cancelled after {ElapsedMs} ms` (caller disconnected or host stopping; not an error) | `LoggingBehavior` |
 | 9201 | Information | `Worker started` | `WorkerLifecycleService` |
 | 9202 | Information | `Worker stopping gracefully` | `WorkerLifecycleService` |
 | 9301 | Information | `Migration run started with {StepCount} steps` | `MigrationPipeline` |
@@ -78,7 +79,7 @@ Telemetry export: traces and metrics leave the process only when `OTEL_EXPORTER_
 Run a host against it with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` (and `OTEL_METRIC_EXPORT_INTERVAL=5000` for quick feedback). Traces go app -> Collector -> Tempo, metrics app -> Collector -> Prometheus (scraped on `:8889`), logs app (Serilog OTLP sink) -> Collector -> Loki; Loki lines and Tempo traces share the same trace id, which is how Grafana jumps from a log to its trace. The Collector also deletes `Authorization`/`Cookie` headers and URL query strings from traces and logs. Verified end to end with `Host.Api` on 2026-10-12 (metrics in Prometheus, log lines in Loki and traces in Tempo for the same request).
 
 ### Spans
-One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts do not mark the span as failed).
+One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts, and cancellations by the caller, `saker.outcome=cancelled`, do not mark the span as failed).
 
 ## SLOs (initial, from `docs/product-spec.md`)
 Watchlist read p95 < 300 ms @ 500 items · API availability ≥ 99.5 %/month · price staleness < 24 h on trading days · nightly analysis completes in the configured window.

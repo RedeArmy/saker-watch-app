@@ -16,9 +16,11 @@ public sealed class TracingBehavior<TRequest, TResponse>(TimeProvider timeProvid
     where TRequest : IRequest<TResponse>
     where TResponse : IResult<TResponse>
 {
+    private const string _outcomeTag = "saker.outcome";
     private const string _success = "success";
     private const string _failure = "failure";
     private const string _exception = "exception";
+    private const string _cancelled = "cancelled";
 
     /// <inheritdoc />
     public async ValueTask<TResponse> Handle(TRequest request, PipelineNext<TResponse> next, CancellationToken cancellationToken)
@@ -34,13 +36,13 @@ public sealed class TracingBehavior<TRequest, TResponse>(TimeProvider timeProvid
 
             if (response.IsSuccess)
             {
-                activity?.SetTag("saker.outcome", _success);
+                activity?.SetTag(_outcomeTag, _success);
                 Record(start, _success, errorType: null);
                 return response;
             }
 
             Error error = response.Error!;
-            activity?.SetTag("saker.outcome", _failure);
+            activity?.SetTag(_outcomeTag, _failure);
             activity?.SetTag("saker.error_code", error.Code);
             if (error.Type == ErrorType.Failure)
             {
@@ -50,9 +52,16 @@ public sealed class TracingBehavior<TRequest, TResponse>(TimeProvider timeProvid
             Record(start, _failure, error.Type.ToString());
             return response;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A client that disconnects or a host that stops is not an error of the use case; keep it out of the error rate.
+            activity?.SetTag(_outcomeTag, _cancelled);
+            Record(start, _cancelled, errorType: null);
+            throw;
+        }
         catch (Exception ex)
         {
-            activity?.SetTag("saker.outcome", _exception);
+            activity?.SetTag(_outcomeTag, _exception);
             activity?.AddException(ex);
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
             Record(start, _exception, errorType: null);
