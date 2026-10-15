@@ -22,6 +22,7 @@ using Serilog.Events;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureSakerKestrel();
 builder.AddSakerObservability(
     "saker-api",
     tracing => tracing.AddAspNetCoreInstrumentation(),
@@ -50,6 +51,7 @@ WebApplication app = builder.Build();
 app.UseSakerWeb();
 app.UseSerilogRequestLogging(options => options.GetLevel = RequestLogLevel);
 app.UseRouting();
+app.UseSakerCors();
 
 // Development only, and before authentication: the UI is static and the default-deny policy would otherwise answer 401 for it.
 if (app.Environment.IsDevelopment())

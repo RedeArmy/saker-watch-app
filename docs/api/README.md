@@ -16,6 +16,13 @@
 - The same project enforces the conventions below on every mapped endpoint: versioned route, `WithName`, `WithSummary`, `WithDescription`, `WithTags`, a documented success response, 401 and 500 as problems, and no anonymous API endpoint.
 - Exposure: the document is anonymous only in Development or with `OpenApi:Anonymous=true`; elsewhere it needs a valid token. Swagger UI (`/swagger`) is served in Development only.
 
+## HTTP hardening (milestone 1.5c)
+- **Headers on every response**, errors included: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`, `Cross-Origin-Resource-Policy: same-site`, `Permissions-Policy`, and `Cache-Control: no-store` unless the endpoint sets its own. Only the Swagger UI (Development) is exempt from the CSP. No `Server` header.
+- **HSTS** (`max-age=31536000; includeSubDomains`, no preload) is sent over HTTPS outside Development. TLS ends at Caddy, so the API does not redirect to HTTPS itself.
+- **Forwarded headers** (`X-Forwarded-For/Proto/Host`) are believed only from the proxies in `ForwardedHeaders:KnownProxies` / `ForwardedHeaders:KnownNetworks` (loopback when unset), one hop deep. Set them to the proxy's address or network in every deployment, otherwise the per-IP limit sees the proxy for everyone.
+- **CORS is closed.** The Next.js BFF calls the API server to server, so no browser origin needs access. `Cors:AllowedOrigins` may list exact origins (https; http only for localhost) for a deliberate exception; no wildcard, path or credentials. Malformed security configuration stops the startup.
+- **Request bodies** above 1 MiB get 413.
+
 ## Versioning
 URL segment `/v1`. Additive changes are non-breaking; anything else needs `/v2`. Deprecation: `deprecated: true`, `Deprecation` and `Sunset` headers, at least one release cycle of overlap.
 

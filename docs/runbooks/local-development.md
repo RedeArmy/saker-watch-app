@@ -48,3 +48,6 @@ dotnet run --project src/Hosts/Host.Api
 
 ## API contract
 `GET /openapi/v1.json` and `/swagger` are open in Development. To expose the document elsewhere set `OpenApi__Anonymous=true`. After changing an endpoint run `UPDATE_OPENAPI=1 dotnet test tests/Contract.Tests` and commit `docs/api/openapi.v1.json` (CI fails on a stale file).
+
+## Behind a reverse proxy
+The API trusts `X-Forwarded-*` only from `ForwardedHeaders__KnownProxies__0` (an address) or `ForwardedHeaders__KnownNetworks__0` (a CIDR such as `172.18.0.0/16`, the compose network of Caddy). Without it the client IP of every anonymous request is the proxy's. CORS stays closed unless `Cors__AllowedOrigins__0=https://app.example.com` is set (A-023).
