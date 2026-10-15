@@ -37,6 +37,7 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<UserContextConnectionInterceptor>();
         services.TryAddScoped<DbSession>();
         services.TryAddScoped<AmbientTransactionInterceptor>();
+        services.TryAddScoped<AmbientCommandInterceptor>();
         services.TryAddScoped<IIdempotencyStore, IdempotencyStore>();
         services.TryAddScoped<IOutbox, OutboxWriter>();
         services.TryAddScoped<IInbox, InboxStore>();
@@ -72,7 +73,8 @@ public static class PersistenceServiceCollectionExtensions
                 .UseNpgsql(provider.GetRequiredService<DbSession>().Connection, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", historySchema))
                 .AddInterceptors(
                     provider.GetRequiredService<UserContextConnectionInterceptor>(),
-                    provider.GetRequiredService<AmbientTransactionInterceptor>());
+                    provider.GetRequiredService<AmbientTransactionInterceptor>(),
+                    provider.GetRequiredService<AmbientCommandInterceptor>());
         });
         return services;
     }
