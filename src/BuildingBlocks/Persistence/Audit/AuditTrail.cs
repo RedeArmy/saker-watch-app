@@ -25,12 +25,22 @@ internal sealed class AuditOptionsValidator : IValidateOptions<AuditOptions>
 {
     public ValidateOptionsResult Validate(string? name, AuditOptions options)
     {
-        Span<byte> buffer = new byte[256];
-        return !string.IsNullOrEmpty(options.ActorPepper)
-            && Convert.TryFromBase64String(options.ActorPepper, buffer, out int written)
-            && written >= ActorReference.MinimumPepperBytes
+        string pepper = options.ActorPepper;
+        if (string.IsNullOrEmpty(pepper))
+        {
+            return ValidateOptionsResult.Fail("Audit:ActorPepper is required.");
+        }
+
+        // Base64 decodes to at most three bytes per four characters, so a buffer that size never rejects a long but valid secret.
+        Span<byte> buffer = new byte[pepper.Length];
+        if (!Convert.TryFromBase64String(pepper, buffer, out int written))
+        {
+            return ValidateOptionsResult.Fail("Audit:ActorPepper must be valid Base64.");
+        }
+
+        return written >= ActorReference.MinimumPepperBytes
             ? ValidateOptionsResult.Success
-            : ValidateOptionsResult.Fail($"Audit:ActorPepper must be Base64 of at least {ActorReference.MinimumPepperBytes} bytes.");
+            : ValidateOptionsResult.Fail($"Audit:ActorPepper must decode to at least {ActorReference.MinimumPepperBytes} bytes (it decodes to {written}).");
     }
 }
 
