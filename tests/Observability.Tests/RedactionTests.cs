@@ -76,6 +76,17 @@ public sealed class RedactionTests
     }
 
     [Fact]
+    public void SecretPairsInsideAnExceptionMessage_AreScrubbedFromOrdinaryStrings()
+    {
+        var (logger, sink) = CollectingSink.Create();
+
+        logger.Warning("Database said {Reason}", "could not connect: Host=db;Username=app;Password=hunter2;Database=saker");
+
+        string text = sink.RenderedText();
+        text.Should().NotContain("hunter2").And.Contain("Host=db");
+    }
+
+    [Fact]
     public void SequencesAndDictionaries_AreRedactedRecursively()
     {
         var (logger, sink) = CollectingSink.Create();

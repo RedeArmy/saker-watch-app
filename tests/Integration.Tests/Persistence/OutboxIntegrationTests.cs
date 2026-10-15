@@ -242,6 +242,21 @@ public sealed class OutboxIntegrationTests(TimescalePostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task TheErrorKeptOnAFailedMessage_HoldsNoCredentialsOrEmailsAndIsOneLine()
+    {
+        await using Env env = await StartAsync();
+        env.Probe.AlwaysFail = true;
+        env.Probe.FailureMessage = "cannot connect: Host=db.internal;Password=hunter2;User=eder@example.com\nat Npgsql.Connector.Open()";
+        await env.PublishAsync(NewMessage());
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        string error = (await env.Db.Admin.ScalarAsync<string>("SELECT last_error FROM platform.outbox_messages"))!;
+        error.Should().StartWith("InvalidOperationException:").And.Contain("Host=db.internal");
+        error.Should().NotContain("hunter2").And.NotContain("eder@example.com").And.NotContain("\n");
+    }
+
+    [Fact]
     public async Task AParkedMessage_SitsAtTheEndOfTheClaimOrder_AndTheRunbookRequeueRevivesIt()
     {
         await using Env env = await StartAsync(maxAttempts: 2);

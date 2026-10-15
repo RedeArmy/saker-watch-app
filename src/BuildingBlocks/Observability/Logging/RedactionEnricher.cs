@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using Serilog.Core;
 using Serilog.Events;
 
@@ -9,10 +9,10 @@ namespace SakerWatch.BuildingBlocks.Observability.Logging;
 /// properties whose name marks them sensitive (at any nesting depth) and scrubs JWTs and <c>Bearer</c>/<c>Basic</c>
 /// credentials from any string value. It must be the last enricher so it also covers values added by others.
 /// </summary>
-public sealed partial class RedactionEnricher : ILogEventEnricher
+public sealed class RedactionEnricher : ILogEventEnricher
 {
     /// <summary>Replacement text for redacted values.</summary>
-    public const string Mask = "***";
+    public const string Mask = SensitiveText.Mask;
 
     private static readonly string[] _sensitiveSuffixes =
         ["password", "passwd", "secret", "token", "authorization", "cookie", "apikey", "connectionstring", "pepper"];
@@ -52,7 +52,7 @@ public sealed partial class RedactionEnricher : ILogEventEnricher
         switch (value)
         {
             case ScalarValue { Value: string text }:
-                string scrubbed = ScrubString(text);
+                string scrubbed = SensitiveText.Scrub(text);
                 return ReferenceEquals(scrubbed, text) ? value : new ScalarValue(scrubbed);
 
             case StructureValue structure:
@@ -72,22 +72,4 @@ public sealed partial class RedactionEnricher : ILogEventEnricher
                 return value;
         }
     }
-
-    private static string ScrubString(string text)
-    {
-        if (text.Length < 8)
-        {
-            return text;
-        }
-
-        string result = JwtPattern().Replace(text, Mask);
-        result = AuthSchemePattern().Replace(result, "$1 " + Mask);
-        return result == text ? text : result;
-    }
-
-    [GeneratedRegex(@"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*")]
-    private static partial Regex JwtPattern();
-
-    [GeneratedRegex(@"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}", RegexOptions.IgnoreCase)]
-    private static partial Regex AuthSchemePattern();
 }

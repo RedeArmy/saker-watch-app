@@ -14,4 +14,7 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+  </ItemGroup>
 </Project>

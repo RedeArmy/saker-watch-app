@@ -16,6 +16,8 @@ internal sealed class JobProbe
 
     public bool AlwaysFail { get; set; }
 
+    public string FailureMessage { get; set; } = "job failed on purpose";
+
     public bool IgnoreCancellation { get; set; }
 
     public int Runs => Volatile.Read(ref _runs);
@@ -46,7 +48,7 @@ internal sealed class JobProbe
 
         if (ShouldFail())
         {
-            throw new InvalidOperationException("job failed on purpose");
+            throw new InvalidOperationException(FailureMessage);
         }
 
         if (_gate is { } gate)

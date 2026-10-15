@@ -340,7 +340,7 @@ public sealed partial class JobProcessor
             connection);
         fail.Parameters.AddWithValue("state", dead ? "dead" : "pending");
         fail.Parameters.AddWithValue("next", now + _backoff.Delay(job.Attempts));
-        fail.Parameters.AddWithValue("error", Describe(exception));
+        fail.Parameters.AddWithValue("error", ErrorText.Describe(exception));
         fail.Parameters.AddWithValue("finished", dead ? now : DBNull.Value);
         fail.Parameters.AddWithValue("id", job.Id);
         fail.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
@@ -379,12 +379,6 @@ public sealed partial class JobProcessor
         release.Parameters.AddWithValue("id", job.Id);
         release.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
         await release.ExecuteNonQueryAsync(cleanup.Token);
-    }
-
-    private static string Describe(Exception exception)
-    {
-        string text = $"{exception.GetType().Name}: {exception.Message}";
-        return text.Length <= 500 ? text : text[..500];
     }
 
     [LoggerMessage(EventId = 9511, Level = LogLevel.Warning, Message = "Job {Type} {JobId} failed on attempt {Attempt}; it will retry")]

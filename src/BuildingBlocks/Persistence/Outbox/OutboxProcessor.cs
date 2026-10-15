@@ -23,8 +23,6 @@ namespace SakerWatch.BuildingBlocks.Persistence.Outbox;
 /// </summary>
 public sealed partial class OutboxProcessor
 {
-    private const int _maxErrorLength = 500;
-
     private static readonly Meter _meter = new("SakerWatch");
     private static readonly Counter<long> _messages = _meter.CreateCounter<long>(
         "sakerwatch_outbox_messages_total",
@@ -190,7 +188,7 @@ public sealed partial class OutboxProcessor
         update.Parameters.AddWithValue("attempts", attempts);
         update.Parameters.AddWithValue("dead", dead);
         update.Parameters.AddWithValue("next", next);
-        update.Parameters.AddWithValue("error", Describe(exception));
+        update.Parameters.AddWithValue("error", ErrorText.Describe(exception));
         update.Parameters.AddWithValue("id", message.Id);
         update.Parameters.AddWithValue("expected", message.Attempts);
         await update.ExecuteNonQueryAsync(cancellationToken);
@@ -205,13 +203,6 @@ public sealed partial class OutboxProcessor
             _messages.Add(1, new KeyValuePair<string, object?>("outcome", "retry"));
             WillRetry(exception, message.Type, message.Id, attempts, next.ToString("O", CultureInfo.InvariantCulture));
         }
-    }
-
-    // Type and a short message only: never the stack, which can embed values.
-    private static string Describe(Exception exception)
-    {
-        string text = $"{exception.GetType().Name}: {exception.Message}";
-        return text.Length <= _maxErrorLength ? text : text[.._maxErrorLength];
     }
 
     [LoggerMessage(EventId = 9501, Level = LogLevel.Debug, Message = "Outbox message {Type} {MessageId} delivered")]

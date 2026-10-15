@@ -267,6 +267,21 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task TheErrorKeptOnAFailedJob_HoldsNoCredentialsOrEmailsAndIsOneLine()
+    {
+        await using Env env = await StartAsync();
+        env.Probe.AlwaysFail = true;
+        env.Probe.FailureMessage = "cannot connect: Host=db.internal;Password=hunter2;User=eder@example.com\nat Npgsql.Connector.Open()";
+        await env.EnqueueAsync("leaky", maxAttempts: 3);
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        string error = (await env.Db.Admin.ScalarAsync<string>("SELECT last_error FROM platform.job_queue"))!;
+        error.Should().StartWith("InvalidOperationException:").And.Contain("Host=db.internal");
+        error.Should().NotContain("hunter2").And.NotContain("eder@example.com").And.NotContain("\n");
+    }
+
+    [Fact]
     public async Task AJobWhosePayloadDoesNotFitItsType_IsParkedAtOnce()
     {
         await using Env env = await StartAsync();
