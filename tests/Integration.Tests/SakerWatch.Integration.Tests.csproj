@@ -27,6 +27,7 @@
     <ProjectReference Include="../../src/BuildingBlocks/Redis/SakerWatch.BuildingBlocks.Redis.csproj" />
     <ProjectReference Include="../../src/BuildingBlocks/Web/SakerWatch.BuildingBlocks.Web.csproj" />
     <ProjectReference Include="../../src/Modules/Identity/Infrastructure/SakerWatch.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/Retention/Infrastructure/SakerWatch.Retention.Infrastructure.csproj" />
     <ProjectReference Include="../TestSupport/SakerWatch.TestSupport.csproj" />
     <ProjectReference Include="../../src/Hosts/Host.Migrator/SakerWatch.Hosts.Migrator.csproj" />
     <ProjectReference Include="../../src/Hosts/Host.Api/SakerWatch.Hosts.Api.csproj" Aliases="HostApi" />

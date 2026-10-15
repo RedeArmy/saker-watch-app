@@ -9,6 +9,8 @@ using SakerWatch.BuildingBlocks.Persistence.Outbox;
 using SakerWatch.BuildingBlocks.Persistence.Platform;
 using SakerWatch.BuildingBlocks.Redis;
 using SakerWatch.Hosts.Worker;
+using SakerWatch.Retention.Application;
+using SakerWatch.Retention.Infrastructure;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 
@@ -19,7 +21,8 @@ builder.Services.AddSakerPostgres(builder.Configuration);
 builder.Services.AddSakerDbContext<PlatformDbContext>(PlatformDbContext.Schema);
 builder.Services.AddIntegrationEvents();
 builder.Services.AddOutboxDispatcher(builder.Configuration);
-builder.Services.AddJobs();
+builder.Services.AddJobs(typeof(RetentionRunJob).Assembly);
+builder.Services.AddRetention(builder.Configuration);
 builder.Services.AddJobDispatcher(builder.Configuration);
 builder.Services.AddSakerMongo(builder.Configuration);
 builder.Services.AddSakerRedis(builder.Configuration);

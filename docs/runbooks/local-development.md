@@ -51,3 +51,6 @@ dotnet run --project src/Hosts/Host.Api
 
 ## Behind a reverse proxy
 The API trusts `X-Forwarded-*` only from `ForwardedHeaders__KnownProxies__0` (an address) or `ForwardedHeaders__KnownNetworks__0` (a CIDR such as `172.18.0.0/16`, the compose network of Caddy). Without it the client IP of every anonymous request is the proxy's. CORS stays closed unless `Cors__AllowedOrigins__0=https://app.example.com` is set (A-023).
+
+## Retention (worker)
+The worker enqueues one retention job per UTC day and runs it through the job queue. It starts in **dry-run mode**: it logs (event 9701) and counts (`sakerwatch_retention_rows_total{mode="dry_run"}`) what it would remove and deletes nothing. After reading that for an environment, set `Retention__DryRun=false`. Ages and limits: `Retention__OutboxProcessedDays`, `Retention__InboxProcessedDays`, `Retention__JobsSucceededDays`, `Retention__JobsDeadDays`, `Retention__BatchSize`, `Retention__MaxBatchesPerTarget`; `Retention__Enabled=false` stops the daily schedule. A delete run that reports `more remaining` is finished by the next run, and running twice is harmless.

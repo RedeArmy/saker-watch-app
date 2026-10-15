@@ -19,6 +19,7 @@
 | `identity.provision_user(...)` | security-definer function | `api_role` | just-in-time provisioning keyed by `(issuer, subject)`; returns `(user_id, user_status, was_created)`; idempotent and race-safe; the id passed in is used only for a new user; email and name are refreshed only for active accounts |
 | `platform.idempotency_keys` policy `idempotency_keys_owner` | RLS policy | `api_role` | keys are visible and writable only for the current user |
 | `platform.purge_expired_idempotency_keys(before, batch)` | security-definer function | `worker_role` | retention purge across users without table access |
+| `platform.count_expired_idempotency_keys(before)` | security-definer function | `worker_role` | the dry-run counterpart of the purge (the worker cannot read the table); added by `RetentionSupport` together with partial indexes on `outbox_messages(processed_at)`, `inbox_messages(processed_at)` and `job_queue(state, finished_at)` |
 | `platform.enqueue_job(...)` | security-definer function | `api_role`, `worker_role` | `INSERT ... ON CONFLICT (job_key) DO NOTHING`; the API has no table access to the queue |
 | `platform.append_audit(...)` | security-definer function | `api_role`, `worker_role` | the only way to write the audit log; serializes writers and extends the SHA-256 hash chain |
 | `platform.verify_audit_chain()` | security-definer function | `worker_role` | returns the first broken entry id, or null |
@@ -43,6 +44,7 @@ Cache and rate limiting only, with versioned key prefixes (`v1:price:{ticker}`) 
 Postgres: EF Core migrations committed; Timescale features as raw-SQL migrations; EF migration bundle run as a separate deploy step, never on API startup; forward-only with expand/contract. Mongo: custom idempotent runner (`IMongoMigration`, ordered, `_migrations` with checksum and lock) plus read-side upcasters. Every migration is tested on an empty database and on one seeded at the previous version.
 
 ## 5. Retention (configurable defaults, enforced by idempotent, batched, observable Retention jobs with dry-run mode)
+Implemented in milestone 1.5d for the platform tables (idempotency keys, processed outbox, inbox, finished and dead jobs); the other rows of this table arrive with their data in later phases. The worker enqueues one `retention.run.v1` job per UTC day (`retention:{dryrun|delete}:{yyyyMMdd}`); the default mode is **dry run** (`Retention:DryRun=true`) until an operator has read a dry run and switches it off. Ages come from `Retention:*Days`; each statement removes at most `Retention:BatchSize` rows and a run stops after `Retention:MaxBatchesPerTarget` batches per target (the next run continues). Unprocessed outbox rows and pending jobs are never removed, and dead jobs are removed 90 days after they died (there is no "resolved" state yet).
 | Data | Retention |
 |---|---|
 | `price_daily`, daily FX | Indefinite |

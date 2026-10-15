@@ -4,6 +4,12 @@
     <RootNamespace>SakerWatch.Retention.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Application/SakerWatch.Retention.Application.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
   </ItemGroup>
 </Project>

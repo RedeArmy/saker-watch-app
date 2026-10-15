@@ -308,4 +308,26 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
         (await api.AsUserScalarAsync<long>(null, "SELECT count(*) FROM platform.idempotency_keys")).Should().Be(0, "the legacy row is now protected");
         (await api.AsUserScalarAsync<long>(user, "SELECT count(*) FROM platform.idempotency_keys")).Should().Be(1);
     }
+
+    [Fact]
+    public async Task RetentionSupport_UpgradesFromThePreviousVersion_KeepingDataAndGrantingOnlyTheWorker()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        var step = MigrationSteps.PlatformStep(admin);
+        await step.MigrateToAsync("RevokePublicFromAuditTrigger", CancellationToken.None);
+        await admin.ExecuteAsync("""
+            INSERT INTO platform.outbox_messages (id, type, payload, occurred_at, processed_at, attempts, next_attempt_at)
+            VALUES (gen_random_uuid(), 't', '{}', now() - interval '30 days', now() - interval '20 days', 1, now());
+            """);
+
+        await step.RunAsync(CancellationToken.None);
+        string worker = await TimescalePostgresFixture.CreateRoleLoginAsync(admin, "worker_role");
+        string api = await TimescalePostgresFixture.CreateRoleLoginAsync(admin, "api_role");
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM platform.outbox_messages")).Should().Be(1);
+        (await worker.ScalarAsync<long>("SELECT platform.count_expired_idempotency_keys(now())")).Should().Be(0);
+        Func<Task> asApi = () => api.ScalarAsync<long>("SELECT platform.count_expired_idempotency_keys(now())");
+        await asApi.Should().ThrowAsync<Npgsql.PostgresException>().Where(e => e.SqlState == "42501");
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM pg_indexes WHERE schemaname = 'platform' AND indexname IN ('ix_outbox_messages_processed_at', 'ix_inbox_messages_processed_at', 'ix_job_queue_finished')")).Should().Be(3);
+    }
 }
