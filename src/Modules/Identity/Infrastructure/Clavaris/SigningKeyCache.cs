@@ -103,10 +103,11 @@ internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, 
         _lastAttempt = now;
         Snapshot previous = _snapshot;
 
-        // With keys to fall back on there is no reason to wait for a slow provider for the full client budget.
+        // With usable keys to fall back on there is no reason to wait for a slow provider for the full client budget. Without them the
+        // fetch gets that budget, and a timeout is then an ordinary failure (the caller fails closed), never a stray cancellation.
         using var timeout = new CancellationTokenSource(options.StaleRefreshTimeout, timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
-        CancellationToken fetchToken = previous.HasKeys ? linked.Token : cancellationToken;
+        CancellationToken fetchToken = previous.IsFresh(now, options.MaximumKeyAge) ? linked.Token : cancellationToken;
         try
         {
             string authority = options.Authority.TrimEnd('/');

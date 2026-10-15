@@ -347,6 +347,28 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task KeysOlderThanTheMaximumAge_AndAProviderThatHangs_FailClosedInsteadOfThrowing()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?>
+        {
+            ["Clavaris:MetadataLifetime"] = "00:10:00",
+            ["Clavaris:MaximumKeyAge"] = "02:00:00",
+        });
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue();
+        harness.Clock.Advance(TimeSpan.FromHours(3));
+        var neverAnswers = new TaskCompletionSource();
+        harness.Idp.Stall = neverAnswers.Task;
+
+        Task<AuthResult> attempt = harness.AuthenticateAsync();
+        await harness.Idp.WaitForStalledRequestsAsync();
+        harness.Clock.Advance(TimeSpan.FromSeconds(40));
+
+        AuthResult result = await attempt.WaitAsync(TimeSpan.FromSeconds(10));
+        result.Should().BeOfType<AuthResult.Rejected>().Which.Reason.Should().Be(AuthFailureReason.KeyDiscoveryFailed, "an unusable cache and a hanging provider is a 401, not an unhandled exception");
+        neverAnswers.SetResult();
+    }
+
+    [Fact]
     public async Task WithoutAnyCachedKeys_CallersWaitForTheFirstFetch()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();

@@ -95,8 +95,9 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         {
             keys = await _keys.GetKeysAsync(cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
+            // Includes a client-side timeout: it is a provider failure (fail closed with 401), not the caller going away.
             DiscoveryFailed(ex);
             return Rejected(AuthFailureReason.KeyDiscoveryFailed);
         }
