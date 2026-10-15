@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.Identity.Contracts;
 using SakerWatch.Identity.Infrastructure.Clavaris;
 using SakerWatch.TestSupport;
@@ -372,6 +373,22 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task TheBoundsOfTheUserTable_AreEnforcedHere_SoAnAcceptedTokenCanAlwaysBeProvisioned()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+
+        (await RejectionOf(harness, new TokenSpec { Subject = new string('s', ExternalIdentityLimits.MaxSubjectLength + 1) })).Should().Be(AuthFailureReason.MissingSubject);
+
+        var longestAllowed = new TokenSpec { Subject = new string('s', ExternalIdentityLimits.MaxSubjectLength), Locale = new string('l', ExternalIdentityLimits.MaxLocaleLength) };
+        (await harness.AuthenticateAsync(longestAllowed)).Should().BeOfType<AuthResult.Authenticated>().Subject.Identity.Locale.Should().HaveLength(ExternalIdentityLimits.MaxLocaleLength);
+
+        var oversizedProfile = new TokenSpec { Locale = new string('l', ExternalIdentityLimits.MaxLocaleLength + 1), Name = new string('n', ExternalIdentityLimits.MaxProfileTextLength + 1) };
+        ValidatedIdentity identity = (await harness.AuthenticateAsync(oversizedProfile)).Should().BeOfType<AuthResult.Authenticated>().Subject.Identity;
+        identity.Locale.Should().BeNull("profile data that does not fit is dropped, not allowed to block the login");
+        identity.DisplayName.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ProfileClaimsWithControlCharacters_AreDropped_NotPropagated()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();
@@ -414,6 +431,22 @@ public sealed class ClavarisAuthProviderTests
         Action act = () => _ = provider.GetRequiredService<IOptions<ClavarisOptions>>().Value;
 
         act.Should().Throw<OptionsValidationException>().WithMessage($"*{expectedMessage}*");
+    }
+
+    [Fact]
+    public void AnAuthorityLongerThanTheIssuerColumn_IsRejected()
+    {
+        var services = new ServiceCollection();
+        services.AddClavarisAuth(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Clavaris:Authority"] = "https://clavaris.example/o/" + new string('x', ExternalIdentityLimits.MaxIssuerLength),
+            ["Clavaris:Audience"] = "api",
+        }).Build());
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Action act = () => _ = provider.GetRequiredService<IOptions<ClavarisOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("*at most 512*");
     }
 
     [Fact]

@@ -15,6 +15,25 @@ public enum UserAccountStatus
     Deleted,
 }
 
+/// <summary>
+/// Longest values the user table accepts for an external identity. The token validator and the provisioning validator both use
+/// them, so a token that passes authentication can always be provisioned (a mismatch would turn a valid login into a permanent 400).
+/// </summary>
+public static class ExternalIdentityLimits
+{
+    /// <summary>Longest issuer URL.</summary>
+    public const int MaxIssuerLength = 512;
+
+    /// <summary>Longest provider subject.</summary>
+    public const int MaxSubjectLength = 255;
+
+    /// <summary>Longest email or display name.</summary>
+    public const int MaxProfileTextLength = 320;
+
+    /// <summary>Longest locale tag (BCP 47).</summary>
+    public const int MaxLocaleLength = 35;
+}
+
 /// <summary>The identity proven by a validated token: the pair <see cref="Issuer"/> and <see cref="Subject"/> is the key (ADR-0009).</summary>
 /// <param name="Issuer">Identity provider issuer.</param>
 /// <param name="Subject">Stable account id at the provider.</param>

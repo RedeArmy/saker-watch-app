@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.Identity.Contracts;
 
 namespace SakerWatch.Identity.Infrastructure.Clavaris;
@@ -21,7 +22,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
     public const string MetadataClientName = "clavaris-metadata";
 
     private const int _maxTokenLength = 8192;
-    private const int _maxClaimLength = 320;
+    private const int _maxScopeLength = 320;
 
     private static readonly Meter _meter = new("SakerWatch");
     private static readonly Counter<long> _attempts = _meter.CreateCounter<long>(
@@ -145,7 +146,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
     private static AuthResult ToIdentity(TokenValidationResult validation)
     {
         var token = (JsonWebToken)validation.SecurityToken;
-        string? subject = Claim(token, "sub");
+        string? subject = Claim(token, "sub", ExternalIdentityLimits.MaxSubjectLength);
         if (subject is null)
         {
             return Rejected(AuthFailureReason.MissingSubject);
@@ -163,9 +164,9 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         return new AuthResult.Authenticated(new ValidatedIdentity(
             token.Issuer,
             subject,
-            Claim(token, "email"),
-            Claim(token, "name") ?? Claim(token, "preferred_username"),
-            Claim(token, "locale"),
+            Claim(token, "email", ExternalIdentityLimits.MaxProfileTextLength),
+            Claim(token, "name", ExternalIdentityLimits.MaxProfileTextLength) ?? Claim(token, "preferred_username", ExternalIdentityLimits.MaxProfileTextLength),
+            Claim(token, "locale", ExternalIdentityLimits.MaxLocaleLength),
             new DateTimeOffset(token.ValidTo, TimeSpan.Zero),
             scopes));
     }
@@ -213,12 +214,14 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
             raw = text.Split(' ');
         }
 
-        return raw.Select(scope => scope.Trim()).Where(scope => scope.Length is > 0 and <= _maxClaimLength && !scope.Any(char.IsControl)).Distinct(StringComparer.Ordinal).ToArray();
+        return raw.Select(scope => scope.Trim()).Where(scope => scope.Length is > 0 and <= _maxScopeLength && !scope.Any(char.IsControl)).Distinct(StringComparer.Ordinal).ToArray();
     }
 
-    // Claims become profile data and log context; bound and clean them before they travel further.
-    private static string? Claim(JsonWebToken token, string name) =>
-        token.TryGetPayloadValue(name, out string? value) && !string.IsNullOrWhiteSpace(value) && value.Length <= _maxClaimLength && !value.Any(char.IsControl)
+    // Claims become profile data and log context; bound and clean them before they travel further. The bounds are the ones the user
+    // table enforces, so a value that gets past here can always be provisioned: an oversized profile field is dropped (it is only
+    // profile data) and an oversized subject leaves the token without a usable one.
+    private static string? Claim(JsonWebToken token, string name, int maxLength) =>
+        token.TryGetPayloadValue(name, out string? value) && !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength && !value.Any(char.IsControl)
             ? value
             : null;
 

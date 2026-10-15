@@ -167,4 +167,20 @@ public sealed class IdentityApplicationTests
         cache.Set(_identity with { Subject = "overflow" }, user);
         cache.TryGet(_identity with { Subject = "overflow" }, out _).Should().BeTrue("the cache is cleared rather than grown without bound");
     }
+
+    [Fact]
+    public void ProvisionUserValidator_AcceptsEveryValueTheTokenValidatorLetsThrough_AndRefusesOneMore()
+    {
+        var validator = new ProvisionUserValidator();
+        var atTheLimit = new ExternalIdentity(
+            new string('i', ExternalIdentityLimits.MaxIssuerLength),
+            new string('s', ExternalIdentityLimits.MaxSubjectLength),
+            new string('e', ExternalIdentityLimits.MaxProfileTextLength),
+            new string('n', ExternalIdentityLimits.MaxProfileTextLength),
+            new string('l', ExternalIdentityLimits.MaxLocaleLength));
+
+        validator.Validate(new ProvisionUserCommand(atTheLimit)).IsValid.Should().BeTrue();
+        validator.Validate(new ProvisionUserCommand(atTheLimit with { Subject = atTheLimit.Subject + "x" })).IsValid.Should().BeFalse();
+        validator.Validate(new ProvisionUserCommand(atTheLimit with { Locale = atTheLimit.Locale + "x" })).IsValid.Should().BeFalse();
+    }
 }

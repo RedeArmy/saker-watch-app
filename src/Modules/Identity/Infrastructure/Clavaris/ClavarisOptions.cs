@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 
 namespace SakerWatch.Identity.Infrastructure.Clavaris;
 
@@ -68,6 +69,11 @@ internal sealed class ClavarisOptionsValidator : IValidateOptions<ClavarisOption
             if (authority.Scheme != Uri.UriSchemeHttps && !(authority.Scheme == Uri.UriSchemeHttp && !options.RequireHttpsMetadata))
             {
                 failures.Add("Clavaris:Authority must use https (http is allowed only when Clavaris:RequireHttpsMetadata is false).");
+            }
+
+            if (options.Authority.TrimEnd('/').Length > ExternalIdentityLimits.MaxIssuerLength)
+            {
+                failures.Add($"Clavaris:Authority must be at most {ExternalIdentityLimits.MaxIssuerLength} characters (it is stored as the issuer of every user).");
             }
 
             if (!string.IsNullOrEmpty(authority.Query) || !string.IsNullOrEmpty(authority.Fragment))
