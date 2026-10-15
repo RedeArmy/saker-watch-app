@@ -114,6 +114,29 @@ public sealed class PipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Send_CallerCancels_IsACancellation_NotAnError()
+    {
+        using var capture = new SpanCapture("Demo.WaitingCommand");
+        using var metrics = new MetricCapture("sakerwatch_demo_usecase_duration_seconds", "WaitingCommand");
+        using var cts = new CancellationTokenSource();
+
+        Func<Task> act = async () =>
+        {
+            Task<Result> pending = _host.Send(new WaitingCommand(), cts.Token).AsTask();
+            await cts.CancelAsync();
+            await pending;
+        };
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        Activity span = capture.Single();
+        span.GetTagItem("saker.outcome").Should().Be("cancelled");
+        span.Status.Should().NotBe(ActivityStatusCode.Error);
+        span.Events.Should().NotContain(e => e.Name == "exception");
+        metrics.Single().Tags.Should().Contain("outcome", "cancelled");
+        _host.Logs.GetSnapshot().Should().NotContain(r => r.Level >= LogLevel.Warning || r.Id.Id == 9004, "a cancellation is not logged as a failure");
+    }
+
+    [Fact]
     public async Task Send_Success_RecordsDurationMetricWithLowCardinalityTags()
     {
         using var capture = new MetricCapture("sakerwatch_demo_usecase_duration_seconds", "ReadQuery");

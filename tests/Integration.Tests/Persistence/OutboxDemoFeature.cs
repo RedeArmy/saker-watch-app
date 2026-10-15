@@ -17,6 +17,8 @@ internal sealed class ConsumerProbe
 
     public bool AlwaysFail { get; set; }
 
+    public string FailureMessage { get; set; } = "flaky consumer failed";
+
     public void FailNext(int times) => Volatile.Write(ref _failuresRemaining, times);
 
     public bool ShouldFail() => AlwaysFail || Interlocked.Decrement(ref _failuresRemaining) >= 0;
@@ -37,5 +39,5 @@ internal sealed class WriteProbeRowConsumer(ProbeItemsContext db, ConsumerProbe 
 internal sealed class FlakyConsumer(ConsumerProbe probe) : IIntegrationEventConsumer<ThingCreated>
 {
     public Task ConsumeAsync(ThingCreated message, CancellationToken cancellationToken) =>
-        probe.ShouldFail() ? throw new InvalidOperationException("flaky consumer failed") : Task.CompletedTask;
+        probe.ShouldFail() ? throw new InvalidOperationException(probe.FailureMessage) : Task.CompletedTask;
 }

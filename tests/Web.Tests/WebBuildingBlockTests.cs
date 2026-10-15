@@ -2,9 +2,13 @@ using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Web.Correlation;
+using SakerWatch.BuildingBlocks.Web.Health;
 using SakerWatch.BuildingBlocks.Web.Problems;
+using SakerWatch.BuildingBlocks.Web.RateLimiting;
 
 namespace SakerWatch.Web.Tests;
 
@@ -179,6 +183,49 @@ public sealed class WebBuildingBlockTests
         (await client.GetAsync("/health/live")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Theory]
+    [InlineData("203.0.113.7", "203.0.113.7")]
+    [InlineData("::ffff:203.0.113.7", "203.0.113.7")]
+    [InlineData("2001:db8:aaaa:bbbb:1111:2222:3333:4444", "2001:db8:aaaa:bbbb:ffff:ffff:ffff:ffff")]
+    public void ClientAddressKey_TreatsEquivalentAddressesAsOneClient(string one, string other)
+    {
+        ClientAddressKey.For(IPAddress.Parse(one)).Should().Be(ClientAddressKey.For(IPAddress.Parse(other)));
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7", "203.0.113.8")]
+    [InlineData("2001:db8:aaaa:bbbb::1", "2001:db8:aaaa:bbbc::1")]
+    [InlineData("203.0.113.7", "2001:db8:aaaa:bbbb::1")]
+    public void ClientAddressKey_KeepsDifferentClientsApart(string one, string other)
+    {
+        ClientAddressKey.For(IPAddress.Parse(one)).Should().NotBe(ClientAddressKey.For(IPAddress.Parse(other)));
+    }
+
+    [Fact]
+    public void ClientAddressKey_WithoutAnAddress_IsOneSharedKey()
+    {
+        ClientAddressKey.For(null).Should().Be("unknown");
+    }
+
+    [Fact]
+    public async Task PreAuthenticationLimit_CountsAnIpv6SubscriberOnce_NotOncePerAddress()
+    {
+        using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PreAuthenticationPermitLimit"] = "2" });
+        HttpClient client = host.GetTestClient();
+
+        async Task<HttpStatusCode> From(string address)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/ok");
+            request.Headers.Add(WebTestServer.TestRemoteIpHeader, address);
+            return (await client.SendAsync(request)).StatusCode;
+        }
+
+        (await From("2001:db8:1:1::1")).Should().Be(HttpStatusCode.OK);
+        (await From("2001:db8:1:1::2")).Should().Be(HttpStatusCode.OK);
+        (await From("2001:db8:1:1:dead:beef::3")).Should().Be(HttpStatusCode.TooManyRequests, "rotating addresses inside a /64 does not buy a new allowance");
+        (await From("2001:db8:1:2::1")).Should().Be(HttpStatusCode.OK, "another /64 is another client");
+    }
+
     [Fact]
     public async Task RateLimit_IsPerUser_SoOneUserCannotExhaustAnothers()
     {
@@ -240,6 +287,76 @@ public sealed class WebBuildingBlockTests
         using var host = await WebTestServer.StartAsync();
 
         (await host.GetTestClient().GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Readiness_RunsTheChecksOncePerCacheWindow_HoweverManyProbesArrive()
+    {
+        var counter = new ReadyCheckCounter();
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        using var host = await WebTestServer.StartAsync(new() { ["Health:ReadinessCacheSeconds"] = "5" }, counter: counter, clock: clock);
+        HttpClient client = host.GetTestClient();
+
+        HttpResponseMessage[] burst = await Task.WhenAll(Enumerable.Range(0, 50).Select(_ => client.GetAsync("/health/ready")));
+
+        burst.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
+        counter.Runs.Should().Be(1, "a burst of probes costs one run of the checks");
+
+        clock.Advance(TimeSpan.FromSeconds(6));
+        (await client.GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
+        counter.Runs.Should().Be(2, "the result is refreshed once the window has passed");
+    }
+
+    private sealed class ThrowingHealthService : HealthCheckService
+    {
+        public int Calls { get; private set; }
+
+        public override Task<HealthReport> CheckHealthAsync(Func<HealthCheckRegistration, bool>? predicate, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new ObjectDisposedException("the host is shutting down");
+        }
+    }
+
+    [Fact]
+    public async Task Readiness_WhenTheHealthServiceItselfFails_AnswersUnhealthy_NeverHangs()
+    {
+        var service = new ThrowingHealthService();
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        var cache = new ReadinessCache(service, Microsoft.Extensions.Options.Options.Create(new HealthOptions { ReadinessCacheSeconds = 5 }), clock);
+
+        HealthStatus first = await cache.GetAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromSeconds(6));
+        HealthStatus second = await cache.GetAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        first.Should().Be(HealthStatus.Unhealthy);
+        second.Should().Be(HealthStatus.Unhealthy);
+        service.Calls.Should().Be(2, "a failed run is not cached past its window");
+    }
+
+    [Fact]
+    public async Task Readiness_WithTheCacheOff_RunsTheChecksOnEveryProbe()
+    {
+        var counter = new ReadyCheckCounter();
+        using var host = await WebTestServer.StartAsync(new() { ["Health:ReadinessCacheSeconds"] = "0" }, counter: counter);
+        HttpClient client = host.GetTestClient();
+
+        await client.GetAsync("/health/ready");
+        await client.GetAsync("/health/ready");
+
+        counter.Runs.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Readiness_IsNotRateLimited_BecauseItIsCheap()
+    {
+        using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PermitLimit"] = "1", ["RateLimiting:PreAuthenticationPermitLimit"] = "1" });
+        HttpClient client = host.GetTestClient();
+
+        for (int i = 0; i < 5; i++)
+        {
+            (await client.GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
     }
 
     [Fact]

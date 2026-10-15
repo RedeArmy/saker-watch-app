@@ -44,6 +44,13 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(
 
             return response;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller went away or the host is stopping: expected, not a failure of the use case.
+            double elapsedMs = timeProvider.GetElapsedTime(start).TotalMilliseconds;
+            UseCaseCancelled(useCase, elapsedMs);
+            throw;
+        }
         catch (Exception ex)
         {
             UseCaseThrew(ex, useCase, timeProvider.GetElapsedTime(start).TotalMilliseconds);
@@ -59,6 +66,9 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(
 
     [LoggerMessage(EventId = 9003, Level = LogLevel.Error, Message = "Use case {UseCase} failed with {ErrorCode} in {ElapsedMs} ms")]
     private partial void UseCaseFailed(string useCase, string errorCode, double elapsedMs);
+
+    [LoggerMessage(EventId = 9005, Level = LogLevel.Debug, Message = "Use case {UseCase} cancelled after {ElapsedMs} ms")]
+    private partial void UseCaseCancelled(string useCase, double elapsedMs);
 
     [LoggerMessage(EventId = 9004, Level = LogLevel.Error, Message = "Use case {UseCase} threw after {ElapsedMs} ms")]
     private partial void UseCaseThrew(Exception exception, string useCase, double elapsedMs);

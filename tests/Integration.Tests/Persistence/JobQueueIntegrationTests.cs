@@ -262,6 +262,36 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
         await env.Processor.ProcessNextAsync(CancellationToken.None);
 
         (await env.Db.Admin.ScalarAsync<string>("SELECT last_error FROM platform.job_queue")).Should().Contain("Unknown job type");
+        (await env.State("ghost")).Should().Be("dead", "a job that cannot run is parked at once, not retried");
+        (await env.Attempts("ghost")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TheErrorKeptOnAFailedJob_HoldsNoCredentialsOrEmailsAndIsOneLine()
+    {
+        await using Env env = await StartAsync();
+        env.Probe.AlwaysFail = true;
+        env.Probe.FailureMessage = "cannot connect: Host=db.internal;Password=hunter2;User=eder@example.com\nat Npgsql.Connector.Open()";
+        await env.EnqueueAsync("leaky", maxAttempts: 3);
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        string error = (await env.Db.Admin.ScalarAsync<string>("SELECT last_error FROM platform.job_queue"))!;
+        error.Should().StartWith("InvalidOperationException:").And.Contain("Host=db.internal");
+        error.Should().NotContain("hunter2").And.NotContain("eder@example.com").And.NotContain("\n");
+    }
+
+    [Fact]
+    public async Task AJobWhosePayloadDoesNotFitItsType_IsParkedAtOnce()
+    {
+        await using Env env = await StartAsync();
+        await env.Db.Admin.ExecuteAsync(
+            "INSERT INTO platform.job_queue (id, job_key, type, payload, state, attempts, max_attempts, available_at, created_at) VALUES (@id, 'garbled', 'demo.compute.v1', '{\"name\": {\"nested\": true}}'::jsonb, 'pending', 0, 5, now() - interval '1 second', now())",
+            ("id", Guid.CreateVersion7()));
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        (await env.State("garbled")).Should().Be("dead");
     }
 
     [Fact]

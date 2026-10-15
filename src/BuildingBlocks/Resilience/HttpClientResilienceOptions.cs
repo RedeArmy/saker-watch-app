@@ -8,7 +8,10 @@ namespace SakerWatch.BuildingBlocks.Resilience;
 /// </summary>
 public sealed class HttpClientResilienceOptions
 {
-    /// <summary>Hosts this client may call (exact, case-insensitive). Anything else is refused before leaving the process.</summary>
+    /// <summary>
+    /// Hosts this client may call (exact, case-insensitive): <c>host</c> allows only the default port of the scheme, <c>host:port</c> one
+    /// specific port. Anything else is refused before leaving the process.
+    /// </summary>
     [Required, MinLength(1)]
     public string[] AllowedHosts { get; set; } = [];
 

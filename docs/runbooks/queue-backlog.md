@@ -19,9 +19,9 @@
    - Pending and oldest: `SELECT state, count(*), min(available_at) FROM platform.job_queue GROUP BY state;`
    - Dead jobs and why: `SELECT id, job_key, type, attempts, last_error, finished_at FROM platform.job_queue WHERE state = 'dead' ORDER BY finished_at DESC LIMIT 50;`
    - Parked outbox messages: `SELECT id, type, attempts, last_error FROM platform.outbox_messages WHERE processed_at IS NULL AND attempts >= <MaxAttempts>;`
-3. Decide per dead row: fix the cause first (a provider outage, a bug), then requeue; requeueing without a fix only repeats the failure.
+3. A job whose type is unknown, whose payload does not fit its type or that has no handler is parked at the first attempt (`attempts = 1`, `last_error` names the cause): that is a deploy or data problem (a worker older than the enqueuer, a removed job type), not a transient failure. Decide per dead row: fix the cause first (a provider outage, a bug), then requeue; requeueing without a fix only repeats the failure.
 4. Requeue a dead job (the handler must be re-runnable, ADR-0022): `UPDATE platform.job_queue SET state = 'pending', attempts = 0, available_at = now(), lease_token = NULL, lease_expires_at = NULL, finished_at = NULL WHERE id = '<id>' AND state = 'dead';`
-5. Requeue a parked outbox message: `UPDATE platform.outbox_messages SET attempts = 0, next_attempt_at = now(), last_error = NULL WHERE id = '<id>' AND processed_at IS NULL;`
+5. A parked outbox message has `next_attempt_at = 'infinity'`, so it is never due again by itself (raising `Outbox:MaxAttempts` does not revive it). Requeue it: `UPDATE platform.outbox_messages SET attempts = 0, next_attempt_at = now(), last_error = NULL WHERE id = '<id>' AND processed_at IS NULL;`
 6. Dead rows are kept for the retention period (`Retention:JobsDeadDays`, 90 days by default) and then purged by the retention job; parked outbox messages are not purged automatically.
 
 ## Handler outlives its lease or its transaction

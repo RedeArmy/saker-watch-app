@@ -13,7 +13,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 
 | Metric (type) | Labels | Purpose |
 |---|---|---|
-| `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
+| `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|cancelled\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive\|pre-authentication | requests rejected by the rate limiter |
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
@@ -39,12 +39,14 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9002 | Information | `Use case {UseCase} rejected with {ErrorCode} ({ErrorType}) in {ElapsedMs} ms` | `LoggingBehavior` (expected failure) |
 | 9003 | Error | `Use case {UseCase} failed with {ErrorCode} in {ElapsedMs} ms` | `LoggingBehavior` (`ErrorType.Failure`) |
 | 9004 | Error | `Use case {UseCase} threw after {ElapsedMs} ms` (with exception) | `LoggingBehavior` |
+| 9005 | Debug | `Use case {UseCase} cancelled after {ElapsedMs} ms` (caller disconnected or host stopping; not an error) | `LoggingBehavior` |
 | 9201 | Information | `Worker started` | `WorkerLifecycleService` |
 | 9202 | Information | `Worker stopping gracefully` | `WorkerLifecycleService` |
 | 9301 | Information | `Migration run started with {StepCount} steps` | `MigrationPipeline` |
 | 9302 | Information | `Migration step {Step} completed, {Applied} migrations applied` | `MigrationPipeline` |
 | 9303 | Error | `Migration step {Step} failed` (with exception) | `MigrationPipeline` |
 | 9311 | Information | `Mongo migration {Version} {Name} applied` | `MongoMigrationRunner` |
+| 9312 | Warning | `Renewing the Mongo migration lock failed; it will be retried on the next tick` (with exception) | `MongoMigrationRunner` |
 | 9411 | Information | `Idempotent request replayed from the stored first attempt` | `IdempotencyBehavior` |
 | 9412 | Warning | `Idempotency-Key reused with a different request on {Method} {Route}` | `IdempotencyBehavior` |
 | 9413 | Warning | `Idempotency-Key still in progress on {Method} {Route}` | `IdempotencyBehavior` |
@@ -66,10 +68,11 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9702 | Information | `Retention is disabled; no daily run will be scheduled` | `RetentionScheduler` |
 | 9703 | Information | `Retention run enqueued for today ({Mode})` | `RetentionScheduler` |
 | 9704 | Warning | `Could not enqueue today's retention run; it will be retried shortly (after at most one minute)` (with exception) | `RetentionScheduler` |
+| 9705 | Warning | `Retention is in dry-run mode in the {Environment} environment: nothing is deleted, so expired data accumulates until Retention:DryRun is switched off` (logged at every start outside Development) | `RetentionScheduler` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction
-Every host calls `AddSakerObservability(serviceName)`: Serilog writes **JSON lines to the console** (rendered compact format, picked up by the log collector) with the properties `Service`, `TraceId`/`SpanId` (current activity), `CorrelationId` (request scope) and message-template parameters. Framework namespaces (`Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore`, `System.Net.Http.HttpClient`) log at Warning and above. HTTP requests produce one Serilog request-log line (health probes only at Verbose; status >= 500 or an exception at Error).
+Every host calls `AddSakerObservability(serviceName)`: Serilog writes **JSON lines to the console** (rendered compact format, picked up by the log collector) through a bounded asynchronous queue of 10 000 events, so a stalled stdout never blocks a request thread; when the queue is full the newest events are dropped rather than waiting with the properties `Service`, `TraceId`/`SpanId` (current activity), `CorrelationId` (request scope) and message-template parameters. Framework namespaces (`Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore`, `System.Net.Http.HttpClient`) log at Warning and above. HTTP requests produce one Serilog request-log line (health probes only at Verbose; status >= 500 or an exception at Error).
 `RedactionEnricher` runs last and masks, at any nesting depth, the value of properties named like `password`, `secret`, `token`, `authorization`, `cookie`, `apikey`, `connectionstring`, `pepper`, `email`, `phone`, `displayname`, `prompt`, `rawresponse`, `requestbody`, `responsebody`, and scrubs JWTs and `Bearer`/`Basic` credentials from any string. Enrichers added after `ApplySakerDefaults` are not covered; add extra enrichers before it. Exception messages are not rewritten, so never put secrets into exception text.
 Telemetry export: traces and metrics leave the process only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (OTLP to the Collector, ADR-0016); otherwise nothing is exported.
 
@@ -78,7 +81,7 @@ Telemetry export: traces and metrics leave the process only when `OTEL_EXPORTER_
 Run a host against it with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` (and `OTEL_METRIC_EXPORT_INTERVAL=5000` for quick feedback). Traces go app -> Collector -> Tempo, metrics app -> Collector -> Prometheus (scraped on `:8889`), logs app (Serilog OTLP sink) -> Collector -> Loki; Loki lines and Tempo traces share the same trace id, which is how Grafana jumps from a log to its trace. The Collector also deletes `Authorization`/`Cookie` headers and URL query strings from traces and logs. Verified end to end with `Host.Api` on 2026-10-12 (metrics in Prometheus, log lines in Loki and traces in Tempo for the same request).
 
 ### Spans
-One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts do not mark the span as failed).
+One span per use case, named `<Module>.<UseCase>` on activity source `SakerWatch`, tags `saker.module`, `saker.usecase`, `saker.outcome`, `saker.error_code`; status `Error` only for `ErrorType.Failure` and exceptions (expected failures such as validation or conflicts, and cancellations by the caller, `saker.outcome=cancelled`, do not mark the span as failed).
 
 ## SLOs (initial, from `docs/product-spec.md`)
 Watchlist read p95 < 300 ms @ 500 items · API availability ≥ 99.5 %/month · price staleness < 24 h on trading days · nightly analysis completes in the configured window.

@@ -34,11 +34,14 @@ internal sealed class PipelineTestHost : IDisposable
 
     public FakeLogCollector Logs => _provider.GetRequiredService<FakeLogCollector>();
 
-    public async ValueTask<TResponse> Send<TResponse>(IRequest<TResponse> request)
+    public ValueTask<TResponse> Send<TResponse>(IRequest<TResponse> request)
+        where TResponse : IResult<TResponse> => Send(request, CancellationToken.None);
+
+    public async ValueTask<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken)
         where TResponse : IResult<TResponse>
     {
         await using AsyncServiceScope scope = _provider.CreateAsyncScope();
-        return await scope.ServiceProvider.GetRequiredService<ISender>().Send(request, CancellationToken.None);
+        return await scope.ServiceProvider.GetRequiredService<ISender>().Send(request, cancellationToken);
     }
 
     public void Dispose() => _provider.Dispose();

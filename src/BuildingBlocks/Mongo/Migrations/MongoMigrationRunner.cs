@@ -12,8 +12,12 @@ public sealed class MongoMigrationChecksumException(int version, string expected
 public sealed class MongoMigrationLockException(TimeSpan waited)
     : TimeoutException($"Could not acquire the Mongo migration lock within {waited.TotalSeconds:0.#}s; another migrator may be running.");
 
+/// <summary>The migration lock was taken over (or removed) while migrations were running, so the run stopped before applying more.</summary>
+public sealed class MongoMigrationLockLostException()
+    : InvalidOperationException("The Mongo migration lock was lost while migrations were running; stopping so two migrators never interleave.");
+
 /// <summary>Timing of the migration lock.</summary>
-/// <param name="LockLifetime">How long a held lock stays valid; a crashed migrator's lock expires after this.</param>
+/// <param name="LockLifetime">How long a held lock stays valid without being renewed; a crashed migrator's lock expires after this. A running migrator renews it every third of this.</param>
 /// <param name="LockWait">How long a runner waits for another migrator to finish before giving up.</param>
 public sealed record MongoMigrationLockOptions(TimeSpan LockLifetime, TimeSpan LockWait)
 {
@@ -49,12 +53,28 @@ public sealed partial class MongoMigrationRunner(IMongoDatabase database, TimePr
         MongoMigrationLockOptions timing = lockOptions ?? MongoMigrationLockOptions.Default;
         string owner = $"{Environment.MachineName}:{Guid.CreateVersion7():N}";
         await AcquireLockAsync(owner, timing, cancellationToken);
+
+        // A migration may outlast the lock's lifetime, so the lock is renewed while it runs; if it is ever lost the run stops.
+        using var held = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var stopRenewing = new CancellationTokenSource();
+        int lost = 0;
+        Task renewal = RenewLockAsync(owner, timing, () =>
+        {
+            Volatile.Write(ref lost, 1);
+            held.Cancel();
+        }, stopRenewing.Token);
         try
         {
-            return await ApplyPendingAsync(ordered, cancellationToken);
+            return await ApplyPendingAsync(ordered, held.Token);
+        }
+        catch (OperationCanceledException) when (Volatile.Read(ref lost) == 1 && !cancellationToken.IsCancellationRequested)
+        {
+            throw new MongoMigrationLockLostException();
         }
         finally
         {
+            await stopRenewing.CancelAsync();
+            await renewal;
             await ReleaseLockAsync(owner);
         }
     }
@@ -129,6 +149,39 @@ public sealed partial class MongoMigrationRunner(IMongoDatabase database, TimePr
         }
     }
 
+    private async Task RenewLockAsync(string owner, MongoMigrationLockOptions timing, Action onLost, CancellationToken stop)
+    {
+        IMongoCollection<BsonDocument> locks = database.GetCollection<BsonDocument>(_lockCollection);
+        using var timer = new PeriodicTimer(timing.LockLifetime / 3, timeProvider);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop))
+            {
+                try
+                {
+                    UpdateResult renewed = await locks.UpdateOneAsync(
+                        Builders<BsonDocument>.Filter.And(Builders<BsonDocument>.Filter.Eq("_id", _lockId), Builders<BsonDocument>.Filter.Eq("owner", owner)),
+                        Builders<BsonDocument>.Update.Set("expiresAt", timeProvider.GetUtcNow().UtcDateTime + timing.LockLifetime),
+                        cancellationToken: stop);
+                    if (renewed.MatchedCount == 0)
+                    {
+                        onLost();
+                        return;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A blip talking to Mongo: the lock is still valid until it expires, so try again on the next tick.
+                    RenewFailed(ex);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The run finished: nothing more to renew.
+        }
+    }
+
     private async Task ReleaseLockAsync(string owner)
     {
         IMongoCollection<BsonDocument> locks = database.GetCollection<BsonDocument>(_lockCollection);
@@ -136,6 +189,9 @@ public sealed partial class MongoMigrationRunner(IMongoDatabase database, TimePr
             Builders<BsonDocument>.Filter.Eq("_id", _lockId),
             Builders<BsonDocument>.Filter.Eq("owner", owner)));
     }
+
+    [LoggerMessage(EventId = 9312, Level = LogLevel.Warning, Message = "Renewing the Mongo migration lock failed; it will be retried on the next tick")]
+    private partial void RenewFailed(Exception exception);
 
     [LoggerMessage(EventId = 9311, Level = LogLevel.Information, Message = "Mongo migration {Version} {Name} applied")]
     private partial void MigrationApplied(int version, string name);

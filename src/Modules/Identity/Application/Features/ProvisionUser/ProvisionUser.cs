@@ -29,11 +29,11 @@ public sealed class ProvisionUserValidator : AbstractValidator<ProvisionUserComm
     /// <summary>Creates the validator.</summary>
     public ProvisionUserValidator()
     {
-        RuleFor(x => x.Identity.Issuer).NotEmpty().MaximumLength(512);
-        RuleFor(x => x.Identity.Subject).NotEmpty().MaximumLength(255);
-        RuleFor(x => x.Identity.Email).MaximumLength(320);
-        RuleFor(x => x.Identity.DisplayName).MaximumLength(320);
-        RuleFor(x => x.Identity.Locale).MaximumLength(35);
+        RuleFor(x => x.Identity.Issuer).NotEmpty().MaximumLength(ExternalIdentityLimits.MaxIssuerLength);
+        RuleFor(x => x.Identity.Subject).NotEmpty().MaximumLength(ExternalIdentityLimits.MaxSubjectLength);
+        RuleFor(x => x.Identity.Email).MaximumLength(ExternalIdentityLimits.MaxProfileTextLength);
+        RuleFor(x => x.Identity.DisplayName).MaximumLength(ExternalIdentityLimits.MaxProfileTextLength);
+        RuleFor(x => x.Identity.Locale).MaximumLength(ExternalIdentityLimits.MaxLocaleLength);
     }
 }
 

@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.Identity.Contracts;
 using SakerWatch.Identity.Infrastructure.Clavaris;
 using SakerWatch.TestSupport;
@@ -320,11 +321,93 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task ASlowProvider_DelaysOnlyTheRefreshingRequest_AndOnlyForTheStaleRefreshTimeout()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?>
+        {
+            ["Clavaris:MetadataLifetime"] = "00:10:00",
+            ["Clavaris:StaleRefreshTimeout"] = "00:00:02",
+        });
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue();
+        harness.Clock.Advance(TimeSpan.FromMinutes(11));
+        var neverAnswers = new TaskCompletionSource();
+        harness.Idp.Stall = neverAnswers.Task;
+
+        Task<AuthResult> refreshing = harness.AuthenticateAsync();
+        await harness.Idp.WaitForStalledRequestsAsync();
+
+        AuthResult[] others = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => harness.AuthenticateAsync())).WaitAsync(TimeSpan.FromSeconds(5));
+        others.Should().OnlyContain(r => r.IsSuccess, "callers with usable keys do not queue behind a slow refresh");
+        refreshing.IsCompleted.Should().BeFalse("the refreshing request is still waiting for the provider");
+
+        harness.Clock.Advance(TimeSpan.FromSeconds(3));
+        (await refreshing.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess.Should().BeTrue("after the timeout it carries on with the cached keys");
+        harness.Logs.GetSnapshot().Should().Contain(r => r.Id.Id == 9603);
+        neverAnswers.SetResult();
+    }
+
+    [Fact]
+    public async Task KeysOlderThanTheMaximumAge_AndAProviderThatHangs_FailClosedInsteadOfThrowing()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?>
+        {
+            ["Clavaris:MetadataLifetime"] = "00:10:00",
+            ["Clavaris:MaximumKeyAge"] = "02:00:00",
+        });
+        (await harness.AuthenticateAsync()).IsSuccess.Should().BeTrue();
+        harness.Clock.Advance(TimeSpan.FromHours(3));
+        var neverAnswers = new TaskCompletionSource();
+        harness.Idp.Stall = neverAnswers.Task;
+
+        Task<AuthResult> attempt = harness.AuthenticateAsync();
+        await harness.Idp.WaitForStalledRequestsAsync();
+        harness.Clock.Advance(TimeSpan.FromSeconds(40));
+
+        AuthResult result = await attempt.WaitAsync(TimeSpan.FromSeconds(10));
+        result.Should().BeOfType<AuthResult.Rejected>().Which.Reason.Should().Be(AuthFailureReason.KeyDiscoveryFailed, "an unusable cache and a hanging provider is a 401, not an unhandled exception");
+        neverAnswers.SetResult();
+    }
+
+    [Fact]
+    public async Task WithoutAnyCachedKeys_CallersWaitForTheFirstFetch()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+        var release = new TaskCompletionSource();
+        harness.Idp.Stall = release.Task;
+
+        Task<AuthResult> first = harness.AuthenticateAsync();
+        await harness.Idp.WaitForStalledRequestsAsync();
+        Task<AuthResult> second = harness.AuthenticateAsync();
+
+        second.IsCompleted.Should().BeFalse("there is nothing to validate with yet");
+        release.SetResult();
+        (await first.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess.Should().BeTrue();
+        (await second.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess.Should().BeTrue();
+        harness.Idp.JwksRequests.Should().Be(1, "the second caller reuses the first fetch");
+    }
+
+    [Fact]
     public async Task TokenWithoutASubject_IsRefused()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();
 
         (await RejectionOf(harness, new TokenSpec { Subject = null })).Should().Be(AuthFailureReason.MissingSubject);
+    }
+
+    [Fact]
+    public async Task TheBoundsOfTheUserTable_AreEnforcedHere_SoAnAcceptedTokenCanAlwaysBeProvisioned()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+
+        (await RejectionOf(harness, new TokenSpec { Subject = new string('s', ExternalIdentityLimits.MaxSubjectLength + 1) })).Should().Be(AuthFailureReason.MissingSubject);
+
+        var longestAllowed = new TokenSpec { Subject = new string('s', ExternalIdentityLimits.MaxSubjectLength), Locale = new string('l', ExternalIdentityLimits.MaxLocaleLength) };
+        (await harness.AuthenticateAsync(longestAllowed)).Should().BeOfType<AuthResult.Authenticated>().Subject.Identity.Locale.Should().HaveLength(ExternalIdentityLimits.MaxLocaleLength);
+
+        var oversizedProfile = new TokenSpec { Locale = new string('l', ExternalIdentityLimits.MaxLocaleLength + 1), Name = new string('n', ExternalIdentityLimits.MaxProfileTextLength + 1) };
+        ValidatedIdentity identity = (await harness.AuthenticateAsync(oversizedProfile)).Should().BeOfType<AuthResult.Authenticated>().Subject.Identity;
+        identity.Locale.Should().BeNull("profile data that does not fit is dropped, not allowed to block the login");
+        identity.DisplayName.Should().BeNull();
     }
 
     [Fact]
@@ -352,6 +435,32 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Theory]
+    [InlineData("http://fake-idp.test:9999/steal")]
+    [InlineData("http://fake-idp.test:8080/steal")]
+    public async Task TheMetadataClient_CanOnlyReachTheAuthoritysPort(string url)
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+        HttpClient client = harness.Services.GetRequiredService<IHttpClientFactory>().CreateClient(ClavarisAuthProvider.MetadataClientName);
+
+        Func<Task> act = () => client.GetAsync(url);
+
+        await act.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+    }
+
+    [Fact]
+    public async Task AnAuthorityOnANonDefaultPort_AllowsThatPort()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync(new Dictionary<string, string?> { ["Clavaris:Authority"] = "http://localhost:8080/o/org-1" });
+        HttpClient client = harness.Services.GetRequiredService<IHttpClientFactory>().CreateClient(ClavarisAuthProvider.MetadataClientName);
+
+        Func<Task> otherPort = () => client.GetAsync("http://localhost:9090/o/org-1");
+
+        await otherPort.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+        harness.Services.GetRequiredService<IOptionsMonitor<SakerWatch.BuildingBlocks.Resilience.HttpClientResilienceOptions>>()
+            .Get(ClavarisAuthProvider.MetadataClientName).AllowedHosts.Should().Equal("localhost:8080");
+    }
+
+    [Theory]
     [InlineData("", "api", "must be an absolute URL")]
     [InlineData("not a url", "api", "must be an absolute URL")]
     [InlineData("http://clavaris.example/o/x", "api", "must use https")]
@@ -370,6 +479,22 @@ public sealed class ClavarisAuthProviderTests
         Action act = () => _ = provider.GetRequiredService<IOptions<ClavarisOptions>>().Value;
 
         act.Should().Throw<OptionsValidationException>().WithMessage($"*{expectedMessage}*");
+    }
+
+    [Fact]
+    public void AnAuthorityLongerThanTheIssuerColumn_IsRejected()
+    {
+        var services = new ServiceCollection();
+        services.AddClavarisAuth(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Clavaris:Authority"] = "https://clavaris.example/o/" + new string('x', ExternalIdentityLimits.MaxIssuerLength),
+            ["Clavaris:Audience"] = "api",
+        }).Build());
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Action act = () => _ = provider.GetRequiredService<IOptions<ClavarisOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("*at most 512*");
     }
 
     [Fact]

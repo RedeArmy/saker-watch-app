@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,19 @@ namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
 /// <summary>The job's lease was taken over by another worker, so this attempt's work must not count.</summary>
 public sealed class LeaseLostException(Guid jobId)
     : InvalidOperationException($"The lease of job {jobId} was lost to another worker.");
+
+/// <summary>
+/// The job cannot run however often it is retried: its type is unknown, its payload does not fit the type, or no handler is registered
+/// for it. The job is parked as dead at once instead of burning every attempt and its backoff.
+/// </summary>
+public sealed class JobPayloadException : Exception
+{
+    /// <summary>Creates the exception.</summary>
+    public JobPayloadException(string message, Exception? inner = null)
+        : base(message, inner)
+    {
+    }
+}
 
 /// <summary>
 /// Runs queued jobs with leases and fencing (ADR-0005, ADR-0017). A job is claimed with <c>FOR UPDATE SKIP LOCKED</c> and
@@ -107,7 +121,7 @@ public sealed partial class JobProcessor
         string outcome = "success";
         try
         {
-            object payload = _registry.Deserialize(job.Type, job.Payload);
+            object payload = DeserializePayload(job);
             scope.ServiceProvider.GetRequiredService<CorrelationContext>().CorrelationId = job.CorrelationId;
             await session.BeginAsync(leaseToken.Token);
             await InvokeAsync(scope.ServiceProvider, payload, new JobContext(job.Id, job.Key, job.Attempts, job.MaxAttempts, job.CorrelationId), leaseToken.Token);
@@ -119,6 +133,11 @@ public sealed partial class JobProcessor
             await session.RollbackAsync(CancellationToken.None);
             outcome = "lease_lost";
             LeaseLost(job.Type, job.Id);
+        }
+        catch (JobPayloadException ex)
+        {
+            await session.RollbackAsync(CancellationToken.None);
+            outcome = await FailAsync(job, ex, permanent: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -178,11 +197,24 @@ public sealed partial class JobProcessor
         }
     }
 
+    // An unknown type or a payload that does not fit it will not get better with a retry.
+    private object DeserializePayload(ClaimedJob job)
+    {
+        try
+        {
+            return _registry.Deserialize(job.Type, job.Payload);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or NotSupportedException)
+        {
+            throw new JobPayloadException(ex.Message, ex);
+        }
+    }
+
     private static async Task InvokeAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken)
     {
         Type handlerType = typeof(IJobHandler<>).MakeGenericType(payload.GetType());
         object handler = services.GetService(handlerType)
-            ?? throw new InvalidOperationException($"No handler is registered for job payload {payload.GetType().FullName}.");
+            ?? throw new JobPayloadException($"No handler is registered for job payload {payload.GetType().FullName}.");
         MethodInfo handle = handlerType.GetMethod(nameof(IJobHandler<object>.HandleAsync))!;
 
         try
@@ -291,9 +323,9 @@ public sealed partial class JobProcessor
     }
 
     // Recorded on its own connection after the failed unit of work rolled back; fenced by the lease token.
-    private async Task<string> FailAsync(ClaimedJob job, Exception exception)
+    private async Task<string> FailAsync(ClaimedJob job, Exception exception, bool permanent = false)
     {
-        bool dead = job.Attempts >= job.MaxAttempts;
+        bool dead = permanent || job.Attempts >= job.MaxAttempts;
         DateTimeOffset now = _timeProvider.GetUtcNow();
         using var cleanup = new CancellationTokenSource(_cleanupTimeout);
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -308,7 +340,7 @@ public sealed partial class JobProcessor
             connection);
         fail.Parameters.AddWithValue("state", dead ? "dead" : "pending");
         fail.Parameters.AddWithValue("next", now + _backoff.Delay(job.Attempts));
-        fail.Parameters.AddWithValue("error", Describe(exception));
+        fail.Parameters.AddWithValue("error", ErrorText.Describe(exception));
         fail.Parameters.AddWithValue("finished", dead ? now : DBNull.Value);
         fail.Parameters.AddWithValue("id", job.Id);
         fail.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
@@ -347,12 +379,6 @@ public sealed partial class JobProcessor
         release.Parameters.AddWithValue("id", job.Id);
         release.Parameters.AddWithValue(_tokenParameter, job.LeaseToken);
         await release.ExecuteNonQueryAsync(cleanup.Token);
-    }
-
-    private static string Describe(Exception exception)
-    {
-        string text = $"{exception.GetType().Name}: {exception.Message}";
-        return text.Length <= 500 ? text : text[..500];
     }
 
     [LoggerMessage(EventId = 9511, Level = LogLevel.Warning, Message = "Job {Type} {JobId} failed on attempt {Attempt}; it will retry")]

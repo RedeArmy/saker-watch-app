@@ -8,6 +8,14 @@ namespace SakerWatch.BuildingBlocks.Resilience;
 /// <summary>Registration of named outbound HTTP clients with the standard Saker Watch policy.</summary>
 public static class SakerHttpClientExtensions
 {
+    /// <summary>The transport every Saker Watch outbound client uses: no redirects, no cookies, connections recycled so DNS changes are noticed.</summary>
+    public static SocketsHttpHandler CreatePrimaryHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+    };
+
     /// <summary>
     /// Registers a named client with a host allow-list, response size limit and a resilience pipeline
     /// (outermost first: bulkhead, total timeout, retry with exponential backoff and jitter, circuit breaker,
@@ -44,7 +52,9 @@ public static class SakerHttpClientExtensions
 
         // A redirect would be followed below the allow-list check and could reach a host that is not on it, so none is followed.
         // Pooled connections are recycled so a long-lived client (a singleton holding one HttpClient) still notices DNS changes.
-        builder.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, PooledConnectionLifetime = TimeSpan.FromMinutes(2) });
+        // Cookies are off: the handler lives as long as the client, so a Set-Cookie from a provider would otherwise be replayed on every
+        // later call of that client, whoever triggered it.
+        builder.ConfigurePrimaryHttpMessageHandler(CreatePrimaryHandler);
 
         builder.AddHttpMessageHandler(provider =>
         {

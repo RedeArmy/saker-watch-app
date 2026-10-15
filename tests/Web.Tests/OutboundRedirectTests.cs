@@ -31,7 +31,7 @@ public sealed class OutboundRedirectTests
         var services = new ServiceCollection();
         services.AddSakerHttpClient("provider", new Uri(address), options =>
         {
-            options.AllowedHosts = ["127.0.0.1"];
+            options.AllowedHosts = [new Uri(address).Authority];
             options.AllowInsecureHttp = true;
             options.MaxRetries = 0;
         });

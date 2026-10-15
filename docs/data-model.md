@@ -16,9 +16,10 @@
 | Object | Kind | Who | Purpose |
 |---|---|---|---|
 | `identity.users` policy `users_self` | RLS policy | `api_role` | a user sees and updates only their own row (`id = app.current_user_id`); no direct insert or delete |
-| `identity.provision_user(...)` | security-definer function | `api_role` | just-in-time provisioning keyed by `(issuer, subject)`; returns `(user_id, user_status, was_created)`; idempotent and race-safe; the id passed in is used only for a new user; email and name are refreshed only for active accounts |
+| `identity.provision_user(...)` | security-definer function | `api_role` | just-in-time provisioning keyed by `(issuer, subject)`; returns `(user_id, user_status, was_created)`; idempotent and race-safe; the id passed in is used only for a new user; email and name are refreshed only for active accounts and only when they differ (an unchanged login writes nothing; `updated_at` means "profile changed") |
 | `platform.idempotency_keys` policy `idempotency_keys_owner` | RLS policy | `api_role` | keys are visible and writable only for the current user |
 | `platform.purge_expired_idempotency_keys(before, batch)` | security-definer function | `worker_role` | retention purge across users without table access |
+| `platform.purge_user_idempotency_keys(user_id)` | security-definer function | `worker_role` | removes every idempotency key of one user, expired or not, for the account-deletion saga (Phase 6): stored responses can hold profile data (email, display name). Nothing calls it yet; added by `PurgeUserIdempotencyKeys` |
 | `platform.count_expired_idempotency_keys(before)` | security-definer function | `worker_role` | the dry-run counterpart of the purge (the worker cannot read the table); added by `RetentionSupport` together with partial indexes on `outbox_messages(processed_at)`, `inbox_messages(processed_at)` and `job_queue(state, finished_at)` |
 | `platform.enqueue_job(...)` | security-definer function | `api_role`, `worker_role` | `INSERT ... ON CONFLICT (job_key) DO NOTHING`; the API has no table access to the queue |
 | `platform.append_audit(...)` | security-definer function | `api_role`, `worker_role` | the only way to write the audit log; serializes writers and extends the SHA-256 hash chain |

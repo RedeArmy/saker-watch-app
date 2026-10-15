@@ -1,5 +1,7 @@
+using System.Data.Common;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SakerWatch.BuildingBlocks.Kernel.Security;
@@ -35,6 +37,24 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
         public string Name { get; set; } = string.Empty;
     }
 
+    /// <summary>Records the transaction each command carried when it was executed, as the driver would see it.</summary>
+    private sealed class TransactionRecorder : DbCommandInterceptor
+    {
+        public List<System.Data.Common.DbTransaction?> Seen { get; } = [];
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Seen.Add(command.Transaction);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Seen.Add(command.Transaction);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
     private sealed class FixedUser(Guid? id) : ICurrentUser
     {
         public Guid? UserId => id;
@@ -57,12 +77,15 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
         var services = new ServiceCollection();
         services.AddSingleton<ICurrentUser>(new FixedUser(user));
         services.AddSakerPostgres(configuration);
+        services.AddScoped<TransactionRecorder>();
         services.AddSakerDbContext<PlatformDbContext>(PlatformDbContext.Schema);
         services.AddDbContext<ProbeDbContext>((provider, options) => options
             .UseNpgsql(provider.GetRequiredService<DbSession>().Connection)
             .AddInterceptors(
                 provider.GetRequiredService<UserContextConnectionInterceptor>(),
-                provider.GetRequiredService<AmbientTransactionInterceptor>()));
+                provider.GetRequiredService<AmbientTransactionInterceptor>(),
+                provider.GetRequiredService<AmbientCommandInterceptor>(),
+                provider.GetRequiredService<TransactionRecorder>()));
         return new TestHost(services.BuildServiceProvider(), db);
     }
 
@@ -87,6 +110,35 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
     private static async Task<(long Outbox, long Probe)> CountsAsync(MigratedDatabase db) =>
         (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM platform.outbox_messages"),
          await db.Admin.ScalarAsync<long>("SELECT count(*) FROM public.probe_items"));
+
+    [Fact]
+    public async Task SetBasedUpdatesDeletesAndQueries_RunOnTheUnitOfWorksTransaction_AndRollBackWithIt()
+    {
+        await using TestHost host = await StartAsync();
+        await host.Db.Admin.ExecuteAsync("GRANT UPDATE, DELETE ON public.probe_items TO api_role");
+        var keep = Probe();
+        var drop = Probe();
+        await host.Db.Admin.ExecuteAsync("INSERT INTO public.probe_items (id, name) VALUES (@a, 'keep'), (@b, 'drop')", ("a", keep.Id), ("b", drop.Id));
+
+        await using (AsyncServiceScope scope = host.Provider.CreateAsyncScope())
+        {
+            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var probe = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
+            var recorder = scope.ServiceProvider.GetRequiredService<TransactionRecorder>();
+            var session = scope.ServiceProvider.GetRequiredService<DbSession>();
+            await uow.BeginAsync(CancellationToken.None);
+
+            await probe.Items.Where(i => i.Id == keep.Id).ExecuteUpdateAsync(set => set.SetProperty(i => i.Name, "renamed"));
+            await probe.Items.Where(i => i.Id == drop.Id).ExecuteDeleteAsync();
+            (await probe.Items.CountAsync()).Should().Be(1, "the unit of work sees its own writes");
+
+            recorder.Seen.Should().HaveCount(3).And.OnlyContain(t => ReferenceEquals(t, session.Transaction), "every command carries the unit of work's transaction");
+            await uow.RollbackAsync(CancellationToken.None);
+        }
+
+        (await host.Db.Admin.ScalarAsync<string>("SELECT name FROM public.probe_items WHERE id = @id", ("id", keep.Id))).Should().Be("keep");
+        (await host.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM public.probe_items")).Should().Be(2, "the rollback undid the set-based update and delete");
+    }
 
     [Fact]
     public async Task Commit_PersistsWritesOfEveryContextTogether()

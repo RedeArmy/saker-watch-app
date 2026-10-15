@@ -16,8 +16,9 @@ namespace SakerWatch.Retention.Infrastructure;
 /// <param name="scopes">Creates the scope the enqueuer lives in.</param>
 /// <param name="options">Schedule and mode.</param>
 /// <param name="timeProvider">Injected clock.</param>
+/// <param name="environment">Tells whether this is a development host, where dry run is the expected mode.</param>
 /// <param name="logger">Logger.</param>
-public sealed partial class RetentionScheduler(IServiceScopeFactory scopes, IOptions<RetentionOptions> options, TimeProvider timeProvider, ILogger<RetentionScheduler> logger) : BackgroundService
+public sealed partial class RetentionScheduler(IServiceScopeFactory scopes, IOptions<RetentionOptions> options, TimeProvider timeProvider, IHostEnvironment environment, ILogger<RetentionScheduler> logger) : BackgroundService
 {
     /// <summary>How soon to try again after a failure to enqueue (never longer than the check interval).</summary>
     public static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(1);
@@ -33,6 +34,13 @@ public sealed partial class RetentionScheduler(IServiceScopeFactory scopes, IOpt
         {
             Disabled();
             return;
+        }
+
+        // Dry run is the safe default, but left on in a deployed environment nothing is ever deleted: expired idempotency keys (which
+        // hold stored responses with profile data) and processed rows would accumulate for good. Say so at every start.
+        if (settings.DryRun && !environment.IsDevelopment())
+        {
+            DryRunOutsideDevelopment(environment.EnvironmentName);
         }
 
         while (!stoppingToken.IsCancellationRequested)
@@ -79,6 +87,9 @@ public sealed partial class RetentionScheduler(IServiceScopeFactory scopes, IOpt
 
     [LoggerMessage(EventId = 9703, Level = LogLevel.Information, Message = "Retention run enqueued for today ({Mode})")]
     private partial void Enqueued(string mode);
+
+    [LoggerMessage(EventId = 9705, Level = LogLevel.Warning, Message = "Retention is in dry-run mode in the {Environment} environment: nothing is deleted, so expired data accumulates until Retention:DryRun is switched off")]
+    private partial void DryRunOutsideDevelopment(string environment);
 
     [LoggerMessage(EventId = 9704, Level = LogLevel.Warning, Message = "Could not enqueue today's retention run; it will be retried shortly")]
     private partial void EnqueueFailed(Exception exception);

@@ -163,6 +163,58 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
         applied.Should().Be(1);
     }
 
+    private sealed class SlowMigration(TimeSpan duration) : IMongoMigration
+    {
+        private int _runs;
+
+        public int Runs => Volatile.Read(ref _runs);
+
+        public int Version => 1;
+
+        public string Name => "slow";
+
+        public string Checksum => "slow-v1";
+
+        public async Task UpAsync(IMongoDatabase database, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _runs);
+            await Task.Delay(duration, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task AMigrationThatOutlastsTheLockLifetime_KeepsTheLockWhileItRuns()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        var slow = new SlowMigration(TimeSpan.FromSeconds(2));
+        var shortLock = new MongoMigrationLockOptions(TimeSpan.FromMilliseconds(600), TimeSpan.FromSeconds(10));
+
+        Task<int> first = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
+        await Task.Delay(900);
+        Task<int> second = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
+
+        (await first).Should().Be(1);
+        (await second).Should().Be(0, "the second migrator waited for the lock and found the migration applied");
+        slow.Runs.Should().Be(1, "without renewal the lock would have expired after 600 ms and the second runner would have started it again");
+    }
+
+    [Fact]
+    public async Task WhenTheLockIsLostMidRun_TheRunStopsInsteadOfInterleaving()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        var slow = new SlowMigration(TimeSpan.FromSeconds(30));
+        var shortLock = new MongoMigrationLockOptions(TimeSpan.FromMilliseconds(600), TimeSpan.FromSeconds(10));
+
+        Task<int> run = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
+        await Task.Delay(100);
+        await db.GetCollection<BsonDocument>("_migration_lock").DeleteOneAsync(new BsonDocument("_id", "migrations"));
+
+        Func<Task> act = () => run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await act.Should().ThrowAsync<MongoMigrationLockLostException>();
+        (await db.GetCollection<BsonDocument>("_migrations").CountDocumentsAsync(new BsonDocument())).Should().Be(0, "the interrupted migration is not recorded as applied");
+    }
+
     [Fact]
     public async Task DuplicateVersions_AreRejectedBeforeAnythingRuns()
     {
