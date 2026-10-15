@@ -29,7 +29,7 @@ public sealed class RateLimitingOptions
     public int ExpensivePermitLimit { get; set; } = 10;
 
     /// <summary>
-    /// Requests per window and client IP before authentication. It stops floods of invalid tokens, which would otherwise cost
+    /// Requests per window and client address (an IPv6 client counts by its /64) before authentication. It stops floods of invalid tokens, which would otherwise cost
     /// signature validation each; it is higher than <see cref="PermitLimit"/> because several users may share an address.
     /// </summary>
     [Range(1, 1_000_000)]
@@ -126,7 +126,7 @@ public static class RateLimitingSetup
     private static string PartitionKey(HttpContext context)
     {
         string? user = context.User.FindFirstValue(SakerClaims.UserId) ?? context.User.FindFirstValue(SakerClaims.Subject) ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return user is not null ? $"user:{user}" : $"ip:{context.Connection.RemoteIpAddress}";
+        return user is not null ? $"user:{user}" : $"ip:{ClientAddressKey.For(context.Connection.RemoteIpAddress)}";
     }
 
     private static async ValueTask WriteRejectionAsync(HttpContext http, RateLimitLease lease, string policy)
@@ -154,6 +154,37 @@ public static class RateLimitingSetup
     }
 }
 
+/// <summary>
+/// The key a client address is limited under. An IPv4 address is its own key; an IPv6 address is reduced to its /64 prefix, because
+/// one subscriber usually owns a whole /64 and could otherwise rotate through billions of addresses, each with a fresh allowance
+/// (and a fresh limiter held in memory). IPv4-mapped IPv6 addresses count as the IPv4 address they carry.
+/// </summary>
+public static class ClientAddressKey
+{
+    /// <summary>The limiter key for <paramref name="address"/>; <c>unknown</c> when the connection has none.</summary>
+    public static string For(System.Net.IPAddress? address)
+    {
+        if (address is null)
+        {
+            return "unknown";
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            return address.ToString();
+        }
+
+        Span<byte> bytes = stackalloc byte[16];
+        address.TryWriteBytes(bytes, out _);
+        return $"{Convert.ToHexStringLower(bytes[..8])}::/64";
+    }
+}
+
 /// <summary>Fixed-window limiter per client IP for requests that have not been authenticated yet.</summary>
 public sealed class PreAuthenticationRateLimiter : IDisposable
 {
@@ -166,7 +197,7 @@ public sealed class PreAuthenticationRateLimiter : IDisposable
 
         RateLimitingOptions o = options.Value;
         _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context => RateLimitPartition.GetFixedWindowLimiter(
-            $"ip:{context.Connection.RemoteIpAddress}",
+            $"ip:{ClientAddressKey.For(context.Connection.RemoteIpAddress)}",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = o.PreAuthenticationPermitLimit,

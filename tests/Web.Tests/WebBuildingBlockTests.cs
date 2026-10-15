@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Web.Correlation;
 using SakerWatch.BuildingBlocks.Web.Problems;
+using SakerWatch.BuildingBlocks.Web.RateLimiting;
 
 namespace SakerWatch.Web.Tests;
 
@@ -178,6 +179,49 @@ public sealed class WebBuildingBlockTests
         limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await ReadJson(limited)).GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:rate_limited");
         (await client.GetAsync("/health/live")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7", "203.0.113.7")]
+    [InlineData("::ffff:203.0.113.7", "203.0.113.7")]
+    [InlineData("2001:db8:aaaa:bbbb:1111:2222:3333:4444", "2001:db8:aaaa:bbbb:ffff:ffff:ffff:ffff")]
+    public void ClientAddressKey_TreatsEquivalentAddressesAsOneClient(string one, string other)
+    {
+        ClientAddressKey.For(IPAddress.Parse(one)).Should().Be(ClientAddressKey.For(IPAddress.Parse(other)));
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7", "203.0.113.8")]
+    [InlineData("2001:db8:aaaa:bbbb::1", "2001:db8:aaaa:bbbc::1")]
+    [InlineData("203.0.113.7", "2001:db8:aaaa:bbbb::1")]
+    public void ClientAddressKey_KeepsDifferentClientsApart(string one, string other)
+    {
+        ClientAddressKey.For(IPAddress.Parse(one)).Should().NotBe(ClientAddressKey.For(IPAddress.Parse(other)));
+    }
+
+    [Fact]
+    public void ClientAddressKey_WithoutAnAddress_IsOneSharedKey()
+    {
+        ClientAddressKey.For(null).Should().Be("unknown");
+    }
+
+    [Fact]
+    public async Task PreAuthenticationLimit_CountsAnIpv6SubscriberOnce_NotOncePerAddress()
+    {
+        using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PreAuthenticationPermitLimit"] = "2" });
+        HttpClient client = host.GetTestClient();
+
+        async Task<HttpStatusCode> From(string address)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/ok");
+            request.Headers.Add(WebTestServer.TestRemoteIpHeader, address);
+            return (await client.SendAsync(request)).StatusCode;
+        }
+
+        (await From("2001:db8:1:1::1")).Should().Be(HttpStatusCode.OK);
+        (await From("2001:db8:1:1::2")).Should().Be(HttpStatusCode.OK);
+        (await From("2001:db8:1:1:dead:beef::3")).Should().Be(HttpStatusCode.TooManyRequests, "rotating addresses inside a /64 does not buy a new allowance");
+        (await From("2001:db8:1:2::1")).Should().Be(HttpStatusCode.OK, "another /64 is another client");
     }
 
     [Fact]

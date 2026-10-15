@@ -22,6 +22,9 @@ internal static class WebTestServer
 {
     public const string TestUserHeader = "X-Test-User";
 
+    /// <summary>Sets the connection's remote address, which a real host takes from the socket (or from trusted forwarded headers).</summary>
+    public const string TestRemoteIpHeader = "X-Test-Remote-Ip";
+
     public static async Task<IHost> StartAsync(Dictionary<string, string?>? settings = null, bool readyFails = false, ReadyCheckCounter? counter = null, TimeProvider? clock = null)
     {
         IHost host = new HostBuilder()
@@ -54,6 +57,11 @@ internal static class WebTestServer
                     // Test stand-in for authentication: a header becomes the validated principal.
                     app.Use(async (http, next) =>
                     {
+                        if (http.Request.Headers.TryGetValue(TestRemoteIpHeader, out var remote))
+                        {
+                            http.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remote.ToString());
+                        }
+
                         if (http.Request.Headers.TryGetValue(TestUserHeader, out var user))
                         {
                             http.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", user.ToString())], "test"));
