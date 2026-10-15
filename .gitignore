@@ -23,3 +23,5 @@ web/out/
 
 # OS
 .DS_Store
+sbom/
+coverage-summary.txt
