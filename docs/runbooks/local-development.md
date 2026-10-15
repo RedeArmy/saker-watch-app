@@ -45,3 +45,6 @@ dotnet run --project src/Hosts/Host.Api
 
 ## 6. Integration tests
 `dotnet test` starts its own containers (Docker required). The MongoDB image comes from the compose file, falling back to `mongo:4.4` on a CPU without AVX; `SAKER_TEST_MONGO_IMAGE` overrides it.
+
+## API contract
+`GET /openapi/v1.json` and `/swagger` are open in Development. To expose the document elsewhere set `OpenApi__Anonymous=true`. After changing an endpoint run `UPDATE_OPENAPI=1 dotnet test tests/Contract.Tests` and commit `docs/api/openapi.v1.json` (CI fails on a stale file).

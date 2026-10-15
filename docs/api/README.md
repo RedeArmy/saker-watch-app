@@ -10,6 +10,12 @@
 ## Every endpoint must declare
 `WithName`, `WithSummary`, `WithDescription`, `WithTags`, typed `Produces<T>` for every status code, `ProducesProblem` (RFC 9457) for errors, auth requirement, request/response examples, and `Idempotency-Key`/pagination/ETag behavior where relevant.
 
+## Contract workflow (implemented, milestone 1.5a)
+- The document is generated from code by `Asp.Versioning.OpenApi` + `Microsoft.AspNetCore.OpenApi` and served at `/openapi/v1.json`. It declares the `bearer` scheme and a `security` requirement on every operation that is not anonymous; it pins no `servers` entry.
+- `tests/Contract.Tests` hosts `Host.Api` in memory and fails when the generated document differs from `docs/api/openapi.v1.json`. After an intentional API change run `UPDATE_OPENAPI=1 dotnet test tests/Contract.Tests`, review the diff and commit it with the change.
+- The same project enforces the conventions below on every mapped endpoint: versioned route, `WithName`, `WithSummary`, `WithDescription`, `WithTags`, a documented success response, 401 and 500 as problems, and no anonymous API endpoint.
+- Exposure: the document is anonymous only in Development or with `OpenApi:Anonymous=true`; elsewhere it needs a valid token. Swagger UI (`/swagger`) is served in Development only.
+
 ## Versioning
 URL segment `/v1`. Additive changes are non-breaking; anything else needs `/v2`. Deprecation: `deprecated: true`, `Deprecation` and `Sunset` headers, at least one release cycle of overlap.
 

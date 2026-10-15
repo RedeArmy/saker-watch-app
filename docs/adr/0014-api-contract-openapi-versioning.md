@@ -1,6 +1,6 @@
 # ADR-0014: API contract — OpenAPI, Swagger documentation and versioning
 
-- **Status:** accepted (package choices to be re-verified at Phase 1 start)
+- **Status:** accepted (packages verified 2026-10-14: `Asp.Versioning.Http`/`Asp.Versioning.OpenApi` 10.2.3, `Microsoft.AspNetCore.OpenApi` 10.0.12, `Swashbuckle.AspNetCore.SwaggerUI` 10.2.3 for the UI only)
 - **Date:** 2026-10-12
 - **Deciders:** Eder
 
