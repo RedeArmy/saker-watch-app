@@ -3,7 +3,8 @@
 
 Reads every Cobertura report under a directory (one per test project), merges them by class and line (a line counts as
 covered when any test project hit it) and checks the assemblies that hold business logic: `*.Domain`, `*.Application` and
-the Kernel/Application building blocks. Hosts, Infrastructure and generated migrations are reported but not gated.
+the Kernel/Application building blocks. Hosts, Infrastructure and generated migrations are reported but not gated, and generated source (under obj/)
+is left out of every count.
 
 Usage: python3 -I scripts/check-coverage.py <results-directory> [minimum-percent]
 """
@@ -25,6 +26,12 @@ def find_reports(directory: str) -> list[Path]:
     return [path for path in root.rglob(REPORT_NAME) if path.is_file()]
 
 
+def is_generated(filename: str | None) -> bool:
+    """Source generators (regex, logging, EF) write into obj/; their code is not logic the tests are meant to cover."""
+    normalized = (filename or "").replace("\\", "/")
+    return "/obj/" in normalized or normalized.endswith(".g.cs")
+
+
 def merge(reports: list[Path]) -> dict[str, dict[tuple[str, int], int]]:
     """Hits per (class, line) for each package; the highest hit count across reports wins."""
     lines: dict[str, dict[tuple[str, int], int]] = collections.defaultdict(dict)
@@ -32,6 +39,8 @@ def merge(reports: list[Path]) -> dict[str, dict[tuple[str, int], int]]:
         for package in ET.parse(report).getroot().iter("package"):
             target = lines[package.get("name")]
             for cls in package.iter("class"):
+                if is_generated(cls.get("filename")):
+                    continue
                 for line in cls.iter("line"):
                     key = (cls.get("name"), int(line.get("number")))
                     target[key] = max(target.get(key, 0), int(line.get("hits")))
