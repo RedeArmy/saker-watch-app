@@ -49,6 +49,71 @@ public sealed class IdentitySecurityTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task Provision_KnownIdentityWithUnchangedProfile_DoesNotRewriteTheRow()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(id, "sub-1", "same@example.com"));
+        string? before = await db.Admin.ScalarAsync<string>("SELECT xmin::text FROM identity.users WHERE id = @id", ("id", id));
+
+        for (int i = 0; i < 3; i++)
+        {
+            await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "sub-1", "same@example.com"));
+        }
+
+        (await db.Admin.ScalarAsync<string>("SELECT xmin::text FROM identity.users WHERE id = @id", ("id", id))).Should().Be(before, "an unchanged login is a read, not an update");
+    }
+
+    [Fact]
+    public async Task Provision_KnownIdentityWithAChangedProfile_UpdatesTheRowAndKeepsUnsentFields()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(id, "sub-1", "old@example.com"));
+        string? before = await db.Admin.ScalarAsync<string>("SELECT xmin::text FROM identity.users WHERE id = @id", ("id", id));
+
+        await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "sub-1", "new@example.com"));
+        await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "sub-1", null));
+
+        (await db.Admin.ScalarAsync<string>("SELECT email FROM identity.users WHERE id = @id", ("id", id))).Should().Be("new@example.com", "a token without an email does not erase the stored one");
+        (await db.Admin.ScalarAsync<string>("SELECT xmin::text FROM identity.users WHERE id = @id", ("id", id))).Should().NotBe(before);
+    }
+
+    [Fact]
+    public async Task Provision_AccountPendingDeletion_IsReturnedWithoutBeingEdited()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(id, "sub-1", "kept@example.com"));
+        await db.Admin.ExecuteAsync("UPDATE identity.users SET status = 'pending_deletion' WHERE id = @id", ("id", id));
+
+        await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "sub-1", "changed@example.com"));
+
+        (await db.Admin.ScalarAsync<string>("SELECT email FROM identity.users WHERE id = @id", ("id", id))).Should().Be("kept@example.com");
+        (await db.Admin.ScalarAsync<string>("SELECT status FROM identity.users WHERE id = @id", ("id", id))).Should().Be("pending_deletion");
+    }
+
+    [Fact]
+    public async Task UpgradeFromTheEveryLoginUpdateVersion_KeepsGrantsAndBehavior()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        await MigrationSteps.PlatformStep(admin).RunAsync(CancellationToken.None);
+        var identity = MigrationSteps.IdentityStep(admin);
+        await identity.MigrateToAsync("ProvisionUserWithStatus", CancellationToken.None);
+        var existing = Guid.CreateVersion7();
+        await admin.ExecuteAsync(
+            "SELECT * FROM identity.provision_user(@id, 'i', 's', 'a@example.com', NULL, 'es-GT', now())",
+            ("id", existing));
+
+        await identity.RunAsync(CancellationToken.None);
+        string api = await TimescalePostgresFixture.CreateRoleLoginAsync(admin, "api_role");
+
+        var again = await api.AsUserScalarAsync<Guid>(null, "SELECT user_id FROM identity.provision_user(@id, 'i', 's', 'a@example.com', NULL, 'es-GT', now())", ("id", Guid.CreateVersion7()));
+        again.Should().Be(existing, "the api role can still execute the replaced function and the existing user is found");
+        (await api.AsUserScalarAsync<bool>(null, "SELECT was_created FROM identity.provision_user(@id, 'i', 'new-sub', NULL, NULL, 'es-GT', now())", ("id", Guid.CreateVersion7()))).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Provision_SameSubjectUnderAnotherIssuer_IsADifferentUser()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
