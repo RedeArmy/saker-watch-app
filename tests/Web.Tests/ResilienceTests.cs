@@ -164,6 +164,35 @@ public sealed class ResilienceTests
         await defaultPort.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
     }
 
+    [Theory]
+    [InlineData("::1", "http://[::1]/quote", true)]
+    [InlineData("[::1]", "http://[::1]/quote", true)]
+    [InlineData("[::1]:8080", "http://[::1]:8080/quote", true)]
+    [InlineData("[::1]:8080", "http://[::1]/quote", false)]
+    [InlineData("::1", "http://[::2]/quote", false)]
+    public async Task IPv6Literals_AreMatchedWithOrWithoutBrackets(string entry, string url, bool allowed)
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary, o =>
+        {
+            o.AllowedHosts = [entry];
+            o.AllowInsecureHttp = true;
+        });
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        Func<Task> act = () => client.GetAsync(url);
+
+        if (allowed)
+        {
+            await act.Should().NotThrowAsync();
+            primary.Calls.Should().Be(1);
+        }
+        else
+        {
+            await act.Should().ThrowAsync<HttpRequestException>().WithMessage("*allow-list*");
+        }
+    }
+
     [Fact]
     public async Task ARelativeRequestUri_IsRefusedCleanly()
     {

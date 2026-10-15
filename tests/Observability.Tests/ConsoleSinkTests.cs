@@ -1,6 +1,10 @@
 using System.Diagnostics;
 using System.Text;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using SakerWatch.BuildingBlocks.Observability;
 using SakerWatch.BuildingBlocks.Observability.Logging;
 using Serilog;
 
@@ -76,8 +80,9 @@ public sealed class ConsoleSinkTests
             return Task.FromResult(0);
         });
 
-        string[] lines = writer.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        lines.Should().ContainSingle().Which.Should().Contain("hello \\\"NVDA\\\"").And.Contain("\"Service\":\"svc\"");
+        // Console.Out is process-wide: keep only this logger's lines in case another test's host writes while it is swapped.
+        string[] lines = [.. writer.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(line => line.Contains("\"Service\":\"svc\"", StringComparison.Ordinal))];
+        lines.Should().ContainSingle().Which.Should().Contain("hello \\\"NVDA\\\"");
     }
 
     [Fact]
@@ -102,5 +107,22 @@ public sealed class ConsoleSinkTests
 
         elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5), "writing to a stalled console must not hold the caller");
         writer.Written.Should().Contain("event 0", "what was queued is written once the console recovers");
+    }
+
+    [Fact]
+    public async Task ADisposedHost_FlushesTheQueuedEvents_SoTheLastLinesBeforeShutdownAreNotLost()
+    {
+        var writer = new StringWriter();
+
+        await WithConsole(writer, () =>
+        {
+            HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+            builder.AddSakerObservability("svc-flush");
+            using IHost host = builder.Build();
+            host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("test").LogError("last words before shutdown");
+            return Task.FromResult(0);
+        });
+
+        writer.ToString().Should().Contain("last words before shutdown");
     }
 }
