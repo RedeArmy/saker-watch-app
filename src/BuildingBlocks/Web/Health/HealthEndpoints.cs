@@ -78,10 +78,12 @@ public sealed class ReadinessCache(HealthCheckService health, IOptions<HealthOpt
             HealthReport report = await health.CheckHealthAsync(check => check.Tags.Contains(HealthEndpoints.ReadyTag), timeout.Token);
             result.SetResult(report.Status);
         }
-        catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException)
+        catch (Exception)
+#pragma warning disable S2221 // Whatever goes wrong, everyone waiting on this run (and the cache) must get an answer, not hang forever.
         {
             result.SetResult(HealthStatus.Unhealthy);
         }
+#pragma warning restore S2221
     }
 }
 

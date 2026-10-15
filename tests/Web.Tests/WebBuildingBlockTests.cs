@@ -2,9 +2,11 @@ using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Web.Correlation;
+using SakerWatch.BuildingBlocks.Web.Health;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
 
@@ -303,6 +305,33 @@ public sealed class WebBuildingBlockTests
         clock.Advance(TimeSpan.FromSeconds(6));
         (await client.GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
         counter.Runs.Should().Be(2, "the result is refreshed once the window has passed");
+    }
+
+    private sealed class ThrowingHealthService : HealthCheckService
+    {
+        public int Calls { get; private set; }
+
+        public override Task<HealthReport> CheckHealthAsync(Func<HealthCheckRegistration, bool>? predicate, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new ObjectDisposedException("the host is shutting down");
+        }
+    }
+
+    [Fact]
+    public async Task Readiness_WhenTheHealthServiceItselfFails_AnswersUnhealthy_NeverHangs()
+    {
+        var service = new ThrowingHealthService();
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        var cache = new ReadinessCache(service, Microsoft.Extensions.Options.Options.Create(new HealthOptions { ReadinessCacheSeconds = 5 }), clock);
+
+        HealthStatus first = await cache.GetAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromSeconds(6));
+        HealthStatus second = await cache.GetAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        first.Should().Be(HealthStatus.Unhealthy);
+        second.Should().Be(HealthStatus.Unhealthy);
+        service.Calls.Should().Be(2, "a failed run is not cached past its window");
     }
 
     [Fact]
