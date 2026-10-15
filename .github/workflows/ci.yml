@@ -90,6 +90,7 @@ jobs:
           dotnet test --no-build
           --collect:"XPlat Code Coverage"
           --results-directory "$RUNNER_TEMP/coverage"
+          --blame-hang --blame-hang-timeout 12m --blame-hang-dump-type none
           -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
       # Line coverage of the Domain/Application assemblies must stay at or above 85 % (testing rules); the summary is kept.
       - name: Coverage gate (Domain and Application at least 85 %)
@@ -160,6 +161,7 @@ jobs:
         run: >
           dotnet test --no-build
           --collect:"XPlat Code Coverage"
+          --blame-hang --blame-hang-timeout 12m --blame-hang-dump-type none
           -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
       - name: End analysis (waits for the Quality Gate)
         if: env.SONAR_TOKEN != ''
