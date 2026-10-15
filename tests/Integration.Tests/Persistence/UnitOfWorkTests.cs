@@ -108,6 +108,32 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
     }
 
     [Fact]
+    public async Task TwoUnitsOfWork_OnTheSameContext_BothPersist_AndARolledBackOneLeavesNothing()
+    {
+        await using TestHost host = await StartAsync();
+        await using AsyncServiceScope scope = host.Provider.CreateAsyncScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var context = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
+
+        await uow.BeginAsync(CancellationToken.None);
+        context.Items.Add(Probe());
+        await context.SaveChangesAsync();
+        await uow.CommitAsync(CancellationToken.None);
+
+        await uow.BeginAsync(CancellationToken.None);
+        context.Items.Add(Probe());
+        await context.SaveChangesAsync();
+        await uow.RollbackAsync(CancellationToken.None);
+
+        await uow.BeginAsync(CancellationToken.None);
+        context.Items.Add(Probe());
+        await context.SaveChangesAsync();
+        await uow.CommitAsync(CancellationToken.None);
+
+        (await CountsAsync(host.Db)).Probe.Should().Be(2, "the rolled back unit of work left nothing and the others committed");
+    }
+
+    [Fact]
     public async Task Rollback_UndoesWritesOfEveryContextTogether()
     {
         await using TestHost host = await StartAsync();

@@ -163,6 +163,23 @@ public sealed class WebBuildingBlockTests
     }
 
     [Fact]
+    public async Task PreAuthenticationLimit_StopsAFloodBeforeAnyTokenIsLooked_AndSparesTheHealthProbes()
+    {
+        using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PreAuthenticationPermitLimit"] = "3" });
+        HttpClient client = host.GetTestClient();
+
+        for (int i = 0; i < 3; i++)
+        {
+            (await client.GetAsync("/ok")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        HttpResponseMessage limited = await client.GetAsync("/ok");
+        limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await ReadJson(limited)).GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:rate_limited");
+        (await client.GetAsync("/health/live")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task RateLimit_IsPerUser_SoOneUserCannotExhaustAnothers()
     {
         using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PermitLimit"] = "1" });

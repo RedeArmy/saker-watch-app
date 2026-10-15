@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 
 namespace SakerWatch.Retention.Application;
@@ -8,15 +9,20 @@ namespace SakerWatch.Retention.Application;
 [JobType("retention.run.v1")]
 public sealed record RetentionRunJob(bool DryRun);
 
-/// <summary>Runs the retention rules for a queued job. A rerun after a lease takeover simply finds less to remove.</summary>
+/// <summary>
+/// Runs the retention rules for a queued job. A rerun after a lease takeover simply finds less to remove. A job can ask for a dry
+/// run but never switch one off: deletion needs both the job and the configured <see cref="RetentionOptions.DryRun"/> to say so,
+/// so a forged payload cannot bypass the safe default.
+/// </summary>
 /// <param name="runner">The rules.</param>
-public sealed class RetentionRunJobHandler(RetentionRunner runner) : IJobHandler<RetentionRunJob>
+/// <param name="options">The retention settings.</param>
+public sealed class RetentionRunJobHandler(RetentionRunner runner, IOptions<RetentionOptions> options) : IJobHandler<RetentionRunJob>
 {
     /// <inheritdoc />
     public async Task HandleAsync(RetentionRunJob payload, JobContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        await runner.RunAsync(payload.DryRun, cancellationToken);
+        await runner.RunAsync(payload.DryRun || options.Value.DryRun, cancellationToken);
     }
 }
 

@@ -1,8 +1,8 @@
 namespace SakerWatch.Hosts.Worker;
 
 /// <summary>
-/// Placeholder worker loop: logs start and graceful stop so the lifecycle is observable. The job dispatcher with
-/// leases that replaces it arrives in milestone 1.3; it must release its leases in <c>StopAsync</c>.
+/// Logs start and graceful stop of the worker host so its lifecycle is observable. The job dispatcher and the outbox
+/// processor are separate hosted services that release their leases in <c>StopAsync</c>.
 /// </summary>
 /// <param name="logger">Worker logger.</param>
 internal sealed partial class WorkerLifecycleService(ILogger<WorkerLifecycleService> logger) : BackgroundService

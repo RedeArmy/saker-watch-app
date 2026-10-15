@@ -13,6 +13,7 @@ using SakerWatch.BuildingBlocks.Persistence.Platform;
 using SakerWatch.BuildingBlocks.Redis;
 using SakerWatch.BuildingBlocks.Web;
 using SakerWatch.BuildingBlocks.Web.Health;
+using SakerWatch.BuildingBlocks.Web.RateLimiting;
 using SakerWatch.BuildingBlocks.Web.Security;
 using SakerWatch.Hosts.Api.Api;
 using SakerWatch.Identity.Infrastructure.Clavaris;
@@ -52,6 +53,7 @@ app.UseSakerWeb();
 app.UseSerilogRequestLogging(options => options.GetLevel = RequestLogLevel);
 app.UseRouting();
 app.UseSakerCors();
+app.UseSakerPreAuthenticationRateLimiting();
 
 // Development only, and before authentication: the UI is static and the default-deny policy would otherwise answer 401 for it.
 if (app.Environment.IsDevelopment())

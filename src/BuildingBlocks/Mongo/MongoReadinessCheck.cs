@@ -18,7 +18,7 @@ public sealed class MongoReadinessCheck(IMongoDatabase database) : IHealthCheck
         }
         catch (Exception ex) when (ex is MongoException or TimeoutException)
         {
-            return HealthCheckResult.Unhealthy("MongoDB is not reachable.");
+            return HealthCheckResult.Unhealthy("MongoDB is not reachable.", ex);
         }
     }
 }

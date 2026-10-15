@@ -85,7 +85,30 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --no-restore -warnaserror
       - run: dotnet format --verify-no-changes --no-restore
-      - run: dotnet test --no-build
+      - name: Test with coverage
+        run: >
+          dotnet test --no-build
+          --collect:"XPlat Code Coverage"
+          --results-directory "$RUNNER_TEMP/coverage"
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+      # Line coverage of the Domain/Application assemblies must stay at or above 85 % (testing rules); the summary is kept.
+      - name: Coverage gate (Domain and Application at least 85 %)
+        run: python3 -I scripts/check-coverage.py "$RUNNER_TEMP/coverage" 85 | tee coverage-summary.txt  # the runner's bash uses pipefail, so a failed gate fails the step
+      # CycloneDX SBOM of each deployable (production dependencies, direct and transitive).
+      - name: SBOM (CycloneDX)
+        run: |
+          dotnet tool restore
+          for host in Api Worker Migrator; do
+            dotnet cyclonedx "src/Hosts/Host.${host}/SakerWatch.Hosts.${host}.csproj" -rs -ed -dpr -F Json -fn "${host,,}.bom.json" -o sbom
+          done
+      - name: Keep coverage summary and SBOMs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-evidence
+          path: |
+            coverage-summary.txt
+            sbom/*.bom.json
+          retention-days: 30
       - name: Vulnerable packages
         run: |
           dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln.txt
@@ -125,7 +148,7 @@ jobs:
           /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
-          /d:sonar.coverage.exclusions="**/Program.cs,**/IAssemblyMarker.cs"
+          /d:sonar.coverage.exclusions="**/Program.cs,**/IAssemblyMarker.cs,scripts/**"
           /d:sonar.exclusions="**/bin/**,**/obj/**,**/TestResults/**"
           /d:sonar.qualitygate.wait=true
       - name: Build
@@ -184,4 +207,4 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           exit-code: "1"
-  # Planned for phase 1+ (tracked in docs/roadmap.md): coverage gate, SBOM (CycloneDX), multi-arch images (linux/arm64), EF migration bundle, deploy job.
+  # Planned for phase 5 (tracked in docs/roadmap.md): multi-arch images (linux/arm64), migration image/bundle, deploy job.

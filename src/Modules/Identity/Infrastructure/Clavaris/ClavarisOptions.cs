@@ -34,6 +34,13 @@ public sealed class ClavarisOptions
     [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
     public TimeSpan MetadataLifetime { get; set; } = TimeSpan.FromHours(1);
 
+    /// <summary>
+    /// How long the last known signing keys keep being used when the provider cannot be reached. Beyond it tokens are refused
+    /// (fail closed). It also bounds how long a key the provider withdrew would still be trusted during an outage.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:00:01", "7.00:00:00")]
+    public TimeSpan MaximumKeyAge { get; set; } = TimeSpan.FromHours(24);
+
     /// <summary>Require HTTPS for the Authority and its discovery documents. Turn off only for a local fake provider.</summary>
     public bool RequireHttpsMetadata { get; set; } = true;
 }

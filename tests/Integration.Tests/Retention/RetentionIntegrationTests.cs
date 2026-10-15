@@ -250,6 +250,29 @@ public sealed class RetentionIntegrationTests(TimescalePostgresFixture postgres)
     }
 
     [Fact]
+    public async Task AJobPayloadCannotSwitchOffTheConfiguredDryRun()
+    {
+        await using Env env = await StartAsync();
+        await SeedAsync(env.Db);
+        long before = await CountAsync(env.Db, "platform.job_queue");
+
+        await using (AsyncServiceScope scope = env.Worker.CreateAsyncScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<DbSession>();
+            await session.BeginAsync(CancellationToken.None);
+            var handler = new RetentionRunJobHandler(
+                scope.ServiceProvider.GetRequiredService<RetentionRunner>(),
+                scope.ServiceProvider.GetRequiredService<IOptions<RetentionOptions>>());
+            await handler.HandleAsync(new RetentionRunJob(DryRun: false), new JobContext(Guid.NewGuid(), "forged", 1, 1, null), CancellationToken.None);
+            await session.CommitAsync(CancellationToken.None);
+        }
+
+        (await CountAsync(env.Db, "platform.job_queue")).Should().Be(before);
+        (await CountAsync(env.Db, "platform.inbox_messages")).Should().Be(2);
+        (await CountAsync(env.Db, "platform.idempotency_keys")).Should().Be(3);
+    }
+
+    [Fact]
     public async Task TheWorkerRole_CannotReadIdempotencyKeysDirectly_OnlyThroughTheFunctions()
     {
         await using Env env = await StartAsync();

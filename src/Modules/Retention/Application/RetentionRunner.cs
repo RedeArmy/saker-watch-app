@@ -67,6 +67,8 @@ public sealed partial class RetentionRunner(IRetentionStore store, IOptions<Rete
         return new RetentionReport(dryRun, now, results);
     }
 
+    // Batches bound the size of each DELETE statement, not the transaction: the whole run is one unit of work, so row locks are
+    // held and a failure rolls back every target until the run ends. That is acceptable for the small, uncontended platform tables.
     private async Task<RetentionTargetResult> PurgeAsync(RetentionTarget target, DateTimeOffset cutoff, RetentionOptions settings, CancellationToken cancellationToken)
     {
         long total = 0;

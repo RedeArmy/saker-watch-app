@@ -48,7 +48,11 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         _timeProvider = timeProvider;
         _logger = logger;
 
-        _keys = new SigningKeyCache(httpClientFactory.CreateClient(MetadataClientName), _options, timeProvider);
+        _keys = new SigningKeyCache(
+            httpClientFactory.CreateClient(MetadataClientName),
+            _options,
+            timeProvider,
+            (exception, age) => StaleKeysServed(exception, (int)age.TotalMinutes));
     }
 
     /// <inheritdoc />
@@ -237,6 +241,9 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
 
     [LoggerMessage(EventId = 9602, Level = LogLevel.Warning, Message = "Access token rejected for an unclassified reason ({ExceptionType})")]
     private partial void UnclassifiedRejection(Exception exception, string exceptionType);
+
+    [LoggerMessage(EventId = 9603, Level = LogLevel.Warning, Message = "Could not refresh the identity provider's signing keys; serving the cached keys, fetched {AgeMinutes} minutes ago")]
+    private partial void StaleKeysServed(Exception exception, int ageMinutes);
 
     [LoggerMessage(EventId = 9601, Level = LogLevel.Error, Message = "Could not obtain the identity provider's signing keys; tokens are refused until they can be fetched")]
     private partial void DiscoveryFailed(Exception exception);

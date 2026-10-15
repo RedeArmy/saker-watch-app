@@ -43,7 +43,8 @@ public static class SakerHttpClientExtensions
         });
 
         // A redirect would be followed below the allow-list check and could reach a host that is not on it, so none is followed.
-        builder.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+        // Pooled connections are recycled so a long-lived client (a singleton holding one HttpClient) still notices DNS changes.
+        builder.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, PooledConnectionLifetime = TimeSpan.FromMinutes(2) });
 
         builder.AddHttpMessageHandler(provider =>
         {

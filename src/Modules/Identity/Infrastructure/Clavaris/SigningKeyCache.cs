@@ -7,11 +7,13 @@ namespace SakerWatch.Identity.Infrastructure.Clavaris;
 /// The provider's signing keys, discovered from <c>{Authority}/.well-known/openid-configuration</c> and its <c>jwks_uri</c>.
 /// Keys are cached for <see cref="ClavarisOptions.MetadataLifetime"/>. A forced refresh (for an unknown <c>kid</c>) is allowed at
 /// most once per <see cref="ClavarisOptions.MinimumMetadataRefresh"/>, so a caller inventing key ids cannot make us hammer the
-/// provider, and the same spacing applies after a failed fetch. A refresh is awaited by the caller (unlike the framework's
+/// provider, and the same spacing applies after a failed fetch. When the provider cannot be reached the last known keys keep
+/// being served for up to <see cref="ClavarisOptions.MaximumKeyAge"/> (an outage of the provider must not lock every user out
+/// while valid keys are in memory); after that the cache fails closed. A refresh is awaited by the caller (unlike the framework's
 /// background refresh), so the first token signed with a freshly rotated key is already accepted. All timing uses the injected
 /// clock. If no keys can be obtained, callers fail closed.
 /// </summary>
-internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, TimeProvider timeProvider) : IDisposable
+internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, TimeProvider timeProvider, Action<Exception, TimeSpan>? onStaleKeysServed = null) : IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IReadOnlyList<SecurityKey> _keys = [];
@@ -32,6 +34,14 @@ internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, 
             if (_hasKeys && now - _fetchedAt < options.MetadataLifetime)
             {
                 return _keys;
+            }
+
+            // A fetch failed moments ago: do not make every request wait for another one.
+            if (_lastAttempt != DateTimeOffset.MinValue && now - _lastAttempt < options.MinimumMetadataRefresh)
+            {
+                return _hasKeys && now - _fetchedAt < options.MaximumKeyAge
+                    ? _keys
+                    : throw new InvalidOperationException("The identity provider's keys were unavailable moments ago; not retrying yet.");
             }
 
             return await FetchAsync(now, mustSucceed: true, cancellationToken);
@@ -67,12 +77,6 @@ internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, 
 
     private async Task<IReadOnlyList<SecurityKey>> FetchAsync(DateTimeOffset now, bool mustSucceed, CancellationToken cancellationToken)
     {
-        // A failed fetch with nothing cached must not be retried on every request.
-        if (!_hasKeys && now - _lastAttempt < options.MinimumMetadataRefresh && _lastAttempt != DateTimeOffset.MinValue)
-        {
-            throw new InvalidOperationException("The identity provider's keys were unavailable moments ago; not retrying yet.");
-        }
-
         _lastAttempt = now;
         try
         {
@@ -97,10 +101,10 @@ internal sealed class SigningKeyCache(HttpClient http, ClavarisOptions options, 
             _hasKeys = true;
             return keys;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && !mustSucceed && _hasKeys)
+        catch (Exception ex) when (ex is not OperationCanceledException && _hasKeys && (!mustSucceed || now - _fetchedAt < options.MaximumKeyAge))
         {
-            // A forced refresh failed but we still hold keys: keep using them.
-            _ = ex;
+            // The refresh failed but we still hold usable keys: keep serving them (bounded by MaximumKeyAge) and say so.
+            onStaleKeysServed?.Invoke(ex, now - _fetchedAt);
             return _keys;
         }
     }
