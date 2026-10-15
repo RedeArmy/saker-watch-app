@@ -64,7 +64,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9701 | Information | `Retention {Target} ({Mode}): {Rows} rows, more remaining: {MoreRemaining}` | `RetentionRunner` |
 | 9702 | Information | `Retention is disabled; no daily run will be scheduled` | `RetentionScheduler` |
 | 9703 | Information | `Retention run enqueued for today ({Mode})` | `RetentionScheduler` |
-| 9704 | Warning | `Could not enqueue today's retention run; it will be retried at the next check` (with exception) | `RetentionScheduler` |
+| 9704 | Warning | `Could not enqueue today's retention run; it will be retried shortly (after at most one minute)` (with exception) | `RetentionScheduler` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 
 ### Logging configuration and redaction

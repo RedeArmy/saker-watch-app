@@ -215,12 +215,12 @@ public sealed class RetentionIntegrationTests(TimescalePostgresFixture postgres)
         var scheduler = env.Worker.GetServices<IHostedService>().OfType<RetentionScheduler>().Single();
         RetentionOptions settings = env.Worker.GetRequiredService<IOptions<RetentionOptions>>().Value;
 
-        bool first = await scheduler.EnsureTodaysJobAsync(settings, CancellationToken.None);
-        bool again = await scheduler.EnsureTodaysJobAsync(settings, CancellationToken.None);
+        RetentionScheduleOutcome first = await scheduler.EnsureTodaysJobAsync(settings, CancellationToken.None);
+        RetentionScheduleOutcome again = await scheduler.EnsureTodaysJobAsync(settings, CancellationToken.None);
         clock.Advance(TimeSpan.FromDays(1));
-        bool nextDay = await scheduler.EnsureTodaysJobAsync(settings, CancellationToken.None);
+        RetentionScheduleOutcome nextDay = await scheduler.EnsureTodaysJobAsync(settings, CancellationToken.None);
 
-        (first, again, nextDay).Should().Be((true, false, true));
+        (first, again, nextDay).Should().Be((RetentionScheduleOutcome.Created, RetentionScheduleOutcome.AlreadyScheduled, RetentionScheduleOutcome.Created));
         (await env.Db.Admin.ScalarAsync<string>("SELECT string_agg(job_key, ',' ORDER BY job_key) FROM platform.job_queue"))
             .Should().Be("retention:dryrun:20261014,retention:dryrun:20261015", "dry run is the default mode");
         (await env.Db.Admin.ScalarAsync<string>("SELECT type FROM platform.job_queue LIMIT 1")).Should().Be("retention.run.v1");
