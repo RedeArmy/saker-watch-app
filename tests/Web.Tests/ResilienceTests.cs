@@ -144,4 +144,14 @@ public sealed class ResilienceTests
 
         act.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>();
     }
+
+    [Fact]
+    public void ThePrimaryHandler_FollowsNoRedirectsAndKeepsNoCookies()
+    {
+        using SocketsHttpHandler handler = SakerHttpClientExtensions.CreatePrimaryHandler();
+
+        handler.AllowAutoRedirect.Should().BeFalse("a redirect would be followed below the host allow-list");
+        handler.UseCookies.Should().BeFalse("a cookie set by one call must not travel with the next");
+        handler.PooledConnectionLifetime.Should().BeGreaterThan(TimeSpan.Zero).And.BeLessThanOrEqualTo(TimeSpan.FromMinutes(5));
+    }
 }
