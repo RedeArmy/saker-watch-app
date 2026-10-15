@@ -117,6 +117,7 @@ public static class HealthEndpoints
                 HealthStatus status = await readiness.GetAsync(cancellationToken);
                 return Results.Text(status.ToString(), statusCode: status == HealthStatus.Unhealthy ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK);
             })
+            .ExcludeFromDescription()
             .AllowAnonymous()
             .DisableRateLimiting();
         return endpoints;
