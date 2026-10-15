@@ -27,7 +27,6 @@ internal static class ApiSetup
         services.AddApiVersioning(options =>
         {
             options.DefaultApiVersion = V1;
-            options.AssumeDefaultVersionWhenUnspecified = false;
             options.ReportApiVersions = true;
             options.ApiVersionReader = new UrlSegmentApiVersionReader();
         }).AddApiExplorer(options =>

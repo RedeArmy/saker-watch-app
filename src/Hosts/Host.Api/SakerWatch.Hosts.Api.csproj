@@ -2,6 +2,7 @@
   <PropertyGroup>
     <AssemblyName>SakerWatch.Hosts.Api</AssemblyName>
     <RootNamespace>SakerWatch.Hosts.Api</RootNamespace>
+    <Description>Personal stock watchlist and research assistant. Signals are research aids, never financial advice.</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" />
