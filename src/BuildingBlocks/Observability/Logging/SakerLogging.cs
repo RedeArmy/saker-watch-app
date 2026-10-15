@@ -8,10 +8,13 @@ namespace SakerWatch.BuildingBlocks.Observability.Logging;
 /// <summary>The one logger configuration every host uses (structured JSON, enriched, redacted).</summary>
 public static class SakerLogging
 {
+    /// <summary>Events the console queue holds before it starts dropping the newest ones.</summary>
+    public const int ConsoleQueueLength = 10_000;
+
     /// <summary>
     /// Applies the standard configuration: minimum level Information with quieter framework namespaces,
     /// <c>Service</c>, trace/span ids and log-context properties on every event, redaction last, and JSON lines
-    /// to the console for the log collector. Enrichers registered after this call run after redaction and are not
+    /// to the console for the log collector (through a bounded asynchronous queue). Enrichers registered after this call run after redaction and are not
     /// covered, so add any extra enricher before calling it.
     /// </summary>
     /// <param name="configuration">Logger configuration to extend.</param>
@@ -39,7 +42,12 @@ public static class SakerLogging
 
         if (writeToConsole)
         {
-            configured = configured.WriteTo.Console(new RenderedCompactJsonFormatter());
+            // The console is written on a background thread through a bounded queue: a slow or blocked stdout (a stalled log collector, a
+            // full pipe) must never hold up a request thread. When the queue is full the newest events are dropped rather than blocking.
+            configured = configured.WriteTo.Async(
+                sink => sink.Console(new RenderedCompactJsonFormatter()),
+                bufferSize: ConsoleQueueLength,
+                blockWhenFull: false);
         }
 
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
