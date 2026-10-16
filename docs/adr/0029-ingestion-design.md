@@ -1,0 +1,24 @@
+# ADR-0029: Market data ingestion design
+
+- **Status:** proposed
+- **Date:** 2026-10-16
+- **Deciders:** Eder
+
+## Context
+Prices and FX must arrive after each market's close, be backfilled when a stock is added, survive provider failures and be safe to re-run (ADR-0005, ADR-0022). A listing must never be fabricated or partially mixed with another source (ADR-0027).
+
+## Decision
+- **Jobs on the platform queue** with deterministic keys: `marketdata.ingest-daily.v1` (one per MIC and trading day, key `ingest:{mic}:{date}`), `marketdata.backfill.v1` (one per listing, resumable by date range, key `backfill:{stockId}:{from}`) and `marketdata.fx-daily.v1` (one per pair and day). These are system jobs (no user); a handler is safe to run twice.
+- **Scheduling by calendar:** a scheduler (as `RetentionScheduler`) asks the exchange calendar for the close of each enabled MIC in its time zone and enqueues the daily job after it, with a configurable delay for the provider to publish. Non-trading days enqueue nothing.
+- **Idempotent writes:** `INSERT ... ON CONFLICT (stock_id, trade_date) DO UPDATE` on the hypertable, so a re-run or a corrected value overwrites the same day. Raw OHLCV and adjusted close are stored together with `source` and `ingested_at`.
+- **Cross-store order (ADR-0004):** the raw payload is written to Mongo first with a deterministic `_id`, then the Postgres rows and an outbox message in one unit of work. A janitor removes orphan documents.
+- **A day is final one fetch later:** the bar of the current day is provisional (verified with Twelve Data: low volume right after the close). The daily job stores it with `is_final = false` and the next day's job overwrites it; performance windows and the watchlist may show the provisional price with its timestamp.
+- **Adjusted closes are rewritten backwards by every dividend or split.** The daily job fetches the last few days and compares one older stored adjusted close with the fetched one; when they differ it re-ingests the whole history of that listing (one request, 1 credit, up to 5 000 days). This avoids a dividends feed on the free plan.
+- **Corporate actions:** a split or dividend changes adjusted closes backwards; the job detects it from the provider's actions feed and re-ingests the affected listing's history from the earliest change.
+- **Failures:** provider errors are classified (rate limit, transient, permanent). Rate limits and transients retry with backoff and jitter within the daily budget; a permanent failure for a listing marks it with a reason and stops retrying. The watchlist keeps serving the last known price with `stale_since` (never an error).
+- **Symbols:** changes go through `symbol_aliases`; a delisted listing is marked inactive and its history kept until the retention policy removes it.
+- **Telemetry:** a span per job, counters by outcome, a per-market staleness gauge and the provider budget left, registered in the observability catalog.
+
+## Consequences
+- Adding a market means a calendar, a provider mapping and fixtures, not new code paths.
+- A free daily budget caps how many listings can be refreshed per day; the backfill queue absorbs the rest.
