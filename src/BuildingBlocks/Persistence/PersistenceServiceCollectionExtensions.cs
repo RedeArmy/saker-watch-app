@@ -7,6 +7,7 @@ using SakerWatch.BuildingBlocks.Application.Audit;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.BuildingBlocks.Kernel.Health;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.BuildingBlocks.Persistence.Audit;
@@ -32,7 +33,7 @@ public static class PersistenceServiceCollectionExtensions
             .Bind(configuration.GetSection(PostgresOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        services.AddHealthChecks().AddCheck<PostgresReadinessCheck>("postgres", tags: ["ready"]);
+        services.AddHealthChecks().AddCheck<PostgresReadinessCheck>("postgres", failureStatus: null, tags: ["ready"], timeout: ReadinessDefaults.CheckTimeout);
         services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
         services.TryAddScoped<UserContextConnectionInterceptor>();
         services.TryAddScoped<DbSession>();

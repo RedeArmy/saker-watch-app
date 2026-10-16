@@ -12,7 +12,7 @@ public sealed class RedisReadinessCheck(IConnectionMultiplexer connection) : IHe
     {
         try
         {
-            await connection.GetDatabase().PingAsync();
+            await connection.GetDatabase().PingAsync().WaitAsync(cancellationToken);
             return HealthCheckResult.Healthy();
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)

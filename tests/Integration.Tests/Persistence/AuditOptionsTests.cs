@@ -2,9 +2,13 @@ using System.Security.Cryptography;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Health;
+using SakerWatch.BuildingBlocks.Mongo;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.BuildingBlocks.Persistence.Audit;
+using SakerWatch.BuildingBlocks.Redis;
 
 namespace SakerWatch.Integration.Tests.Persistence;
 
@@ -57,5 +61,27 @@ public sealed class AuditOptionsTests
         Action act = () => Read(null);
 
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void EveryDatastoreReadinessCheck_HasItsOwnShortTimeout()
+    {
+        var services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Postgres"] = "Host=unused",
+            ["ConnectionStrings:Mongo"] = "mongodb://unused",
+            ["ConnectionStrings:Redis"] = "unused",
+            ["Audit:ActorPepper"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+        }).Build();
+        services.AddSakerPostgres(configuration);
+        services.AddSakerMongo(configuration);
+        services.AddSakerRedis(configuration);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        HealthCheckRegistration[] ready = [.. provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations.Where(r => r.Tags.Contains("ready"))];
+
+        ready.Select(r => r.Name).Should().BeEquivalentTo("postgres", "mongo", "redis");
+        ready.Should().OnlyContain(r => r.Timeout == ReadinessDefaults.CheckTimeout, "the drivers wait five seconds by default, longer than a probe is given");
     }
 }

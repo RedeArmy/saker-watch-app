@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Health;
 using StackExchange.Redis;
 
 namespace SakerWatch.BuildingBlocks.Redis;
@@ -33,7 +34,7 @@ public static class RedisServiceCollectionExtensions
             options.ClientName = "saker-watch";
             return ConnectionMultiplexer.Connect(options);
         });
-        services.AddHealthChecks().AddCheck<RedisReadinessCheck>(HealthCheckName, tags: ["ready"]);
+        services.AddHealthChecks().AddCheck<RedisReadinessCheck>(HealthCheckName, failureStatus: null, tags: ["ready"], timeout: ReadinessDefaults.CheckTimeout);
         return services;
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using SakerWatch.BuildingBlocks.Kernel.Health;
 
 namespace SakerWatch.BuildingBlocks.Mongo;
 
@@ -38,7 +39,7 @@ public static class MongoServiceCollectionExtensions
         });
         services.AddSingleton(provider =>
             provider.GetRequiredService<IMongoClient>().GetDatabase(provider.GetRequiredService<IOptions<MongoOptions>>().Value.Database));
-        services.AddHealthChecks().AddCheck<MongoReadinessCheck>(HealthCheckName, tags: ["ready"]);
+        services.AddHealthChecks().AddCheck<MongoReadinessCheck>(HealthCheckName, failureStatus: null, tags: ["ready"], timeout: ReadinessDefaults.CheckTimeout);
         return services;
     }
 }
