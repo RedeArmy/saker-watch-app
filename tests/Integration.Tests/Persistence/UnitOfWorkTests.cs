@@ -322,4 +322,20 @@ public sealed class UnitOfWorkTests(TimescalePostgresFixture postgres) : IClassF
 
         scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Should().BeSameAs(scope.ServiceProvider.GetRequiredService<DbSession>());
     }
+
+    [Fact]
+    public async Task OverlappingQueriesOnOneScope_FailLoudlyInsteadOfInterleaving()
+    {
+        await using TestHost host = await StartAsync();
+        ServiceProvider provider = host.Provider;
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        var probe = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
+        var other = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        Func<Task> overlapping = async () => await Task.WhenAll(
+            probe.Database.ExecuteSqlRawAsync("SELECT pg_sleep(0.5)"),
+            other.Database.ExecuteSqlRawAsync("SELECT pg_sleep(0.5)"));
+
+        await overlapping.Should().ThrowAsync<Exception>("one connection serves a scope, so its database work is sequential (ADR-0022)");
+    }
 }
