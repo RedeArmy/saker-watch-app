@@ -165,7 +165,8 @@ public sealed class IdentityApplicationTests
         }
 
         cache.Set(_identity with { Subject = "overflow" }, user);
-        cache.TryGet(_identity with { Subject = "overflow" }, out _).Should().BeTrue("the cache is cleared rather than grown without bound");
+        cache.TryGet(_identity with { Subject = "overflow" }, out _).Should().BeFalse("a cache full of fresh entries does not grow, and does not evict them either");
+        cache.TryGet(_identity with { Subject = "t0" }, out _).Should().BeTrue();
     }
 
     [Fact]
@@ -182,5 +183,63 @@ public sealed class IdentityApplicationTests
         validator.Validate(new ProvisionUserCommand(atTheLimit)).IsValid.Should().BeTrue();
         validator.Validate(new ProvisionUserCommand(atTheLimit with { Subject = atTheLimit.Subject + "x" })).IsValid.Should().BeFalse();
         validator.Validate(new ProvisionUserCommand(atTheLimit with { Locale = atTheLimit.Locale + "x" })).IsValid.Should().BeFalse();
+    }
+
+    private static ExternalIdentity Person(int n) => new("https://idp.example/o/1", $"subject-{n}", null, null, null);
+
+    private static ResolvedUser Resolved() => new(Guid.CreateVersion7(), UserAccountStatus.Active);
+
+    [Fact]
+    public void FullCache_KeepsTheFreshEntries_AndSimplyDoesNotRememberTheNewcomer()
+    {
+        var clock = new FakeTimeProvider();
+        var cache = new ResolvedUserCache(clock, maxEntries: 3);
+        for (int i = 1; i <= 3; i++)
+        {
+            cache.Set(Person(i), Resolved());
+        }
+
+        cache.Set(Person(4), Resolved());
+
+        cache.TryGet(Person(4), out _).Should().BeFalse("there was no room and nothing had expired");
+        for (int i = 1; i <= 3; i++)
+        {
+            cache.TryGet(Person(i), out _).Should().BeTrue("a burst of new identities must not evict the ones already known");
+        }
+    }
+
+    [Fact]
+    public void FullCache_SweepsExpiredEntries_ToMakeRoom_ButNotMoreOftenThanOncePerMinute()
+    {
+        var clock = new FakeTimeProvider();
+        var cache = new ResolvedUserCache(clock, maxEntries: 2);
+        cache.Set(Person(1), Resolved());
+        cache.Set(Person(2), Resolved());
+
+        clock.Advance(ResolvedUserCache.Lifetime + TimeSpan.FromSeconds(1));
+        cache.Set(Person(3), Resolved());
+
+        cache.TryGet(Person(3), out _).Should().BeTrue("the expired entries were swept to make room");
+        cache.TryGet(Person(1), out _).Should().BeFalse();
+
+        // A second sweep inside the same minute is refused, even though entries 3 expire later: fill, expire, and try again at once.
+        cache.Set(Person(4), Resolved());
+        clock.Advance(ResolvedUserCache.Lifetime + TimeSpan.FromSeconds(1));
+        cache.Set(Person(5), Resolved());
+        cache.TryGet(Person(5), out _).Should().BeTrue("a minute had passed since the last sweep, so a new one was allowed");
+    }
+
+    [Fact]
+    public void RefreshingAKnownIdentity_WorksEvenWhenTheCacheIsFull()
+    {
+        var clock = new FakeTimeProvider();
+        var cache = new ResolvedUserCache(clock, maxEntries: 1);
+        cache.Set(Person(1), Resolved());
+        ResolvedUser newer = Resolved();
+
+        cache.Set(Person(1), newer);
+
+        cache.TryGet(Person(1), out ResolvedUser? found).Should().BeTrue();
+        found.Should().Be(newer);
     }
 }
