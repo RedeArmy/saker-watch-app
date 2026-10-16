@@ -73,26 +73,23 @@ public sealed class ReadinessCache(HealthCheckService health, IOptions<HealthOpt
     // ends: a check that takes longer than the window would otherwise be born expired and every probe would wait for a fresh run.
     private async Task RunAsync(TaskCompletionSource<HealthStatus> result)
     {
-        HealthStatus status;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(options.Value.ReadinessTimeoutSeconds), timeProvider);
+        // Unhealthy unless the checks say otherwise: whatever happens below, the finally block answers everyone who is waiting.
+        HealthStatus status = HealthStatus.Unhealthy;
         try
         {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(options.Value.ReadinessTimeoutSeconds), timeProvider);
             HealthReport report = await health.CheckHealthAsync(check => check.Tags.Contains(HealthEndpoints.ReadyTag), timeout.Token);
             status = report.Status;
         }
-        catch (Exception)
-#pragma warning disable S2221 // Whatever goes wrong, everyone waiting on this run (and the cache) must get an answer, not hang forever.
+        finally
         {
-            status = HealthStatus.Unhealthy;
-        }
-#pragma warning restore S2221
+            lock (_gate)
+            {
+                _expiresAt = timeProvider.GetUtcNow() + TimeSpan.FromSeconds(options.Value.ReadinessCacheSeconds);
+            }
 
-        lock (_gate)
-        {
-            _expiresAt = timeProvider.GetUtcNow() + TimeSpan.FromSeconds(options.Value.ReadinessCacheSeconds);
+            result.SetResult(status);
         }
-
-        result.SetResult(status);
     }
 }
 
