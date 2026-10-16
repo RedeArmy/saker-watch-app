@@ -52,7 +52,8 @@ public sealed class RetentionSchedulerLoopTests
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 14, 3, 0, 0, TimeSpan.Zero));
         var services = new ServiceCollection();
-        services.AddScoped<IJobEnqueuer>(_ => new FlakyEnqueuer(failures: 0));
+        var enqueuer = new FlakyEnqueuer(failures: 0);
+        services.AddScoped<IJobEnqueuer>(_ => enqueuer);
         await using ServiceProvider provider = services.BuildServiceProvider();
         var logger = new FakeLogger<RetentionScheduler>();
         using var scheduler = new RetentionScheduler(
@@ -63,7 +64,15 @@ public sealed class RetentionSchedulerLoopTests
             logger);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await AdvanceUntilAsync(clock, () => false, TimeSpan.Zero, TimeSpan.Zero);
+
+        // The warning is logged before the first enqueue attempt, so once that attempt has happened the answer is final. Wait for it
+        // by condition (with a generous bound), not for a fixed pause: a loaded machine can take far longer than any pause.
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (enqueuer.Calls < 1)
+        {
+            await Task.Delay(10, bound.Token);
+        }
+
         await scheduler.StopAsync(CancellationToken.None);
 
         logger.Collector.GetSnapshot().Any(r => r.Id.Id == 9705).Should().Be(warned);
