@@ -34,7 +34,7 @@ Plural kebab-case resources (computations are named as actions, e.g. `/v1/calcul
 
 ## Pipeline order (Host.Api)
 `UseSakerWeb()` first: forwarded headers, HSTS (outside Development), security headers, correlation id, idempotent-replay header, exception handler, status-code pages. Then request logging, `UseRouting`, CORS, `UseSakerPreAuthenticationRateLimiting()`, Swagger UI (Development only), authentication, user resolution, authorization (default-deny), `UseSakerRateLimiting()` and the endpoints. Two limiters run: the first, before authentication, partitions by client IP (`RateLimiting:PreAuthenticationPermitLimit`, default 600 per window) so a flood of missing or invalid tokens is stopped before any signature is validated and 401s count; the second follows authentication and partitions by user id (`PermitLimit`, `ExpensivePermitLimit`). The client IP is the real client address only for proxies listed in `ForwardedHeaders`. Both follow routing so `DisableRateLimiting` (health endpoints) and per-endpoint policies apply. CORS comes before authentication so a preflight is answered without a token.
-Problem responses use `type = urn:sakerwatch:error:<code>` plus `code`, `correlationId`, `traceId` and, for validation, `errors`; unexpected failures never include their message.
+Problem responses use `type = urn:sakerwatch:error:<code>` plus `code`, `correlationId`, `traceId` and, for validation, `errors` (an object keyed by the field name as the JSON body spells it, camelCase and dotted for nested fields, for example `locale` or `identity.displayName`); unexpected failures never include their message.
 
 ## Reference endpoints (milestone 1.5)
 - `GET /v1/me`: the caller's profile; creates the account on first sight.

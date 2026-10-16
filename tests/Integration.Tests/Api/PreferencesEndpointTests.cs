@@ -122,6 +122,9 @@ public sealed class PreferencesEndpointTests(TimescalePostgresFixture postgres) 
         HttpResponseMessage response = await client.SendAsync(Put(token, _key, locale));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        JsonElement errors = (await BodyAsync(response)).GetProperty("errors");
+        errors.TryGetProperty("locale", out _).Should().BeTrue("the field is reported under the name the JSON body uses, not the C# property name");
+        errors.TryGetProperty("Locale", out _).Should().BeFalse();
         (await api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM platform.idempotency_keys")).Should().Be(0, "only successes are stored, so the client can correct and retry");
     }
 
