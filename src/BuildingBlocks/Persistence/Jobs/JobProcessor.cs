@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Kernel.Tracing;
 
@@ -39,18 +40,16 @@ public sealed class JobPayloadException : Exception
 /// </summary>
 public sealed partial class JobProcessor
 {
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _jobs = _meter.CreateCounter<long>(
-        "sakerwatch_jobs_total",
-        description: "Job attempts by type and outcome (success, retry, dead, lease_lost, released).");
-    private static readonly Counter<long> _deadLetters = _meter.CreateCounter<long>(
+    private static readonly Counter<long> _jobs = SakerTelemetry.Meter.CreateCounter<long>(
+    "sakerwatch_jobs_total",
+    description: "Job attempts by type and outcome (success, retry, dead, lease_lost, released).");
+    private static readonly Counter<long> _deadLetters = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_jobs_dead_letter_total",
         description: "Jobs parked as dead after exhausting their attempts.");
-    private static readonly Histogram<double> _duration = _meter.CreateHistogram<double>(
+    private static readonly Histogram<double> _duration = SakerTelemetry.Meter.CreateHistogram<double>(
         "sakerwatch_jobs_duration_seconds",
         unit: "s",
         description: "Duration of job attempts by type and outcome.");
-    private static readonly ActivitySource _activities = new("SakerWatch");
     private static readonly ConcurrentDictionary<Type, IHandlerInvoker> _invokers = new();
 
     // Recording a failure or releasing a lease happens while the worker may be shutting down; a hung database must not block it.
@@ -118,7 +117,7 @@ public sealed partial class JobProcessor
             leaseToken.Cancel();
         }, stopHeartbeat.Token);
 
-        using Activity? activity = _activities.StartActivity($"Job.Run {job.Type}");
+        using Activity? activity = SakerTelemetry.Source.StartActivity($"Job.Run {job.Type}");
         activity?.SetTag("saker.job.type", job.Type);
         activity?.SetTag("saker.job.key", job.Key);
         activity?.SetTag("saker.origin_trace_id", job.TraceId);

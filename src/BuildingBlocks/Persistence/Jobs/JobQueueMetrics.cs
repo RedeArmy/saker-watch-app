@@ -1,5 +1,6 @@
 using System.Diagnostics.Metrics;
 using Npgsql;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 
 namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
 
@@ -11,7 +12,7 @@ namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
 /// </summary>
 public sealed class JobQueueMetrics : IDisposable
 {
-    private readonly Meter _meter = new("SakerWatch");
+    private readonly Meter _meter = SakerTelemetry.CreateMeter();
     private long _depth;
     private double _oldestAgeSeconds;
     private long _inFlight;

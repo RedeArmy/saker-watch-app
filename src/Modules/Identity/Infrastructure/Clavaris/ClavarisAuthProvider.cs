@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using SakerWatch.BuildingBlocks.Kernel.Security;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.Identity.Contracts;
 
 namespace SakerWatch.Identity.Infrastructure.Clavaris;
@@ -24,8 +25,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
     private const int _maxTokenLength = 8192;
     private const int _maxScopeLength = 320;
 
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _attempts = _meter.CreateCounter<long>(
+    private static readonly Counter<long> _attempts = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_auth_attempts_total",
         description: "Access token validations by outcome (success) or refusal reason.");
 

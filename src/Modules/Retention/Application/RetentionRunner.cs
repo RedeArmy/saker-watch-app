@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.Retention.Domain;
 
 namespace SakerWatch.Retention.Application;
@@ -38,8 +39,7 @@ public sealed record RetentionReport(bool DryRun, DateTimeOffset RanAt, IReadOnl
 /// <param name="logger">Logger.</param>
 public sealed partial class RetentionRunner(IRetentionStore store, IOptions<RetentionOptions> options, TimeProvider timeProvider, ILogger<RetentionRunner> logger)
 {
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _rows = _meter.CreateCounter<long>(
+    private static readonly Counter<long> _rows = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_retention_rows_total",
         description: "Rows removed by retention, or that a dry run found removable.");
 

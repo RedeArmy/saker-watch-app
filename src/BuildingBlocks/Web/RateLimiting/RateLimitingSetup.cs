@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Security;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Web.Problems;
 
 namespace SakerWatch.BuildingBlocks.Web.RateLimiting;
@@ -50,8 +51,7 @@ public static class RateLimitPolicies
 /// <summary>Rate limiting registration (ADR-0016, security requirements).</summary>
 public static class RateLimitingSetup
 {
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _rejected = _meter.CreateCounter<long>(
+    private static readonly Counter<long> _rejected = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_http_rate_limited_total",
         description: "Requests rejected by the rate limiter.");
 

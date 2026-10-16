@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Kernel.Tracing;
 
@@ -22,11 +23,9 @@ namespace SakerWatch.BuildingBlocks.Persistence.Outbox;
 /// </summary>
 public sealed partial class OutboxProcessor
 {
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _messages = _meter.CreateCounter<long>(
-        "sakerwatch_outbox_messages_total",
-        description: "Outbox messages by delivery outcome (published, retry, dead).");
-    private static readonly ActivitySource _activities = new("SakerWatch");
+    private static readonly Counter<long> _messages = SakerTelemetry.Meter.CreateCounter<long>(
+    "sakerwatch_outbox_messages_total",
+    description: "Outbox messages by delivery outcome (published, retry, dead).");
     private static readonly ConcurrentDictionary<Type, IEventDeliverer> _deliverers = new();
 
     private readonly IServiceScopeFactory _scopes;
@@ -76,7 +75,7 @@ public sealed partial class OutboxProcessor
             return false;
         }
 
-        using Activity? activity = _activities.StartActivity($"Outbox.Deliver {claimed.Type}");
+        using Activity? activity = SakerTelemetry.Source.StartActivity($"Outbox.Deliver {claimed.Type}");
         activity?.SetTag("saker.outbox.type", claimed.Type);
         activity?.SetTag("saker.origin_trace_id", claimed.TraceId);
         try
