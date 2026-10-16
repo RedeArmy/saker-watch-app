@@ -82,6 +82,13 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with: { global-json-file: global.json }
+      # Restoring the packages is repeated by three jobs; the cache is keyed by everything that decides which packages are needed.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
       - run: dotnet restore
       - run: dotnet build --no-restore -warnaserror
       - run: dotnet format --verify-no-changes --no-restore
@@ -126,10 +133,16 @@ jobs:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0, persist-credentials: false }
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with: { global-json-file: global.json }
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
       # A missing token must fail the job, not skip it (a skipped required check counts as passed).
       # Dependabot runs read the *Dependabot* secret store, so SONAR_TOKEN must exist there too.
       - name: Require SONAR_TOKEN
@@ -178,6 +191,12 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with: { global-json-file: global.json }
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with: { languages: csharp }
       - run: dotnet build --no-incremental -warnaserror
