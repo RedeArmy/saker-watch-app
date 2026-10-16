@@ -35,7 +35,7 @@ All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) com
 - `analysis_context`: the exact data package given to the LLM (reproducibility).
 - `eval_runs`: golden-set evaluation results.
 - `job_events`: execution audit trail. TTL 30 days.
-- Enforcement (migration `V0001 base-collections`): every collection has a `$jsonSchema` validator requiring `schemaVersion` (int) and `createdAt` (date), and a TTL index `ttl_created_at` on `createdAt`: `llm_interactions` 365 days, `analysis_context` 365 days, `provider_payloads` 90 days (the maximum; Retention can tighten it with `collMod`), `job_events` 30 days, `eval_runs` none.
+- Enforcement (migration `V0001 base-collections`; a collection that already exists gets the declared validator through `collMod`, which governs later writes and leaves existing documents alone): every collection has a `$jsonSchema` validator requiring `schemaVersion` (int) and `createdAt` (date), and a TTL index `ttl_created_at` on `createdAt`: `llm_interactions` 365 days, `analysis_context` 365 days, `provider_payloads` 90 days (the maximum; Retention can tighten it with `collMod`), `job_events` 30 days, `eval_runs` none.
 - Cross-store consistency: Mongo document first with deterministic `_id` (`stockId:promptVersion:runDate`), then Postgres row plus outbox in one transaction; janitor removes orphans (ADR-0004).
 
 ## 3. Redis

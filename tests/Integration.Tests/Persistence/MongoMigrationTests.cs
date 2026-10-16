@@ -97,6 +97,35 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     }
 
     [Fact]
+    public async Task ACollectionThatAlreadyExistsWithoutAValidator_GetsTheDeclaredOneAndKeepsItsDocuments()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        await db.CreateCollectionAsync("things");
+        IMongoCollection<BsonDocument> things = db.GetCollection<BsonDocument>("things");
+        await things.InsertOneAsync(new BsonDocument { { "legacy", true } });
+
+        await RunnerFor(db).RunAsync([new TestMigration(1, "things", new CollectionSpec("things", []))], null, CancellationToken.None);
+
+        (await things.CountDocumentsAsync(new BsonDocument())).Should().Be(1, "documents written before the validator existed stay");
+        Func<Task> bad = () => things.InsertOneAsync(new BsonDocument { { "other", 1 } });
+        (await bad.Should().ThrowAsync<MongoWriteException>()).Which.WriteError.Code.Should().Be(121);
+        await things.InsertOneAsync(new BsonDocument { { "schemaVersion", 1 }, { "createdAt", DateTime.UtcNow } });
+    }
+
+    [Fact]
+    public async Task ACollectionDeclaredWithoutStandardFields_IsLeftWithoutAValidator()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        await db.CreateCollectionAsync("free_form");
+
+        await RunnerFor(db).RunAsync([new TestMigration(1, "free", new CollectionSpec("free_form", [], RequireStandardFields: false))], null, CancellationToken.None);
+
+        IMongoCollection<BsonDocument> collection = db.GetCollection<BsonDocument>("free_form");
+        await collection.InsertOneAsync(new BsonDocument { { "anything", "goes" } });
+        (await collection.CountDocumentsAsync(new BsonDocument())).Should().Be(1, "no validator was applied to a collection that does not ask for one");
+    }
+
+    [Fact]
     public async Task EditingAnAppliedMigration_IsDetectedByItsChecksum()
     {
         IMongoDatabase db = mongo.NewDatabase();

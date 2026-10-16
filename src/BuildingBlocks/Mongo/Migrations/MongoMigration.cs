@@ -64,6 +64,12 @@ public abstract class MongoMigration : IMongoMigration
             {
                 await database.CreateCollectionAsync(spec.Name, CreateOptions(spec), cancellationToken);
             }
+            else if (spec.RequireStandardFields)
+            {
+                // A collection that already exists (created by hand, by an older version, or by a driver on first insert) keeps whatever
+                // validator it has; the declaration is the truth, so it is applied. It only governs later writes, never existing documents.
+                await database.RunCommandAsync<BsonDocument>(CollModCommand(spec), cancellationToken: cancellationToken);
+            }
 
             IMongoCollection<BsonDocument> collection = database.GetCollection<BsonDocument>(spec.Name);
             foreach (IndexSpec index in spec.Indexes)
@@ -85,6 +91,14 @@ public abstract class MongoMigration : IMongoMigration
 
         return options;
     }
+
+    private static BsonDocument CollModCommand(CollectionSpec spec) => new()
+    {
+        { "collMod", spec.Name },
+        { "validator", StandardFieldsValidator() },
+        { "validationAction", "error" },
+        { "validationLevel", "strict" },
+    };
 
     private static BsonDocument StandardFieldsValidator() => new(
         "$jsonSchema",
