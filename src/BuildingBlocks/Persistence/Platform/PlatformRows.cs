@@ -18,10 +18,13 @@ public sealed class IdempotencyKeyRow
 
     public string State { get; set; } = IdempotencyStates.InProgress;
 
+    // Reserved for operations that cross stores (an analysis run that also writes to MongoDB), where a crashed owner's lease has to be
+    // taken over (ADR-0017, ADR-0022). The PostgreSQL-only path never needs it: the key and the effect commit together. Not written yet.
     public DateTimeOffset? LockedUntil { get; set; }
 
     public int? ResponseStatus { get; set; }
 
+    // Reserved for replaying headers other than the ones the web layer adds itself (ADR-0017). Not written yet.
     public string? ResponseHeaders { get; set; }
 
     public byte[]? ResponseBody { get; set; }
@@ -113,7 +116,10 @@ public sealed class JobRow
     public DateTimeOffset? FinishedAt { get; set; }
 }
 
-/// <summary>Allowed values of <see cref="JobRow.State"/>.</summary>
+/// <summary>
+/// Allowed values of <see cref="JobRow.State"/>; the check constraint is built from them. A job that fails goes back to
+/// <c>pending</c> (to retry) or to <c>dead</c> (attempts exhausted or impossible to run); there is no separate "failed" state.
+/// </summary>
 public static class JobStates
 {
     public const string Pending = "pending";
@@ -121,8 +127,6 @@ public static class JobStates
     public const string Leased = "leased";
 
     public const string Succeeded = "succeeded";
-
-    public const string Failed = "failed";
 
     public const string Dead = "dead";
 }

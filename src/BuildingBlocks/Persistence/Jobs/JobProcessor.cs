@@ -11,6 +11,7 @@ using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Kernel.Tracing;
+using SakerWatch.BuildingBlocks.Persistence.Platform;
 
 namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
 
@@ -355,7 +356,7 @@ public sealed partial class JobProcessor
             WHERE id = @id AND lease_token = @token AND state = 'leased'
             """,
             connection);
-        fail.Parameters.AddWithValue("state", dead ? "dead" : "pending");
+        fail.Parameters.AddWithValue("state", dead ? JobStates.Dead : JobStates.Pending);
         fail.Parameters.AddWithValue("next", now + _backoff.Delay(job.Attempts));
         fail.Parameters.AddWithValue("error", ErrorText.Describe(exception));
         fail.Parameters.AddWithValue("finished", dead ? now : DBNull.Value);

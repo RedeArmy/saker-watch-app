@@ -257,7 +257,7 @@ namespace SakerWatch.BuildingBlocks.Persistence.Platform.Migrations
 
                     b.ToTable("job_queue", "platform", t =>
                         {
-                            t.HasCheckConstraint("ck_job_queue_state", "state IN ('pending', 'leased', 'succeeded', 'failed', 'dead')");
+                            t.HasCheckConstraint("ck_job_queue_state", "state IN ('pending', 'leased', 'succeeded', 'dead')");
                         });
                 });
 
