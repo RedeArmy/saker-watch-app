@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 
 namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
@@ -26,6 +27,9 @@ public static class JobDispatcherServiceCollectionExtensions
             JobOptions options = provider.GetRequiredService<IOptions<JobOptions>>().Value;
             return ActivatorUtilities.CreateInstance<JobProcessor>(provider, new ExponentialBackoff(options.BackoffBase, options.BackoffCap));
         });
+        // The worker's scopes get a settable current user (anonymous by default), replacing the anonymous default of AddSakerPostgres.
+        services.AddScoped<JobCurrentUser>();
+        services.AddScoped<ICurrentUser>(provider => provider.GetRequiredService<JobCurrentUser>());
         services.AddSingleton<JobQueueMetrics>();
         services.AddHostedService<JobDispatcherService>();
         return services;

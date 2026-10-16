@@ -9,7 +9,8 @@ namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
 /// <summary>
 /// Enqueues jobs through <c>platform.enqueue_job</c> (the API role has no table access): a deterministic key with
 /// <c>ON CONFLICT DO NOTHING</c>, so enqueuing the same work twice creates it once. Inside a unit of work the job commits
-/// or rolls back with the business change; outside one it commits on its own.
+/// or rolls back with the business change; outside one it commits on its own. A job may name the user it works for
+/// (<see cref="JobEnqueueOptions.UserId"/>); the database lets an API login name only the user making the request.
 /// </summary>
 /// <param name="session">The scope's database session.</param>
 /// <param name="registry">Job type names and payload serialization.</param>
@@ -40,7 +41,7 @@ public sealed class JobEnqueuer(DbSession session, JobRegistry registry, ICorrel
         try
         {
             await using var command = new NpgsqlCommand(
-                "SELECT platform.enqueue_job(@id, @key, @type, @payload, @available, @max, @trace, @correlation, @now)",
+                "SELECT platform.enqueue_job(@id, @key, @type, @payload, @available, @max, @trace, @correlation, @now, @user)",
                 session.Connection,
                 session.Transaction);
             command.Parameters.AddWithValue("id", ids.NewGuid());
@@ -53,6 +54,7 @@ public sealed class JobEnqueuer(DbSession session, JobRegistry registry, ICorrel
             command.Parameters.AddWithValue("trace", (object?)System.Diagnostics.Activity.Current?.TraceId.ToString() ?? DBNull.Value);
             command.Parameters.AddWithValue("correlation", (object?)correlation.CorrelationId ?? DBNull.Value);
             command.Parameters.AddWithValue("now", now);
+            command.Parameters.Add(new NpgsqlParameter("user", NpgsqlDbType.Uuid) { Value = (object?)settings.UserId ?? DBNull.Value });
             bool created = (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
             await session.CommitAsync(cancellationToken);
             return created;

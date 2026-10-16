@@ -166,6 +166,23 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task UpgradeFromTheVersionWithoutJobUsers_KeepsTheJobsAndReplacesTheEnqueueFunction()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        var platform = MigrationSteps.PlatformStep(admin);
+        await platform.MigrateToAsync("RemoveUnusedFailedJobState", CancellationToken.None);
+        await admin.ExecuteAsync(
+            "INSERT INTO platform.job_queue (id, job_key, type, payload, state, attempts, max_attempts, available_at, created_at) VALUES (@id, 'before-upgrade', 'demo.compute.v1', '{}'::jsonb, 'pending', 0, 5, now(), now())",
+            ("id", Guid.CreateVersion7()));
+
+        await platform.RunAsync(CancellationToken.None);
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM platform.job_queue WHERE job_key = 'before-upgrade' AND user_id IS NULL")).Should().Be(1, "existing jobs are system jobs");
+        (await admin.ScalarAsync<string>("SELECT to_regprocedure('platform.enqueue_job(uuid,text,text,jsonb,timestamptz,integer,text,text,timestamptz)')::text")).Should().BeNull("the old signature is gone, so nothing can bypass the new rule");
+        (await admin.ScalarAsync<string>("SELECT to_regprocedure('platform.enqueue_job(uuid,text,text,jsonb,timestamptz,integer,text,text,timestamptz,uuid)')::text")).Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task Api_CannotRunThePurgeFunction()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
@@ -217,7 +234,7 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
 
         async Task<bool> Enqueue() => await db.Api.AsUserScalarAsync<bool>(
             Guid.CreateVersion7(),
-            "SELECT platform.enqueue_job(@id, 'analysis:NVDA:v1:2026-10-12', 'analysis', '{}'::jsonb, now(), 5, null, null, now())",
+            "SELECT platform.enqueue_job(@id, 'analysis:NVDA:v1:2026-10-12', 'analysis', '{}'::jsonb, now(), 5, null, null, now(), null)",
             ("id", Guid.CreateVersion7()));
 
         bool first = await Enqueue();
@@ -235,7 +252,7 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
 
         bool[] results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => db.Api.AsUserScalarAsync<bool>(
             Guid.CreateVersion7(),
-            "SELECT platform.enqueue_job(@id, 'ingest:XNAS:2026-10-12', 'ingest', '{}'::jsonb, now(), 5, null, null, now())",
+            "SELECT platform.enqueue_job(@id, 'ingest:XNAS:2026-10-12', 'ingest', '{}'::jsonb, now(), 5, null, null, now(), null)",
             ("id", Guid.CreateVersion7()))));
 
         results.Count(created => created).Should().Be(1);
