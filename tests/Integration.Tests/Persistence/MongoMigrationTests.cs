@@ -317,6 +317,19 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     }
 
     [Fact]
+    public async Task ReadinessCheck_WhenTheTimeoutCancelsTheCheck_ReportsUnhealthyInsteadOfThrowing()
+    {
+        var settings = MongoClientSettings.FromConnectionString("mongodb://127.0.0.1:1");
+        settings.ServerSelectionTimeout = TimeSpan.FromSeconds(30);
+        var check = new MongoReadinessCheck(new MongoClient(settings).GetDatabase("down"));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        HealthCheckResult result = await check.CheckHealthAsync(new HealthCheckContext(), timeout.Token);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
     public void Options_WithoutAConnectionString_FailValidation()
     {
         var services = new ServiceCollection();

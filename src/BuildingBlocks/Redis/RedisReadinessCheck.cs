@@ -15,9 +15,9 @@ public sealed class RedisReadinessCheck(IConnectionMultiplexer connection) : IHe
             await connection.GetDatabase().PingAsync().WaitAsync(cancellationToken);
             return HealthCheckResult.Healthy();
         }
-        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        catch (Exception ex) when (ex is RedisException or TimeoutException or OperationCanceledException)
         {
-            return HealthCheckResult.Unhealthy("Redis is not reachable.", ex);
+            return HealthCheckResult.Unhealthy(ex is OperationCanceledException ? "Redis did not answer in time." : "Redis is not reachable.", ex);
         }
     }
 }
