@@ -40,7 +40,7 @@ public sealed class ResultTests
     [Fact]
     public void Success_WithANullValue_IsStillASuccess()
     {
-        Result<string?> result = Result.Success<string?>(null);
+        var result = Result.Success<string?>(null);
 
         result.IsSuccess.Should().BeTrue("a null value that was reported is different from nothing reported");
         result.Value.Should().BeNull();
