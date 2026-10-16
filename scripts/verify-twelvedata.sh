@@ -18,6 +18,7 @@ get() { # name, path-with-query
   rm -f "$out/$name.headers"
   printf '%-22s status=%s bytes=%s\n' "$name" "$(cat "$out/$name.status")" "$(wc -c < "$out/$name.json")"
   sleep 8   # stay under 8 credits per minute
+  return 0
 }
 
 get exchanges_all          "/exchanges"
