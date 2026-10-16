@@ -488,6 +488,70 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task TheSamplingQuery_CanBeAnsweredFromTheIndexes_WithoutScanningTheTable()
+    {
+        await using Env env = await StartAsync();
+        await env.Db.Admin.ExecuteAsync(
+            """
+            INSERT INTO platform.job_queue (id, job_key, type, payload, state, attempts, max_attempts, available_at, created_at, finished_at)
+            SELECT gen_random_uuid(), 'done-' || n, 'demo.compute.v1', '{}'::jsonb, 'succeeded', 1, 5, now(), now(), now() FROM generate_series(1, 2000) AS n
+            """);
+        await using var connection = new Npgsql.NpgsqlConnection(env.Db.Admin);
+        await connection.OpenAsync();
+        await using Npgsql.NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+        await using (var off = new Npgsql.NpgsqlCommand("SET LOCAL enable_seqscan = off", connection, transaction))
+        {
+            await off.ExecuteNonQueryAsync();
+        }
+
+        var plan = new System.Text.StringBuilder();
+        await using (var explain = new Npgsql.NpgsqlCommand("EXPLAIN " + JobQueueMetrics.SamplingSql, connection, transaction))
+        {
+            explain.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
+            await using Npgsql.NpgsqlDataReader reader = await explain.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                plan.AppendLine(reader.GetString(0));
+            }
+        }
+
+        plan.ToString().Should().NotContain("Seq Scan", "each count must be answerable from the partial index of its state");
+    }
+
+    [Fact]
+    public async Task QueueGauges_CountAnAbandonedLeaseAsWaiting_AndAgeIt()
+    {
+        await using Env env = await StartAsync();
+        await env.EnqueueAsync("crashed");
+        await env.EnqueueAsync("running");
+        await env.Db.Admin.ExecuteAsync(
+            "UPDATE platform.job_queue SET state = 'leased', attempts = 1, lease_token = @t, lease_expires_at = now() - interval '10 minutes' WHERE job_key = 'crashed'",
+            ("t", Guid.CreateVersion7()));
+        await env.Db.Admin.ExecuteAsync(
+            "UPDATE platform.job_queue SET state = 'leased', attempts = 1, lease_token = @t, lease_expires_at = now() + interval '10 minutes' WHERE job_key = 'running'",
+            ("t", Guid.CreateVersion7()));
+        var readings = new Dictionary<string, double>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name.StartsWith("sakerwatch_jobs_", StringComparison.Ordinal))
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) => readings[instrument.Name] = value);
+        listener.SetMeasurementEventCallback<double>((instrument, value, _, _) => readings[instrument.Name] = value);
+        listener.Start();
+
+        await env.Worker.GetRequiredService<JobQueueMetrics>().RefreshAsync(env.Db.Worker, DateTimeOffset.UtcNow, CancellationToken.None);
+        listener.RecordObservableInstruments();
+
+        readings["sakerwatch_jobs_queue_depth"].Should().Be(1, "the job whose worker vanished is waiting to be reclaimed");
+        readings["sakerwatch_jobs_in_flight"].Should().Be(1, "only the live lease counts as running");
+        readings["sakerwatch_jobs_queue_oldest_age_seconds"].Should().BeGreaterThan(590, "an abandoned job ages from the moment its lease expired");
+    }
+
+    [Fact]
     public async Task QueueGauges_ReportDepthAgeInFlightAndDeadJobs()
     {
         await using Env env = await StartAsync();
@@ -495,7 +559,7 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
         await env.EnqueueAsync("waiting-2");
         await env.EnqueueAsync("dead-1");
         await env.Db.Admin.ExecuteAsync("UPDATE platform.job_queue SET available_at = now() - interval '2 minutes' WHERE job_key = 'waiting-1'");
-        await env.Db.Admin.ExecuteAsync("UPDATE platform.job_queue SET state = 'dead' WHERE job_key = 'dead-1'");
+        await env.Db.Admin.ExecuteAsync("UPDATE platform.job_queue SET state = 'dead', finished_at = now() WHERE job_key = 'dead-1'");
         var readings = new Dictionary<string, double>();
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, meterListener) =>
