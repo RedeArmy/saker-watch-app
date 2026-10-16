@@ -166,10 +166,10 @@ public sealed class IdentitySecurityTests(TimescalePostgresFixture postgres) : I
         var alice = await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "alice"));
         var bob = await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "bob", "bob@example.com"));
 
-        int hit = await db.Api.AsUserExecuteAsync(alice, "UPDATE identity.users SET email = 'owned@example.com' WHERE id = @bob", ("bob", bob));
+        int hit = await db.Api.AsUserExecuteAsync(alice, "UPDATE identity.users SET locale = 'en-US' WHERE id = @bob", ("bob", bob));
 
-        hit.Should().Be(0);
-        (await db.Admin.ScalarAsync<string>("SELECT email FROM identity.users WHERE id = @bob", ("bob", bob))).Should().Be("bob@example.com");
+        hit.Should().Be(0, "the column is updatable, but row-level security hides the other user's row");
+        (await db.Admin.ScalarAsync<string>("SELECT locale FROM identity.users WHERE id = @bob", ("bob", bob))).Should().Be("es-GT");
     }
 
     [Fact]
@@ -222,5 +222,35 @@ public sealed class IdentitySecurityTests(TimescalePostgresFixture postgres) : I
         (await admin.ScalarAsync<long>("SELECT count(*) FROM identity.users")).Should().Be(1);
         (await api.AsUserScalarAsync<long>(null, "SELECT count(*) FROM identity.users")).Should().Be(0, "the legacy user is now protected");
         (await api.AsUserScalarAsync<long>(legacy, "SELECT count(*) FROM identity.users")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Api_CanChangeItsLocale_ButNotItsStatusEmailOrIdentity()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = await db.Api.AsUserScalarAsync<Guid>(null, _provision, ProvisionParams(Guid.CreateVersion7(), "alice", "alice@example.com"));
+
+        (await db.Api.AsUserExecuteAsync(id, "UPDATE identity.users SET locale = 'en-US', updated_at = now() WHERE id = @id", ("id", id))).Should().Be(1);
+        await ExpectDeniedAsync(() => db.Api.AsUserExecuteAsync(id, "UPDATE identity.users SET status = 'deleted' WHERE id = @id", ("id", id)));
+        await ExpectDeniedAsync(() => db.Api.AsUserExecuteAsync(id, "UPDATE identity.users SET email = 'x@example.com' WHERE id = @id", ("id", id)));
+        await ExpectDeniedAsync(() => db.Api.AsUserExecuteAsync(id, "UPDATE identity.users SET external_subject = 'someone-else' WHERE id = @id", ("id", id)));
+    }
+
+    [Fact]
+    public async Task UpgradeFromTheVersionBeforeTheStatusColumnOfProvisioning_KeepsUsersAndTheirBehavior()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        await MigrationSteps.PlatformStep(admin).RunAsync(CancellationToken.None);
+        var identity = MigrationSteps.IdentityStep(admin);
+        await identity.MigrateToAsync("IdentitySecurity", CancellationToken.None);
+        var existing = Guid.CreateVersion7();
+        await admin.ExecuteAsync("SELECT identity.provision_user(@id, 'i', 's', 'a@example.com', NULL, 'es-GT', now())", ("id", existing));
+
+        await identity.RunAsync(CancellationToken.None);
+        string api = await TimescalePostgresFixture.CreateRoleLoginAsync(admin, "api_role");
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM identity.users")).Should().Be(1);
+        (await api.AsUserScalarAsync<Guid>(null, "SELECT user_id FROM identity.provision_user(@id, 'i', 's', 'a@example.com', NULL, 'es-GT', now())", ("id", Guid.CreateVersion7())))
+            .Should().Be(existing);
     }
 }
