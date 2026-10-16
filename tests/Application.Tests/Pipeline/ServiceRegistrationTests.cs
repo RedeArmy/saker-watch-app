@@ -34,6 +34,19 @@ public sealed class ServiceRegistrationTests
     }
 
     [Fact]
+    public void AHandlerThatIsItselfGeneric_IsSkippedByTheScan_AndDoesNotStopTheHost()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddApplicationPipeline(_demo);
+
+        services.Should().NotContain(d => d.ImplementationType == typeof(GenericPingHandler<>), "an open generic class has no closed interface to be registered under");
+        Action build = () => services.BuildServiceProvider().Dispose();
+        build.Should().NotThrow("the provider is built from the scanned registrations, and a generic handler used to make that throw");
+    }
+
+    [Fact]
     public void TheBehaviorsKeepTheirOrder_EvenWhenThePipelineIsAddedAgainLater()
     {
         var services = new ServiceCollection();

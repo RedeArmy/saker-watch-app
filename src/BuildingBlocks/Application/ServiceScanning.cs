@@ -11,10 +11,14 @@ namespace SakerWatch.BuildingBlocks.Application;
 /// </summary>
 internal static class ServiceScanning
 {
-    /// <summary>Registers every concrete class of <paramref name="assemblies"/> that implements a closed form of <paramref name="openInterface"/>, once.</summary>
+    /// <summary>
+    /// Registers every concrete class of <paramref name="assemblies"/> that implements a closed form of <paramref name="openInterface"/>, once.
+    /// A class that is itself an open generic (<c>Handler&lt;T&gt;</c>) has no closed interface to register under and is skipped: it would
+    /// otherwise stop the whole host at startup.
+    /// </summary>
     public static void AddImplementationsOf(IServiceCollection services, IEnumerable<Assembly> assemblies, Type openInterface)
     {
-        foreach (Type implementation in assemblies.SelectMany(assembly => assembly.GetTypes()).Where(type => type is { IsClass: true, IsAbstract: false }))
+        foreach (Type implementation in assemblies.SelectMany(assembly => assembly.GetTypes()).Where(type => type is { IsClass: true, IsAbstract: false, ContainsGenericParameters: false }))
         {
             foreach (Type contract in implementation.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == openInterface))
             {
