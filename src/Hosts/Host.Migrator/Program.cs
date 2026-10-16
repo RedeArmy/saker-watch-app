@@ -33,8 +33,8 @@ using IHost host = builder.Build();
 // SIGTERM (a deploy stopping the step) and SIGINT cancel the run, so a held Mongo lock is released and the connection closes
 // instead of the process being killed in the middle of a statement.
 using var stop = new CancellationTokenSource();
-using PosixSignalRegistration sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; stop.Cancel(); });
-using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; stop.Cancel(); });
+using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; stop.Cancel(); });
+using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; stop.Cancel(); });
 try
 {
     await host.Services.GetRequiredService<MigrationPipeline>().RunAsync(stop.Token);
