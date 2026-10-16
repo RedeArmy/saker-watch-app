@@ -29,9 +29,15 @@ public sealed class IdentityApplicationTests
         public Task<MeProfile?> FindAsync(Guid userId, CancellationToken cancellationToken) => Task.FromResult(profile);
     }
 
-    private sealed class FakeWriter(bool found) : IUserPreferencesWriter
+    private sealed class FakeWriter(MeProfile? updated) : IUserPreferencesWriter
     {
-        public Task<bool> SetLocaleAsync(Guid userId, string locale, DateTimeOffset now, CancellationToken cancellationToken) => Task.FromResult(found);
+        public string? LocaleSet { get; private set; }
+
+        public Task<MeProfile?> SetLocaleAsync(Guid userId, string locale, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            LocaleSet = locale;
+            return Task.FromResult(updated);
+        }
     }
 
     private sealed class FakeSender(Result<ResolvedUserResult> result) : ISender
@@ -83,17 +89,19 @@ public sealed class IdentityApplicationTests
     [Fact]
     public async Task UpdatePreferences_WithoutAUser_IsUnauthorized()
     {
-        var handler = new UpdatePreferencesHandler(new FakeUser(null), new FakeWriter(true), new FakeReader(_profile), TimeProvider.System);
+        var writer = new FakeWriter(_profile);
+        var handler = new UpdatePreferencesHandler(new FakeUser(null), writer, TimeProvider.System);
 
         Result<MeProfile> result = await handler.Handle(Update(), CancellationToken.None);
 
         result.Error!.Code.Should().Be(MeErrors.NotAuthenticated);
+        writer.LocaleSet.Should().BeNull("nothing is written for an unauthenticated caller");
     }
 
     [Fact]
-    public async Task UpdatePreferences_WhenNoRowWasUpdated_IsNotFound()
+    public async Task UpdatePreferences_WhenNoActiveRowIsVisible_IsNotFound()
     {
-        var handler = new UpdatePreferencesHandler(new FakeUser(_userId), new FakeWriter(false), new FakeReader(_profile), TimeProvider.System);
+        var handler = new UpdatePreferencesHandler(new FakeUser(_userId), new FakeWriter(null), TimeProvider.System);
 
         Result<MeProfile> result = await handler.Handle(Update(), CancellationToken.None);
 
@@ -101,23 +109,15 @@ public sealed class IdentityApplicationTests
     }
 
     [Fact]
-    public async Task UpdatePreferences_WhenTheRowVanishesBeforeTheRead_IsNotFound()
+    public async Task UpdatePreferences_ReturnsTheProfileTheWriterReadBack()
     {
-        var handler = new UpdatePreferencesHandler(new FakeUser(_userId), new FakeWriter(true), new FakeReader(null), TimeProvider.System);
-
-        Result<MeProfile> result = await handler.Handle(Update(), CancellationToken.None);
-
-        result.Error!.Code.Should().Be(MeErrors.NotFound);
-    }
-
-    [Fact]
-    public async Task UpdatePreferences_ReturnsTheProfile()
-    {
-        var handler = new UpdatePreferencesHandler(new FakeUser(_userId), new FakeWriter(true), new FakeReader(_profile), TimeProvider.System);
+        var writer = new FakeWriter(_profile);
+        var handler = new UpdatePreferencesHandler(new FakeUser(_userId), writer, TimeProvider.System);
 
         Result<MeProfile> result = await handler.Handle(Update(), CancellationToken.None);
 
         result.Value.Should().Be(_profile);
+        writer.LocaleSet.Should().Be("en-US");
     }
 
     [Fact]
