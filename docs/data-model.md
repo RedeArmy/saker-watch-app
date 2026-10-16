@@ -21,7 +21,7 @@
 | `platform.purge_expired_idempotency_keys(before, batch)` | security-definer function | `worker_role` | retention purge across users without table access |
 | `platform.purge_user_idempotency_keys(user_id)` | security-definer function | `worker_role` | removes every idempotency key of one user, expired or not, for the account-deletion saga (Phase 6): stored responses can hold profile data (email, display name). Nothing calls it yet; added by `PurgeUserIdempotencyKeys` |
 | `platform.count_expired_idempotency_keys(before)` | security-definer function | `worker_role` | the dry-run counterpart of the purge (the worker cannot read the table); added by `RetentionSupport` together with partial indexes on `outbox_messages(processed_at)`, `inbox_messages(processed_at)` and `job_queue(state, finished_at)` |
-| `platform.enqueue_job(...)` | security-definer function | `api_role`, `worker_role` | `INSERT ... ON CONFLICT (job_key) DO NOTHING`; the API has no table access to the queue |
+| `platform.enqueue_job(...)` | security-definer function | `api_role`, `worker_role` | `INSERT ... ON CONFLICT (job_key) DO NOTHING`; the API has no table access to the queue. A job may carry `user_id`: the worker runs it with that user as the current user (RLS applies); a session of `api_role` can only queue for its own current user (`42501` otherwise), the worker for any user; null means a system job. User-owned tables a job touches need a `worker_role` policy using the same expression as the API one |
 | `platform.append_audit(...)` | security-definer function | `api_role`, `worker_role` | the only way to write the audit log; serializes writers and extends the SHA-256 hash chain |
 | `platform.verify_audit_chain()` | security-definer function | `worker_role` | returns the first broken entry id, or null |
 | `platform.audit_log` triggers | triggers | everyone, owner included | reject UPDATE, DELETE and TRUNCATE (append-only) |
@@ -35,7 +35,7 @@ All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) com
 - `analysis_context`: the exact data package given to the LLM (reproducibility).
 - `eval_runs`: golden-set evaluation results.
 - `job_events`: execution audit trail. TTL 30 days.
-- Enforcement (migration `V0001 base-collections`): every collection has a `$jsonSchema` validator requiring `schemaVersion` (int) and `createdAt` (date), and a TTL index `ttl_created_at` on `createdAt`: `llm_interactions` 365 days, `analysis_context` 365 days, `provider_payloads` 90 days (the maximum; Retention can tighten it with `collMod`), `job_events` 30 days, `eval_runs` none.
+- Enforcement (migration `V0001 base-collections`; a collection that already exists gets the declared validator through `collMod`, which governs later writes and leaves existing documents alone): every collection has a `$jsonSchema` validator requiring `schemaVersion` (int) and `createdAt` (date), and a TTL index `ttl_created_at` on `createdAt`: `llm_interactions` 365 days, `analysis_context` 365 days, `provider_payloads` 90 days (the maximum; Retention can tighten it with `collMod`), `job_events` 30 days, `eval_runs` none.
 - Cross-store consistency: Mongo document first with deterministic `_id` (`stockId:promptVersion:runDate`), then Postgres row plus outbox in one transaction; janitor removes orphans (ADR-0004).
 
 ## 3. Redis

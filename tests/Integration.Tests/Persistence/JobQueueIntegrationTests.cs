@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
@@ -40,6 +41,18 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
                 .EnqueueAsync(key, new ComputeJob(name), new JobEnqueueOptions(availableAt, maxAttempts), CancellationToken.None);
         }
 
+        public async Task<bool> EnqueueForUserAsync(string key, Guid? forUser, Guid? requestUser, bool fromWorker = false)
+        {
+            await using AsyncServiceScope scope = (fromWorker ? worker : api).CreateAsyncScope();
+            if (!fromWorker)
+            {
+                scope.ServiceProvider.GetRequiredService<TestUser>().Id = requestUser;
+            }
+
+            return await scope.ServiceProvider.GetRequiredService<IJobEnqueuer>()
+                .EnqueueAsync(key, new ComputeJob("for-user"), new JobEnqueueOptions(null, 3, forUser), CancellationToken.None);
+        }
+
         public Task<string?> State(string key) => db.Admin.ScalarAsync<string>("SELECT state FROM platform.job_queue WHERE job_key = @k", ("k", key));
 
         public Task<int> Attempts(string key) => db.Admin.ScalarAsync<int>("SELECT attempts FROM platform.job_queue WHERE job_key = @k", ("k", key));
@@ -63,7 +76,7 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
         await db.Admin.ExecuteAsync("CREATE TABLE public.probe_items (id uuid PRIMARY KEY, name text NOT NULL)");
         await db.Admin.ExecuteAsync("GRANT SELECT, INSERT ON public.probe_items TO api_role, worker_role");
 
-        ServiceProvider Build(string connection)
+        ServiceProvider Build(string connection, bool worker)
         {
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -85,7 +98,12 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
             services.AddScoped<ICurrentUser>(provider => provider.GetRequiredService<TestUser>());
             services.AddSakerPostgres(configuration);
             services.AddJobs(typeof(ComputeJob).Assembly);
-            services.AddJobDispatcher(configuration);
+            if (worker)
+            {
+                // Worker only (it gives every job scope a settable current user): the API side keeps the request's user.
+                services.AddJobDispatcher(configuration);
+            }
+
             services.AddDbContext<ProbeItemsContext>((provider, options) => options
                 .UseNpgsql(provider.GetRequiredService<DbSession>().Connection)
                 .AddInterceptors(
@@ -94,7 +112,7 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
             return services.BuildServiceProvider();
         }
 
-        return new Env(Build(db.Api), Build(db.Worker), db);
+        return new Env(Build(db.Api, worker: false), Build(db.Worker, worker: true), db);
     }
 
     [Fact]
@@ -250,6 +268,63 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
         (await env.Attempts("poison")).Should().Be(3);
         (await env.Db.Admin.ScalarAsync<DateTime?>("SELECT finished_at FROM platform.job_queue")).Should().NotBeNull();
         (await env.Items()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AJobThatWorksForAUser_RunsAsThatUser_AndASystemJobRunsAsNobody()
+    {
+        await using Env env = await StartAsync();
+        var alice = Guid.CreateVersion7();
+        await env.EnqueueForUserAsync("for-alice", alice, requestUser: alice);
+        await env.EnqueueForUserAsync("for-nobody", forUser: null, requestUser: alice);
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        env.Probe.UsersSeen.Should().HaveCount(2);
+        env.Probe.UsersSeen.Should().Contain((alice.ToString("D"), (Guid?)alice), "the database session was tagged with the user, so row-level security shows the handler that user's rows");
+        env.Probe.UsersSeen.Should().Contain((string.Empty, (Guid?)null), "a job without a user sees no user-owned rows");
+    }
+
+    [Fact]
+    public async Task TheUserOfOneJob_NeverLeaksIntoTheNextJobOfTheSameWorker()
+    {
+        await using Env env = await StartAsync();
+        var alice = Guid.CreateVersion7();
+        await env.EnqueueForUserAsync("first", alice, requestUser: alice);
+        await env.EnqueueForUserAsync("second", forUser: null, requestUser: null);
+        await env.Db.Admin.ExecuteAsync("UPDATE platform.job_queue SET available_at = now() - interval '1 minute' WHERE job_key = 'first'");
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        env.Probe.UsersSeen.Select(seen => seen.Session).Should().Equal(alice.ToString("D"), string.Empty);
+    }
+
+    [Fact]
+    public async Task AnApiRequest_CanQueueWorkOnlyForItsOwnUser()
+    {
+        await using Env env = await StartAsync();
+        var alice = Guid.CreateVersion7();
+        var bob = Guid.CreateVersion7();
+
+        Func<Task> asSomeoneElse = () => env.EnqueueForUserAsync("as-bob", forUser: bob, requestUser: alice);
+
+        (await asSomeoneElse.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("42501");
+        (await env.EnqueueForUserAsync("as-self", forUser: alice, requestUser: alice)).Should().BeTrue();
+        (await env.EnqueueForUserAsync("as-nobody", forUser: null, requestUser: alice)).Should().BeTrue();
+        (await env.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM platform.job_queue")).Should().Be(2, "the refused one left nothing behind");
+    }
+
+    [Fact]
+    public async Task TheWorker_CanQueueWorkForAnyUser_ForSchedulersThatFanOutPerUser()
+    {
+        await using Env env = await StartAsync();
+        var bob = Guid.CreateVersion7();
+
+        (await env.EnqueueForUserAsync("fan-out-bob", forUser: bob, requestUser: null, fromWorker: true)).Should().BeTrue();
+
+        (await env.Db.Admin.ScalarAsync<Guid>("SELECT user_id FROM platform.job_queue WHERE job_key = 'fan-out-bob'")).Should().Be(bob);
     }
 
     [Fact]

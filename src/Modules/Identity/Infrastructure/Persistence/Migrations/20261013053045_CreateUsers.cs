@@ -62,15 +62,7 @@ namespace SakerWatch.Identity.Infrastructure.Persistence.Migrations
         }
 
         /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropTable(
-                name: "deletion_tombstones",
-                schema: "identity");
-
-            migrationBuilder.DropTable(
-                name: "users",
-                schema: "identity");
-        }
+        protected override void Down(MigrationBuilder migrationBuilder) =>
+            throw new NotSupportedException("Migrations are forward-only (ADR-0004); fix forward with a new migration.");
     }
 }

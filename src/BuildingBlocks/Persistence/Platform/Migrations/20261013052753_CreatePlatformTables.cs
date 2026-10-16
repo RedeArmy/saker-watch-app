@@ -168,27 +168,7 @@ namespace SakerWatch.BuildingBlocks.Persistence.Platform.Migrations
         }
 
         /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropTable(
-                name: "audit_log",
-                schema: "platform");
-
-            migrationBuilder.DropTable(
-                name: "idempotency_keys",
-                schema: "platform");
-
-            migrationBuilder.DropTable(
-                name: "inbox_messages",
-                schema: "platform");
-
-            migrationBuilder.DropTable(
-                name: "job_queue",
-                schema: "platform");
-
-            migrationBuilder.DropTable(
-                name: "outbox_messages",
-                schema: "platform");
-        }
+        protected override void Down(MigrationBuilder migrationBuilder) =>
+            throw new NotSupportedException("Migrations are forward-only (ADR-0004); fix forward with a new migration.");
     }
 }

@@ -72,6 +72,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0022-reliability-unit-of-work-idempotency-outbox-jobs.md | ADR 0022 | Eder | draft | 1 | 2026-10-13 |
 | docs/adr/0023-api-surface-http-hardening-and-retention-defaults.md | ADR 0023 | Eder | draft | 1 | 2026-10-15 |
 | docs/adr/0024-mcp-servers-deferred.md | ADR 0024 | Eder | draft | 1 | 2026-10-15 |
+| docs/adr/0025-audit-log-retention-and-migration-down-policy.md | ADR 0025 | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | draft | 1 | 2026-10-15 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |

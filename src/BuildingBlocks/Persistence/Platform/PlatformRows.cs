@@ -111,6 +111,8 @@ public sealed class JobRow
 
     public string? CorrelationId { get; set; }
 
+    public Guid? UserId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? FinishedAt { get; set; }

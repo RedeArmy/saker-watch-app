@@ -15,7 +15,12 @@ public sealed class JobTypeAttribute(string name) : Attribute
 /// <summary>Options for a new job.</summary>
 /// <param name="AvailableAt">Do not run before this moment; <see langword="null"/> means now.</param>
 /// <param name="MaxAttempts">Attempts before the job is parked as dead.</param>
-public sealed record JobEnqueueOptions(DateTimeOffset? AvailableAt = null, int MaxAttempts = 5);
+/// <param name="UserId">
+/// The user the job works for. The worker runs it with that user as the current user, so row-level security shows the handler that
+/// user's rows and no one else's. <see langword="null"/> for system work. A request handler may only set it to the user making the
+/// request; the database refuses anything else.
+/// </param>
+public sealed record JobEnqueueOptions(DateTimeOffset? AvailableAt = null, int MaxAttempts = 5, Guid? UserId = null);
 
 /// <summary>What a running job knows about itself.</summary>
 /// <param name="JobId">Queue row id.</param>
@@ -23,7 +28,8 @@ public sealed record JobEnqueueOptions(DateTimeOffset? AvailableAt = null, int M
 /// <param name="Attempt">1 for the first run, increasing with every retry or takeover.</param>
 /// <param name="MaxAttempts">Attempts allowed before the job is parked.</param>
 /// <param name="CorrelationId">Correlation id of the request that enqueued it.</param>
-public sealed record JobContext(Guid JobId, string JobKey, int Attempt, int MaxAttempts, string? CorrelationId);
+/// <param name="UserId">The user the job works for, if any; it is also the current user of the unit of work the handler runs in.</param>
+public sealed record JobContext(Guid JobId, string JobKey, int Attempt, int MaxAttempts, string? CorrelationId, Guid? UserId = null);
 
 /// <summary>Puts jobs on the durable queue (ADR-0005, ADR-0017).</summary>
 public interface IJobEnqueuer

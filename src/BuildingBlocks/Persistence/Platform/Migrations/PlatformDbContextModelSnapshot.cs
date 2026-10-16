@@ -240,6 +240,10 @@ namespace SakerWatch.BuildingBlocks.Persistence.Platform.Migrations
                         .HasColumnType("text")
                         .HasColumnName("type");
 
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
                     b.HasKey("Id")
                         .HasName("pk_job_queue");
 

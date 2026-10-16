@@ -1,4 +1,5 @@
 // Throwaway job payload and handler that stand in for a real module's background work.
+using Microsoft.EntityFrameworkCore;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 
 namespace SakerWatch.Demo.IntegrationFeatures;
@@ -25,6 +26,9 @@ internal sealed class JobProbe
     public Task Entered => _entered.Task;
 
     public List<int> Attempts { get; } = [];
+
+    /// <summary>For each run: the current user the database session was tagged with (empty for none), and the one in the job context.</summary>
+    public List<(string Session, Guid? Context)> UsersSeen { get; } = [];
 
     public void FailNext(int times) => Volatile.Write(ref _failuresRemaining, times);
 
@@ -63,6 +67,14 @@ internal sealed class ComputeJobHandler(ProbeItemsContext db, JobProbe probe) : 
 {
     public async Task HandleAsync(ComputeJob payload, JobContext context, CancellationToken cancellationToken)
     {
+        List<string> session = await db.Database
+            .SqlQueryRaw<string>("SELECT coalesce(current_setting('app.current_user_id', true), '') AS \"Value\"")
+            .ToListAsync(cancellationToken);
+        lock (probe.UsersSeen)
+        {
+            probe.UsersSeen.Add((session.Single(), context.UserId));
+        }
+
         db.Items.Add(new ProbeItemRow { Id = Guid.CreateVersion7(), Name = payload.Name });
         await db.SaveChangesAsync(cancellationToken);
         await probe.OnRunAsync(context.Attempt, cancellationToken);

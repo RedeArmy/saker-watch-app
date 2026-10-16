@@ -129,8 +129,11 @@ public sealed partial class JobProcessor
         {
             object payload = DeserializePayload(job);
             scope.ServiceProvider.GetRequiredService<CorrelationContext>().CorrelationId = job.CorrelationId;
+            // A job that works for a user runs as that user: the unit of work tags its database session with the id, so row-level
+            // security shows the handler that user's rows. Set before the unit of work begins; system jobs stay anonymous.
+            scope.ServiceProvider.GetRequiredService<JobCurrentUser>().UserId = job.UserId;
             await session.BeginAsync(leaseToken.Token);
-            await InvokeAsync(scope.ServiceProvider, payload, new JobContext(job.Id, job.Key, job.Attempts, job.MaxAttempts, job.CorrelationId), leaseToken.Token);
+            await InvokeAsync(scope.ServiceProvider, payload, new JobContext(job.Id, job.Key, job.Attempts, job.MaxAttempts, job.CorrelationId, job.UserId), leaseToken.Token);
             await CompleteAsync(session, job, leaseToken.Token);
             await session.CommitAsync(CancellationToken.None);
         }
@@ -254,7 +257,7 @@ public sealed partial class JobProcessor
                 ORDER BY available_at
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED)
-            RETURNING j.id, j.job_key, j.type, j.payload::text, j.attempts, j.max_attempts, j.correlation_id, j.trace_id, j.lease_token
+            RETURNING j.id, j.job_key, j.type, j.payload::text, j.attempts, j.max_attempts, j.correlation_id, j.trace_id, j.lease_token, j.user_id
             """,
             connection);
         claim.Parameters.AddWithValue(_tokenParameter, Guid.CreateVersion7(_timeProvider.GetUtcNow()));
@@ -276,7 +279,8 @@ public sealed partial class JobProcessor
             reader.GetInt32(5),
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.IsDBNull(7) ? null : reader.GetString(7),
-            reader.GetGuid(8));
+            reader.GetGuid(8),
+            reader.IsDBNull(9) ? null : reader.GetGuid(9));
     }
 
     // True for exactly one caller per ParkInterval: the polling loops of every worker share the work of this housekeeping query.
@@ -415,5 +419,5 @@ public sealed partial class JobProcessor
     [LoggerMessage(EventId = 9515, Level = LogLevel.Warning, Message = "Renewing the lease of job {JobId} failed; it will be retried on the next tick")]
     private partial void RenewFailed(Exception exception, Guid jobId);
 
-    private sealed record ClaimedJob(Guid Id, string Key, string Type, string Payload, int Attempts, int MaxAttempts, string? CorrelationId, string? TraceId, Guid LeaseToken);
+    private sealed record ClaimedJob(Guid Id, string Key, string Type, string Payload, int Attempts, int MaxAttempts, string? CorrelationId, string? TraceId, Guid LeaseToken, Guid? UserId);
 }

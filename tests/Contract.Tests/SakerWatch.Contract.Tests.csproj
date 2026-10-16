@@ -15,5 +15,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Hosts/Host.Api/SakerWatch.Hosts.Api.csproj" />
+    <ProjectReference Include="../../src/Modules/Identity/Application/SakerWatch.Identity.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Application/SakerWatch.MarketData.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Watchlist/Application/SakerWatch.Watchlist.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Analysis/Application/SakerWatch.Analysis.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Signals/Application/SakerWatch.Signals.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Calculator/Application/SakerWatch.Calculator.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/Retention/Application/SakerWatch.Retention.Application.csproj" />
   </ItemGroup>
 </Project>
