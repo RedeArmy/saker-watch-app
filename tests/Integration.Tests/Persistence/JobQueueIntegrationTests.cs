@@ -19,7 +19,7 @@ namespace SakerWatch.Integration.Tests.Persistence;
 [Trait("Category", "Integration")]
 public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
 {
-    private sealed record Settings(int MaxConcurrency = 2, string Lease = "00:05:00", string Backoff = "00:00:00.010");
+    private sealed record Settings(int MaxConcurrency = 2, string Lease = "00:05:00", string Backoff = "00:00:00.010", string ParkInterval = "00:00:00");
 
     private sealed class Env(ServiceProvider api, ServiceProvider worker, MigratedDatabase db) : IAsyncDisposable
     {
@@ -74,6 +74,7 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
                 ["Jobs:BackoffCap"] = "00:00:00.100",
                 ["Jobs:PollInterval"] = "00:00:00.050",
                 ["Jobs:StatsInterval"] = "00:00:01",
+                ["Jobs:ParkInterval"] = s.ParkInterval,
             }).Build();
             var services = new ServiceCollection();
             services.AddLogging();
@@ -337,6 +338,23 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
         ran.Should().BeFalse();
         (await env.State("poison-crash")).Should().Be("dead");
         env.Probe.Runs.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TheParkingCheck_RunsOncePerParkInterval_NotOnEveryPoll()
+    {
+        await using Env env = await StartAsync(new Settings(ParkInterval: "00:10:00"));
+        await env.EnqueueAsync("crash-a", maxAttempts: 2);
+        await env.EnqueueAsync("crash-b", maxAttempts: 2);
+        const string exhaust = "UPDATE platform.job_queue SET state = 'leased', attempts = 2, lease_token = @t, lease_expires_at = now() - interval '1 minute' WHERE job_key = @key";
+
+        await env.Db.Admin.ExecuteAsync(exhaust, ("t", Guid.CreateVersion7()), ("key", "crash-a"));
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+        await env.Db.Admin.ExecuteAsync(exhaust, ("t", Guid.CreateVersion7()), ("key", "crash-b"));
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        (await env.State("crash-a")).Should().Be("dead", "the first poll did the housekeeping");
+        (await env.State("crash-b")).Should().Be("leased", "the next poll inside the interval did not repeat it");
     }
 
     [Fact]

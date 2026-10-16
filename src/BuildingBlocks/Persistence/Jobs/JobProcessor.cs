@@ -66,6 +66,7 @@ public sealed partial class JobProcessor
     private readonly ExponentialBackoff _backoff;
     private readonly ILogger<JobProcessor> _logger;
     private readonly string _worker = $"{Environment.MachineName}:{Guid.CreateVersion7():N}";
+    private long _nextParkCheckTicks;
 
     /// <summary>Creates a processor.</summary>
     public JobProcessor(
@@ -89,7 +90,11 @@ public sealed partial class JobProcessor
     /// <summary>Claims and runs the next due job. Returns <see langword="false"/> when none is due.</summary>
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
     {
-        await ParkExhaustedAsync(cancellationToken);
+        if (ParkCheckIsDue())
+        {
+            await ParkExhaustedAsync(cancellationToken);
+        }
+
         ClaimedJob? job = await ClaimAsync(cancellationToken);
         if (job is null)
         {
@@ -266,6 +271,14 @@ public sealed partial class JobProcessor
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.IsDBNull(7) ? null : reader.GetString(7),
             reader.GetGuid(8));
+    }
+
+    // True for exactly one caller per ParkInterval: the polling loops of every worker share the work of this housekeeping query.
+    private bool ParkCheckIsDue()
+    {
+        long now = _timeProvider.GetUtcNow().UtcTicks;
+        long next = Interlocked.Read(ref _nextParkCheckTicks);
+        return now >= next && Interlocked.CompareExchange(ref _nextParkCheckTicks, now + _options.ParkInterval.Ticks, next) == next;
     }
 
     // A job whose last allowed attempt crashed the worker would otherwise be reclaimed forever; park it instead.

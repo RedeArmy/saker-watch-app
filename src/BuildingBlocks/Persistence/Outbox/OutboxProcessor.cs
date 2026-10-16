@@ -59,6 +59,12 @@ public sealed partial class OutboxProcessor
     /// <summary>Claims and delivers the next due message. Returns <see langword="false"/> when none is due.</summary>
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
     {
+        // The usual poll finds nothing: answer that with one cheap read, without a scope, a transaction and a locking claim.
+        if (!await AnythingDueAsync(cancellationToken))
+        {
+            return false;
+        }
+
         await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
         var session = scope.ServiceProvider.GetRequiredService<DbSession>();
         await session.BeginAsync(cancellationToken);
@@ -97,6 +103,18 @@ public sealed partial class OutboxProcessor
         }
 
         return true;
+    }
+
+    private async Task<bool> AnythingDueAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var peek = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM platform.outbox_messages WHERE processed_at IS NULL AND next_attempt_at <= @now AND attempts < @max)",
+            connection);
+        peek.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
+        peek.Parameters.AddWithValue("max", _options.MaxAttempts);
+        return (bool)(await peek.ExecuteScalarAsync(cancellationToken))!;
     }
 
     private static async Task DeliverAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken)
