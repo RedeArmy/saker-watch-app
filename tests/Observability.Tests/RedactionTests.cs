@@ -127,4 +127,60 @@ public sealed class RedactionTests
 
         sink.RenderedText().Should().NotContain("should-not-appear");
     }
+
+    [Fact]
+    public void IsSensitiveName_DoesNotAllocate_ForOrdinaryNames()
+    {
+        string[] names = ["UserId", "UseCase", "StatusCode", "Ticker", "CorrelationId", "access_token", "Set-Cookie"];
+        foreach (string name in names)
+        {
+            _ = RedactionEnricher.IsSensitiveName(name);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1_000; i++)
+        {
+            foreach (string name in names)
+            {
+                _ = RedactionEnricher.IsSensitiveName(name);
+            }
+        }
+
+        (GC.GetAllocatedBytesForCurrentThread() - before).Should().BeLessThan(1_024, "the check runs for every property of every log event");
+    }
+
+    [Fact]
+    public void IsSensitiveName_HandlesVeryLongNames()
+    {
+        RedactionEnricher.IsSensitiveName(new string('a', 500) + "Password").Should().BeTrue();
+        RedactionEnricher.IsSensitiveName(new string('a', 500)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ContainersWithNothingToHide_AreKeptAsTheSameInstances()
+    {
+        var (logger, sink) = CollectingSink.Create();
+
+        logger.Information("Batch {@Items} {@Map} {@Nested}", new[] { new { Name = "ok" } }, new Dictionary<string, string> { ["route"] = "/v1/me" }, new { Ticker = "NVDA", Inner = new { Price = 1.5m } });
+
+        LogEvent logged = sink.Events.Single();
+        logged.Properties["Items"].Should().BeOfType<SequenceValue>();
+        logged.Properties["Map"].Should().BeOfType<DictionaryValue>();
+        logged.Properties["Nested"].ToString().Should().Contain("NVDA").And.Contain("1.5");
+    }
+
+    [Fact]
+    public void OnlyTheSensitiveMembersOfAMixedContainer_AreMasked_AtAnyDepth()
+    {
+        var (logger, sink) = CollectingSink.Create();
+
+        logger.Information(
+            "Mixed {@Items} {@Map}",
+            new object[] { new { Name = "ok" }, new { Password = "p-secret-1" }, "Bearer abcdef123456789" },
+            new Dictionary<string, object> { ["route"] = "/v1/me", ["nested"] = new { ApiKey = "k-secret-2", Keep = "kept" } });
+
+        string text = sink.RenderedText();
+        text.Should().NotContain("p-secret-1").And.NotContain("abcdef123456789").And.NotContain("k-secret-2");
+        text.Should().Contain("ok").And.Contain("/v1/me").And.Contain("kept");
+    }
 }
