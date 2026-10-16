@@ -1,6 +1,6 @@
 # ADR-0025: Audit log retention and the `Down` of applied migrations
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-16
 - **Deciders:** Eder
 
@@ -17,9 +17,9 @@ Separately, the `Down` of two applied migrations (`CreatePlatformTables`, `Creat
 For `Down`: (a) leave as is; (b) change both to throw plus a reflection test that every `Down` throws (requires editing applied migration files, content only, no schema effect).
 
 ## Decision
-Proposed, pending the owner: option 1 until the table measurably matters, revisit with the off-database anchor in Phase 5 (option 3). For `Down`, option (b), with the test. Nothing is implemented by this ADR.
+Accepted 2026-10-16 by the owner: option 1 (keep for ever) until the table measurably matters; revisit with the off-database anchor in Phase 5 (option 3). For `Down`, option (b): the `Down` of `CreatePlatformTables` and `CreateUsers` now throws `NotSupportedException` like every other migration, and `MigrationsAreForwardOnlyTests` fails if any migration of the platform or identity contexts brings back a rollback.
 
 ## Consequences
 - Audit storage grows linearly; add a size gauge to the Phase 5 dashboards.
 - If option 2 or 3 is chosen later, a new ADR supersedes this one and the migration is forward-only with a verified checkpoint.
-- Editing the two `Down` methods changes migration file checksums only in the repository, not in applied databases (EF stores the id, not a hash); the owner decides.
+- Editing the two `Down` methods changes no schema and no applied database (EF stores the migration id, not a hash); the owner approved it as a one-off exception to "never edit an applied migration".
