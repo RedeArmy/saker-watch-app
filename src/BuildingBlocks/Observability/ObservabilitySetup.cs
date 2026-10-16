@@ -5,6 +5,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Observability.Logging;
 using Serilog;
 
@@ -14,7 +15,7 @@ namespace SakerWatch.BuildingBlocks.Observability;
 public static class ObservabilitySetup
 {
     /// <summary>Name of the activity source and meter that carry Saker Watch's own telemetry.</summary>
-    public const string TelemetryName = "SakerWatch";
+    public const string TelemetryName = SakerTelemetry.Name;
 
     private const string _otlpEndpointKey = "OTEL_EXPORTER_OTLP_ENDPOINT";
 

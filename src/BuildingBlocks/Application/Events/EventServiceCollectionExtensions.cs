@@ -19,18 +19,10 @@ public static class EventServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(assemblies);
 
-        services.AddSingleton(IntegrationEventRegistry.FromAssemblies(assemblies));
+        ServiceScanning.AddToRegistry(services, assemblies, IntegrationEventRegistry.FromAssemblies);
         services.TryAddScoped<CorrelationContext>();
         services.TryAddScoped<ICorrelationContext>(provider => provider.GetRequiredService<CorrelationContext>());
-
-        foreach (Type implementation in assemblies.SelectMany(a => a.GetTypes()).Where(t => t is { IsClass: true, IsAbstract: false }))
-        {
-            foreach (Type handlerInterface in implementation.GetInterfaces()
-                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IIntegrationEventConsumer<>)))
-            {
-                services.AddScoped(handlerInterface, implementation);
-            }
-        }
+        ServiceScanning.AddImplementationsOf(services, assemblies, typeof(IIntegrationEventConsumer<>));
 
         return services;
     }

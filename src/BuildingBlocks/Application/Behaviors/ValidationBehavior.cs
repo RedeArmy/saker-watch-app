@@ -43,9 +43,16 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
         }
 
         var details = failures
-            .GroupBy(f => f.PropertyName, StringComparer.Ordinal)
+            .GroupBy(f => FieldName(f.PropertyName), StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(f => f.ErrorMessage).Distinct(StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
 
         return TResponse.FromError(Error.Validation(ErrorCode, "One or more validation errors occurred.", details));
     }
+
+    /// <summary>
+    /// The name a client knows a field by: the API speaks camelCase JSON, but validators report C# property paths. Every segment of a
+    /// path such as <c>Identity.DisplayName</c> or <c>Items[0].Ticker</c> is converted (<c>identity.displayName</c>, <c>items[0].ticker</c>).
+    /// </summary>
+    internal static string FieldName(string propertyPath) =>
+        string.Join('.', propertyPath.Split('.').Select(segment => System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(segment)));
 }

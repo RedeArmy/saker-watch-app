@@ -57,7 +57,7 @@ public sealed class ReadinessCache(HealthCheckService health, IOptions<HealthOpt
             {
                 started = new TaskCompletionSource<HealthStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
                 shared = _current = started.Task;
-                _expiresAt = now + TimeSpan.FromSeconds(options.Value.ReadinessCacheSeconds);
+                _expiresAt = DateTimeOffset.MaxValue; // in flight: the window starts when the run ends, see RunAsync
             }
         }
 
@@ -69,21 +69,27 @@ public sealed class ReadinessCache(HealthCheckService health, IOptions<HealthOpt
         return shared.WaitAsync(cancellationToken);
     }
 
-    // The run belongs to everyone waiting for it, so one caller going away must not cancel it.
+    // The run belongs to everyone waiting for it, so one caller going away must not cancel it. The cache window starts when the run
+    // ends: a check that takes longer than the window would otherwise be born expired and every probe would wait for a fresh run.
     private async Task RunAsync(TaskCompletionSource<HealthStatus> result)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(options.Value.ReadinessTimeoutSeconds), timeProvider);
+        // Unhealthy unless the checks say otherwise: whatever happens below, the finally block answers everyone who is waiting.
+        HealthStatus status = HealthStatus.Unhealthy;
         try
         {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(options.Value.ReadinessTimeoutSeconds), timeProvider);
             HealthReport report = await health.CheckHealthAsync(check => check.Tags.Contains(HealthEndpoints.ReadyTag), timeout.Token);
-            result.SetResult(report.Status);
+            status = report.Status;
         }
-        catch (Exception)
-#pragma warning disable S2221 // Whatever goes wrong, everyone waiting on this run (and the cache) must get an answer, not hang forever.
+        finally
         {
-            result.SetResult(HealthStatus.Unhealthy);
+            lock (_gate)
+            {
+                _expiresAt = timeProvider.GetUtcNow() + TimeSpan.FromSeconds(options.Value.ReadinessCacheSeconds);
+            }
+
+            result.SetResult(status);
         }
-#pragma warning restore S2221
     }
 }
 

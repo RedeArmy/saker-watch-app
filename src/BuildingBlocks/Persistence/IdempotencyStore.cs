@@ -1,6 +1,7 @@
 using Npgsql;
 using NpgsqlTypes;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
+using SakerWatch.BuildingBlocks.Persistence.Platform;
 
 namespace SakerWatch.BuildingBlocks.Persistence;
 
@@ -57,7 +58,7 @@ public sealed class IdempotencyStore(DbSession session) : IIdempotencyStore
                 return new IdempotencyClaim.Mismatch();
             }
 
-            return string.Equals((string)reader["state"], "completed", StringComparison.Ordinal)
+            return string.Equals((string)reader["state"], IdempotencyStates.Completed, StringComparison.Ordinal)
                 ? new IdempotencyClaim.Replay(new StoredResponse((int)reader["response_status"], reader["response_body"] as byte[]))
                 : new IdempotencyClaim.Busy();
         }

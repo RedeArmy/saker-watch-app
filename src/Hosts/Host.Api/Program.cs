@@ -1,3 +1,4 @@
+using System.Reflection;
 using Asp.Versioning;
 using Asp.Versioning.Builder;
 using OpenTelemetry.Metrics;
@@ -29,10 +30,14 @@ builder.AddSakerObservability(
     tracing => tracing.AddAspNetCoreInstrumentation(),
     metrics => metrics.AddAspNetCoreInstrumentation());
 builder.Services.AddSakerWeb(builder.Configuration);
-builder.Services.AddApplicationPipeline(typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly);
+
+// The modules this host runs. One list feeds the handler scan, the integration-event registry and the job registry, so a module added
+// here is known to all three (an empty list for jobs or events would only fail later, when something is first enqueued).
+Assembly[] moduleAssemblies = [typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly];
+builder.Services.AddApplicationPipeline(moduleAssemblies);
 builder.Services.AddIdempotency(builder.Configuration);
-builder.Services.AddIntegrationEvents();
-builder.Services.AddJobs();
+builder.Services.AddIntegrationEvents(moduleAssemblies);
+builder.Services.AddJobs(moduleAssemblies);
 
 // Datastores: fail fast at startup when a connection string is missing; readiness reports each one.
 builder.Services.AddSakerPostgres(builder.Configuration);

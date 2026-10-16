@@ -37,7 +37,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
         modelBuilder.Entity<IdempotencyKeyRow>(e =>
         {
-            e.ToTable("idempotency_keys", t => t.HasCheckConstraint("ck_idempotency_keys_state", "state IN ('in_progress', 'completed')"));
+            e.ToTable("idempotency_keys", t => t.HasCheckConstraint("ck_idempotency_keys_state", $"state IN ('{IdempotencyStates.InProgress}', '{IdempotencyStates.Completed}')"));
             e.HasKey(x => new { x.UserId, x.Method, x.Route, x.Key });
             e.Property(x => x.ResponseHeaders).HasColumnType("jsonb");
             e.Property(x => x.RequestHash).IsRequired();
@@ -60,12 +60,12 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
         modelBuilder.Entity<JobRow>(e =>
         {
-            e.ToTable("job_queue", t => t.HasCheckConstraint("ck_job_queue_state", "state IN ('pending', 'leased', 'succeeded', 'failed', 'dead')"));
+            e.ToTable("job_queue", t => t.HasCheckConstraint("ck_job_queue_state", $"state IN ('{JobStates.Pending}', '{JobStates.Leased}', '{JobStates.Succeeded}', '{JobStates.Dead}')"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Payload).HasColumnType("jsonb");
             e.HasIndex(x => x.JobKey).IsUnique();
-            e.HasIndex(x => x.AvailableAt).HasFilter("state = 'pending'");
-            e.HasIndex(x => x.LeaseExpiresAt).HasFilter("state = 'leased'");
+            e.HasIndex(x => x.AvailableAt).HasFilter($"state = '{JobStates.Pending}'");
+            e.HasIndex(x => x.LeaseExpiresAt).HasFilter($"state = '{JobStates.Leased}'");
         });
 
         modelBuilder.Entity<AuditLogRow>(e =>

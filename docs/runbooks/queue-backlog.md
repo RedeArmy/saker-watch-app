@@ -6,7 +6,7 @@
 ## Symptoms and where they show
 | Signal | Meaning |
 |---|---|
-| `sakerwatch_jobs_queue_depth`, `sakerwatch_jobs_queue_oldest_age_seconds` growing | the worker is not keeping up or is down |
+| `sakerwatch_jobs_queue_depth`, `sakerwatch_jobs_queue_oldest_age_seconds` growing | the worker is not keeping up or is down; a job whose worker vanished (lease expired) counts here too until it is reclaimed |
 | `sakerwatch_jobs_dead` (gauge) above 0, or `sakerwatch_jobs_total{outcome="dead"}` / `sakerwatch_jobs_dead_letter_total` increasing | a job used all its attempts (poison payload, bug, or a dependency down for too long) |
 | `sakerwatch_jobs_total{outcome="lease_lost"}` increases | handlers outlive their lease or two workers collide; see below |
 | outbox messages with `outcome=dead` in `sakerwatch_outbox_messages_total` | a message was parked after `Outbox:MaxAttempts` |

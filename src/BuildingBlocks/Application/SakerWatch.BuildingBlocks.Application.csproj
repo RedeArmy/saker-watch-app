@@ -14,4 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="../Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SakerWatch.Application.Tests" />
+  </ItemGroup>
 </Project>

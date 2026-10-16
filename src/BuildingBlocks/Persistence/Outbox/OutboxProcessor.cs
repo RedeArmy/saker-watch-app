@@ -1,14 +1,14 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Kernel.Tracing;
 
@@ -23,11 +23,10 @@ namespace SakerWatch.BuildingBlocks.Persistence.Outbox;
 /// </summary>
 public sealed partial class OutboxProcessor
 {
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _messages = _meter.CreateCounter<long>(
-        "sakerwatch_outbox_messages_total",
-        description: "Outbox messages by delivery outcome (published, retry, dead).");
-    private static readonly ActivitySource _activities = new("SakerWatch");
+    private static readonly Counter<long> _messages = SakerTelemetry.Meter.CreateCounter<long>(
+    "sakerwatch_outbox_messages_total",
+    description: "Outbox messages by delivery outcome (published, retry, dead).");
+    private static readonly ConcurrentDictionary<Type, IEventDeliverer> _deliverers = new();
 
     private readonly IServiceScopeFactory _scopes;
     private readonly IntegrationEventRegistry _registry;
@@ -59,6 +58,12 @@ public sealed partial class OutboxProcessor
     /// <summary>Claims and delivers the next due message. Returns <see langword="false"/> when none is due.</summary>
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
     {
+        // The usual poll finds nothing: answer that with one cheap read, without a scope, a transaction and a locking claim.
+        if (!await AnythingDueAsync(cancellationToken))
+        {
+            return false;
+        }
+
         await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
         var session = scope.ServiceProvider.GetRequiredService<DbSession>();
         await session.BeginAsync(cancellationToken);
@@ -70,7 +75,7 @@ public sealed partial class OutboxProcessor
             return false;
         }
 
-        using Activity? activity = _activities.StartActivity($"Outbox.Deliver {claimed.Type}");
+        using Activity? activity = SakerTelemetry.Source.StartActivity($"Outbox.Deliver {claimed.Type}");
         activity?.SetTag("saker.outbox.type", claimed.Type);
         activity?.SetTag("saker.origin_trace_id", claimed.TraceId);
         try
@@ -99,28 +104,46 @@ public sealed partial class OutboxProcessor
         return true;
     }
 
-    private static async Task DeliverAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken)
+    private async Task<bool> AnythingDueAsync(CancellationToken cancellationToken)
     {
-        Type consumerType = typeof(IIntegrationEventConsumer<>).MakeGenericType(message.GetType());
-        MethodInfo consume = consumerType.GetMethod(nameof(IIntegrationEventConsumer<IDomainEvent>.ConsumeAsync))!;
-        var inbox = services.GetRequiredService<IInbox>();
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var peek = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM platform.outbox_messages WHERE processed_at IS NULL AND next_attempt_at <= @now AND attempts < @max)",
+            connection);
+        peek.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
+        peek.Parameters.AddWithValue("max", _options.MaxAttempts);
+        return (bool)(await peek.ExecuteScalarAsync(cancellationToken))!;
+    }
 
-        foreach (object consumer in services.GetServices(consumerType).Cast<object>())
+    private static Task DeliverAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken) =>
+        _deliverers.GetOrAdd(message.GetType(), static type => (IEventDeliverer)Activator.CreateInstance(typeof(EventDeliverer<>).MakeGenericType(type))!)
+            .RunAsync(services, message, cancellationToken);
+
+    // One typed deliverer per event type, created once: the consumers are resolved and called through their generic interface, with no
+    // reflection per message and no TargetInvocationException wrapping a consumer's own failure.
+    private interface IEventDeliverer
+    {
+        Task RunAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken);
+    }
+
+    private sealed class EventDeliverer<TEvent> : IEventDeliverer
+        where TEvent : IDomainEvent
+    {
+        public async Task RunAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken)
         {
-            // Redelivery after a crash must not repeat this consumer's effect.
-            if (!await inbox.TryBeginAsync(consumer.GetType().FullName!, message.EventId, cancellationToken))
-            {
-                continue;
-            }
+            var inbox = services.GetRequiredService<IInbox>();
+            var typed = (TEvent)message;
 
-            try
+            foreach (IIntegrationEventConsumer<TEvent> consumer in services.GetServices<IIntegrationEventConsumer<TEvent>>())
             {
-                await (Task)consume.Invoke(consumer, [message, cancellationToken])!;
-            }
-            catch (TargetInvocationException ex) when (ex.InnerException is not null)
-            {
-                // Reflection wraps the consumer's own failure; surface that one so logs and last_error name the real cause.
-                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                // Redelivery after a crash must not repeat this consumer's effect.
+                if (!await inbox.TryBeginAsync(consumer.GetType().FullName!, message.EventId, cancellationToken))
+                {
+                    continue;
+                }
+
+                await consumer.ConsumeAsync(typed, cancellationToken);
             }
         }
     }

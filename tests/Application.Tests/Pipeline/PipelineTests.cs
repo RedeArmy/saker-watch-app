@@ -34,7 +34,7 @@ public sealed class PipelineTests : IDisposable
         result.IsSuccess.Should().BeFalse();
         result.Error!.Type.Should().Be(ErrorType.Validation);
         result.Error.Code.Should().Be(ValidationBehavior<PingCommand, Result<string>>.ErrorCode);
-        result.Error.Details.Should().ContainKey("Name").WhoseValue.Should().Contain("Name is required.");
+        result.Error.Details.Should().ContainKey("name").WhoseValue.Should().Contain("Name is required.");
         _host.Log.Entries.Should().BeEmpty();
     }
 
@@ -43,7 +43,7 @@ public sealed class PipelineTests : IDisposable
     {
         Result<string> result = await _host.Send(new PingCommand(new string('x', 11)));
 
-        result.Error!.Details!["Name"].Should().Equal("Name is too long.");
+        result.Error!.Details!["name"].Should().Equal("Name is too long.");
     }
 
     [Fact]

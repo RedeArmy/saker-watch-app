@@ -17,9 +17,41 @@ public sealed class ResultTests
     }
 
     [Fact]
-    public void Default_Result_IsSuccess()
+    public void Default_Result_IsAFailure_NotASuccess()
     {
-        default(Result).IsSuccess.Should().BeTrue();
+        Result unassigned = default;
+
+        unassigned.IsSuccess.Should().BeFalse("an operation that never reported must not read as one that succeeded");
+        unassigned.Error!.Code.Should().Be(Result.UninitializedCode);
+        unassigned.Error.Type.Should().Be(ErrorType.Failure);
+    }
+
+    [Fact]
+    public void Default_GenericResult_IsAFailure_AndItsValueCannotBeRead()
+    {
+        Result<string> unassigned = default;
+
+        unassigned.IsSuccess.Should().BeFalse();
+        unassigned.Error!.Code.Should().Be(Result.UninitializedCode);
+        Func<string> read = () => unassigned.Value;
+        read.Should().Throw<InvalidOperationException>().WithMessage($"*{Result.UninitializedCode}*");
+    }
+
+    [Fact]
+    public void Success_WithANullValue_IsStillASuccess()
+    {
+        var result = Result.Success<string?>(null);
+
+        result.IsSuccess.Should().BeTrue("a null value that was reported is different from nothing reported");
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public void ResultsOfTheSameOutcome_AreEqual_AndADefaultDiffersFromASuccess()
+    {
+        Result.Success().Should().Be(Result.Success());
+        Result.Success(5).Should().Be(Result.Success(5));
+        default(Result).Should().NotBe(Result.Success());
     }
 
     [Fact]

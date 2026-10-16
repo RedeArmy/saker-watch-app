@@ -318,6 +318,50 @@ public sealed class WebBuildingBlockTests
         }
     }
 
+    private sealed class ControllableHealthService : HealthCheckService
+    {
+        private TaskCompletionSource<HealthReport> _pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int Calls { get; private set; }
+
+        public void Finish()
+        {
+            TaskCompletionSource<HealthReport> done = _pending;
+            _pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            done.SetResult(new HealthReport(new Dictionary<string, HealthReportEntry>(), TimeSpan.Zero));
+        }
+
+        public override Task<HealthReport> CheckHealthAsync(Func<HealthCheckRegistration, bool>? predicate, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return _pending.Task;
+        }
+    }
+
+    [Fact]
+    public async Task Readiness_TheCacheWindowStartsWhenTheRunEnds_SoASlowCheckIsStillCached()
+    {
+        var service = new ControllableHealthService();
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        var cache = new ReadinessCache(service, Microsoft.Extensions.Options.Options.Create(new HealthOptions { ReadinessCacheSeconds = 5, ReadinessTimeoutSeconds = 60 }), clock);
+
+        Task<HealthStatus> first = cache.GetAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromSeconds(6)); // the check outlasts the whole window
+        Task<HealthStatus> alsoWaiting = cache.GetAsync(CancellationToken.None);
+        service.Finish();
+        await first.WaitAsync(TimeSpan.FromSeconds(5));
+        await alsoWaiting.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await cache.GetAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        service.Calls.Should().Be(1, "the callers during the run shared it, and the one right after it got the cached result");
+
+        clock.Advance(TimeSpan.FromSeconds(6));
+        Task<HealthStatus> next = cache.GetAsync(CancellationToken.None);
+        service.Finish();
+        await next.WaitAsync(TimeSpan.FromSeconds(5));
+        service.Calls.Should().Be(2, "once the window after the run has passed, the next probe runs the checks again");
+    }
+
     [Fact]
     public async Task Readiness_WhenTheHealthServiceItselfFails_AnswersUnhealthy_NeverHangs()
     {

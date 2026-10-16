@@ -9,4 +9,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+  </ItemGroup>
 </Project>

@@ -28,6 +28,14 @@ public sealed class JobOptions
     [Range(typeof(TimeSpan), "00:00:00.001", "1.00:00:00")]
     public TimeSpan BackoffCap { get; set; } = TimeSpan.FromMinutes(30);
 
+    /// <summary>
+    /// How often the worker looks for jobs whose last allowed attempt crashed it (their lease expired) and parks them as dead. Only
+    /// one polling loop does it per interval, however many loops and workers run, so an idle queue costs one such query per interval
+    /// instead of one per loop per poll. 0 checks on every poll.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:00:00", "01:00:00")]
+    public TimeSpan ParkInterval { get; set; } = TimeSpan.FromSeconds(30);
+
     /// <summary>How often queue depth and age are sampled for metrics.</summary>
     [Range(typeof(TimeSpan), "00:00:01", "01:00:00")]
     public TimeSpan StatsInterval { get; set; } = TimeSpan.FromSeconds(15);

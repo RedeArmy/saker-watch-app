@@ -115,3 +115,12 @@ public sealed record UnnamedHappened(Guid EventId, DateTimeOffset OccurredAt) : 
 
 [JobType("demo.reindex.v1")]
 public sealed record ReindexJob(string Market, int Page);
+
+/// <summary>A handler that is itself generic: it cannot be registered under a closed interface, and scanning must skip it, not crash.</summary>
+public sealed record GenericPing<T>(T Value) : IQuery<T>;
+
+public sealed class GenericPingHandler<T> : IRequestHandler<GenericPing<T>, Result<T>>
+{
+    public ValueTask<Result<T>> Handle(GenericPing<T> request, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(request.Value));
+}

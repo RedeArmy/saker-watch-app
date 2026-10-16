@@ -7,3 +7,6 @@ P:System.DateTimeOffset.Now;Inject TimeProvider
 P:System.DateTimeOffset.UtcNow;Inject TimeProvider
 M:System.Threading.Thread.Sleep(System.Int32);Use async delays via TimeProvider; no sleeps
 M:System.Guid.NewGuid();Use the injected ID generator (UUIDv7)
+M:System.Diagnostics.Metrics.Meter.#ctor(System.String);Use SakerTelemetry.Meter (or SakerTelemetry.CreateMeter): any other name is never exported
+M:System.Diagnostics.ActivitySource.#ctor(System.String);Use SakerTelemetry.Source: any other name is never exported
+M:System.Guid.CreateVersion7();Use the injected IIdGenerator, or Guid.CreateVersion7(timeProvider.GetUtcNow()) when only a clock is at hand

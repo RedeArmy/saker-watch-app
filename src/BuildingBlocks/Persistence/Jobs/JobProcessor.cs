@@ -1,16 +1,17 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Kernel.Tracing;
+using SakerWatch.BuildingBlocks.Persistence.Platform;
 
 namespace SakerWatch.BuildingBlocks.Persistence.Jobs;
 
@@ -40,18 +41,17 @@ public sealed class JobPayloadException : Exception
 /// </summary>
 public sealed partial class JobProcessor
 {
-    private static readonly Meter _meter = new("SakerWatch");
-    private static readonly Counter<long> _jobs = _meter.CreateCounter<long>(
-        "sakerwatch_jobs_total",
-        description: "Job attempts by type and outcome (success, retry, dead, lease_lost, released).");
-    private static readonly Counter<long> _deadLetters = _meter.CreateCounter<long>(
+    private static readonly Counter<long> _jobs = SakerTelemetry.Meter.CreateCounter<long>(
+    "sakerwatch_jobs_total",
+    description: "Job attempts by type and outcome (success, retry, dead, lease_lost, released).");
+    private static readonly Counter<long> _deadLetters = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_jobs_dead_letter_total",
         description: "Jobs parked as dead after exhausting their attempts.");
-    private static readonly Histogram<double> _duration = _meter.CreateHistogram<double>(
+    private static readonly Histogram<double> _duration = SakerTelemetry.Meter.CreateHistogram<double>(
         "sakerwatch_jobs_duration_seconds",
         unit: "s",
         description: "Duration of job attempts by type and outcome.");
-    private static readonly ActivitySource _activities = new("SakerWatch");
+    private static readonly ConcurrentDictionary<Type, IHandlerInvoker> _invokers = new();
 
     // Recording a failure or releasing a lease happens while the worker may be shutting down; a hung database must not block it.
     private const string _tokenParameter = "token";
@@ -65,7 +65,8 @@ public sealed partial class JobProcessor
     private readonly TimeProvider _timeProvider;
     private readonly ExponentialBackoff _backoff;
     private readonly ILogger<JobProcessor> _logger;
-    private readonly string _worker = $"{Environment.MachineName}:{Guid.CreateVersion7():N}";
+    private readonly string _worker;
+    private long _nextParkCheckTicks;
 
     /// <summary>Creates a processor.</summary>
     public JobProcessor(
@@ -82,6 +83,7 @@ public sealed partial class JobProcessor
         _options = options.Value;
         _connectionString = postgres.Value.Postgres;
         _timeProvider = timeProvider;
+        _worker = $"{Environment.MachineName}:{Guid.CreateVersion7(timeProvider.GetUtcNow()):N}";
         _backoff = backoff;
         _logger = logger;
     }
@@ -89,7 +91,11 @@ public sealed partial class JobProcessor
     /// <summary>Claims and runs the next due job. Returns <see langword="false"/> when none is due.</summary>
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
     {
-        await ParkExhaustedAsync(cancellationToken);
+        if (ParkCheckIsDue())
+        {
+            await ParkExhaustedAsync(cancellationToken);
+        }
+
         ClaimedJob? job = await ClaimAsync(cancellationToken);
         if (job is null)
         {
@@ -113,7 +119,7 @@ public sealed partial class JobProcessor
             leaseToken.Cancel();
         }, stopHeartbeat.Token);
 
-        using Activity? activity = _activities.StartActivity($"Job.Run {job.Type}");
+        using Activity? activity = SakerTelemetry.Source.StartActivity($"Job.Run {job.Type}");
         activity?.SetTag("saker.job.type", job.Type);
         activity?.SetTag("saker.job.key", job.Key);
         activity?.SetTag("saker.origin_trace_id", job.TraceId);
@@ -210,20 +216,25 @@ public sealed partial class JobProcessor
         }
     }
 
-    private static async Task InvokeAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken)
-    {
-        Type handlerType = typeof(IJobHandler<>).MakeGenericType(payload.GetType());
-        object handler = services.GetService(handlerType)
-            ?? throw new JobPayloadException($"No handler is registered for job payload {payload.GetType().FullName}.");
-        MethodInfo handle = handlerType.GetMethod(nameof(IJobHandler<object>.HandleAsync))!;
+    private static Task InvokeAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken) =>
+        _invokers.GetOrAdd(payload.GetType(), static type => (IHandlerInvoker)Activator.CreateInstance(typeof(HandlerInvoker<>).MakeGenericType(type))!)
+            .RunAsync(services, payload, context, cancellationToken);
 
-        try
+    // One typed invoker per payload type, created once: a call goes straight to IJobHandler<TPayload>.HandleAsync, with no reflection
+    // per job and no TargetInvocationException wrapping the handler's own failure.
+    private interface IHandlerInvoker
+    {
+        Task RunAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken);
+    }
+
+    private sealed class HandlerInvoker<TPayload> : IHandlerInvoker
+        where TPayload : notnull
+    {
+        public Task RunAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken)
         {
-            await (Task)handle.Invoke(handler, [payload, context, cancellationToken])!;
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            IJobHandler<TPayload> handler = services.GetService<IJobHandler<TPayload>>()
+                ?? throw new JobPayloadException($"No handler is registered for job payload {typeof(TPayload).FullName}.");
+            return handler.HandleAsync((TPayload)payload, context, cancellationToken);
         }
     }
 
@@ -246,7 +257,7 @@ public sealed partial class JobProcessor
             RETURNING j.id, j.job_key, j.type, j.payload::text, j.attempts, j.max_attempts, j.correlation_id, j.trace_id, j.lease_token
             """,
             connection);
-        claim.Parameters.AddWithValue(_tokenParameter, Guid.CreateVersion7());
+        claim.Parameters.AddWithValue(_tokenParameter, Guid.CreateVersion7(_timeProvider.GetUtcNow()));
         claim.Parameters.AddWithValue("expires", now + _options.LeaseDuration);
         claim.Parameters.AddWithValue("worker", _worker);
         claim.Parameters.AddWithValue("now", now);
@@ -266,6 +277,14 @@ public sealed partial class JobProcessor
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.IsDBNull(7) ? null : reader.GetString(7),
             reader.GetGuid(8));
+    }
+
+    // True for exactly one caller per ParkInterval: the polling loops of every worker share the work of this housekeeping query.
+    private bool ParkCheckIsDue()
+    {
+        long now = _timeProvider.GetUtcNow().UtcTicks;
+        long next = Interlocked.Read(ref _nextParkCheckTicks);
+        return now >= next && Interlocked.CompareExchange(ref _nextParkCheckTicks, now + _options.ParkInterval.Ticks, next) == next;
     }
 
     // A job whose last allowed attempt crashed the worker would otherwise be reclaimed forever; park it instead.
@@ -338,7 +357,7 @@ public sealed partial class JobProcessor
             WHERE id = @id AND lease_token = @token AND state = 'leased'
             """,
             connection);
-        fail.Parameters.AddWithValue("state", dead ? "dead" : "pending");
+        fail.Parameters.AddWithValue("state", dead ? JobStates.Dead : JobStates.Pending);
         fail.Parameters.AddWithValue("next", now + _backoff.Delay(job.Attempts));
         fail.Parameters.AddWithValue("error", ErrorText.Describe(exception));
         fail.Parameters.AddWithValue("finished", dead ? now : DBNull.Value);

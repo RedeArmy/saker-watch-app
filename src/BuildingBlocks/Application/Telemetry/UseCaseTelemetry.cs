@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 
 namespace SakerWatch.BuildingBlocks.Application.Telemetry;
 
@@ -12,16 +13,16 @@ namespace SakerWatch.BuildingBlocks.Application.Telemetry;
 public static class UseCaseTelemetry
 {
     /// <summary>Name of the <see cref="ActivitySource"/> that emits one span per use case.</summary>
-    public const string SourceName = "SakerWatch";
+    public const string SourceName = SakerTelemetry.Name;
 
     /// <summary>Name of the <see cref="Meter"/> that owns every Saker Watch instrument.</summary>
-    public const string MeterName = "SakerWatch";
+    public const string MeterName = SakerTelemetry.Name;
 
-    internal static readonly Meter Meter = new(MeterName);
+    internal static Meter Meter => SakerTelemetry.Meter;
     private static readonly ConcurrentDictionary<string, Histogram<double>> _durations = new();
 
     /// <summary>The activity source used for use-case spans.</summary>
-    public static ActivitySource Source { get; } = new(SourceName);
+    public static ActivitySource Source => SakerTelemetry.Source;
 
     /// <summary>
     /// Duration histogram for a module: <c>sakerwatch_&lt;module&gt;_usecase_duration_seconds</c>.

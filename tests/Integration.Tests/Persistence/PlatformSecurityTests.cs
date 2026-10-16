@@ -136,6 +136,36 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task TheJobQueue_RefusesAStateNothingProduces()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        const string insert = "INSERT INTO platform.job_queue (id, job_key, type, payload, state, attempts, max_attempts, available_at, created_at) VALUES (@id, @key, 'demo.compute.v1', '{}'::jsonb, @state, 0, 5, now(), now())";
+
+        foreach (string state in new[] { "pending", "leased", "succeeded", "dead" })
+        {
+            (await db.Admin.ExecuteAsync(insert, ("id", Guid.CreateVersion7()), ("key", $"k-{state}"), ("state", state))).Should().Be(1, state);
+        }
+
+        await ExpectDeniedAsync(() => db.Admin.ExecuteAsync(insert, ("id", Guid.CreateVersion7()), ("key", "k-failed"), ("state", "failed")), "23514");
+    }
+
+    [Fact]
+    public async Task UpgradeFromTheVersionThatStillAllowedFailed_KeepsTheJobs()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        var platform = MigrationSteps.PlatformStep(admin);
+        await platform.MigrateToAsync("PurgeUserIdempotencyKeys", CancellationToken.None);
+        await admin.ExecuteAsync(
+            "INSERT INTO platform.job_queue (id, job_key, type, payload, state, attempts, max_attempts, available_at, created_at) VALUES (@id, 'old-job', 'demo.compute.v1', '{}'::jsonb, 'pending', 0, 5, now(), now())",
+            ("id", Guid.CreateVersion7()));
+
+        await platform.RunAsync(CancellationToken.None);
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM platform.job_queue WHERE job_key = 'old-job'")).Should().Be(1);
+        await ExpectDeniedAsync(() => admin.ExecuteAsync("UPDATE platform.job_queue SET state = 'failed'"), "23514");
+    }
+
+    [Fact]
     public async Task Api_CannotRunThePurgeFunction()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

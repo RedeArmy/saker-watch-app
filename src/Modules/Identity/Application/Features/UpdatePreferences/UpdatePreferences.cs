@@ -25,8 +25,11 @@ public static class SupportedLocales
 /// <summary>Write port for the profile; row-level security limits it to the current user's own row.</summary>
 public interface IUserPreferencesWriter
 {
-    /// <summary>Sets the locale of <paramref name="userId"/>; returns <see langword="false"/> when no active row is visible.</summary>
-    Task<bool> SetLocaleAsync(Guid userId, string locale, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>
+    /// Sets the locale of <paramref name="userId"/> and returns the resulting profile, read in the same statement;
+    /// <see langword="null"/> when no active row is visible.
+    /// </summary>
+    Task<MeProfile?> SetLocaleAsync(Guid userId, string locale, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 /// <summary>Validates the preference before anything is written.</summary>
@@ -44,10 +47,9 @@ public sealed class UpdatePreferencesValidator : AbstractValidator<UpdatePrefere
 
 /// <summary>Updates the locale and returns the resulting profile.</summary>
 /// <param name="currentUser">The caller resolved by the user-resolution middleware.</param>
-/// <param name="writer">Preference storage.</param>
-/// <param name="reader">Profile storage.</param>
+/// <param name="writer">Preference storage; it returns the updated profile, so no second read is needed.</param>
 /// <param name="timeProvider">Injected clock.</param>
-public sealed class UpdatePreferencesHandler(ICurrentUser currentUser, IUserPreferencesWriter writer, IUserProfileReader reader, TimeProvider timeProvider)
+public sealed class UpdatePreferencesHandler(ICurrentUser currentUser, IUserPreferencesWriter writer, TimeProvider timeProvider)
     : IRequestHandler<UpdatePreferencesCommand, Result<MeProfile>>
 {
     /// <inheritdoc />
@@ -58,12 +60,7 @@ public sealed class UpdatePreferencesHandler(ICurrentUser currentUser, IUserPref
             return Error.Unauthorized(MeErrors.NotAuthenticated, "Authentication is required.");
         }
 
-        if (!await writer.SetLocaleAsync(userId, request.Locale, timeProvider.GetUtcNow(), cancellationToken))
-        {
-            return Error.NotFound(MeErrors.NotFound, "The user was not found.");
-        }
-
-        MeProfile? profile = await reader.FindAsync(userId, cancellationToken);
+        MeProfile? profile = await writer.SetLocaleAsync(userId, request.Locale, timeProvider.GetUtcNow(), cancellationToken);
         return profile is null ? Error.NotFound(MeErrors.NotFound, "The user was not found.") : profile;
     }
 }

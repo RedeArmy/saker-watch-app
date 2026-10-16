@@ -1,5 +1,5 @@
 <Project>
-  <!-- Central package management. Versions written without SDK access (assumption A-011); verify on first restore. -->
+  <!-- Central package management: package versions are written here and nowhere else. They were verified by a real restore and build (assumption A-011, resolved 2026-10-12), and CI fails on a known-vulnerable package. -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>

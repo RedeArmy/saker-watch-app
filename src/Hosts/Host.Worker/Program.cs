@@ -1,3 +1,4 @@
+using System.Reflection;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Time;
@@ -19,9 +20,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IIdGenerator, TimeProviderIdGenerator>();
 builder.Services.AddSakerPostgres(builder.Configuration);
 builder.Services.AddSakerDbContext<PlatformDbContext>(PlatformDbContext.Schema);
-builder.Services.AddIntegrationEvents();
+
+// The modules this host runs: one list for the integration-event consumers and the job handlers and payloads.
+Assembly[] moduleAssemblies = [typeof(RetentionRunJob).Assembly];
+builder.Services.AddIntegrationEvents(moduleAssemblies);
 builder.Services.AddOutboxDispatcher(builder.Configuration);
-builder.Services.AddJobs(typeof(RetentionRunJob).Assembly);
+builder.Services.AddJobs(moduleAssemblies);
 builder.Services.AddRetention(builder.Configuration);
 builder.Services.AddJobDispatcher(builder.Configuration);
 builder.Services.AddSakerMongo(builder.Configuration);

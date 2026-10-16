@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SakerWatch.BuildingBlocks.Application.Behaviors;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 
@@ -22,9 +23,9 @@ public static class IdempotencyServiceCollectionExtensions
             .Bind(configuration.GetSection(IdempotencyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        services.AddScoped<IdempotencyContext>();
-        services.AddScoped<IIdempotencyContext>(provider => provider.GetRequiredService<IdempotencyContext>());
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(IdempotencyBehavior<,>));
+        services.TryAddScoped<IdempotencyContext>();
+        services.TryAddScoped<IIdempotencyContext>(provider => provider.GetRequiredService<IdempotencyContext>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(IdempotencyBehavior<,>)));
         return services;
     }
 }

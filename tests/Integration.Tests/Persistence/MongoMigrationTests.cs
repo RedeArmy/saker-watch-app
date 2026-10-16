@@ -186,16 +186,44 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     public async Task AMigrationThatOutlastsTheLockLifetime_KeepsTheLockWhileItRuns()
     {
         IMongoDatabase db = mongo.NewDatabase();
-        var slow = new SlowMigration(TimeSpan.FromSeconds(2));
-        var shortLock = new MongoMigrationLockOptions(TimeSpan.FromMilliseconds(600), TimeSpan.FromSeconds(10));
+        // Real timers, so the margins are wide: the lock is renewed every second, would expire after three, and the second migrator
+        // arrives after four (a loaded CI machine can delay a renewal by a good fraction of a second without changing the outcome).
+        var slow = new SlowMigration(TimeSpan.FromSeconds(7));
+        var shortLock = new MongoMigrationLockOptions(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(60));
 
         Task<int> first = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
-        await Task.Delay(900);
+        await Task.Delay(TimeSpan.FromSeconds(4));
         Task<int> second = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
 
         (await first).Should().Be(1);
         (await second).Should().Be(0, "the second migrator waited for the lock and found the migration applied");
-        slow.Runs.Should().Be(1, "without renewal the lock would have expired after 600 ms and the second runner would have started it again");
+        slow.Runs.Should().Be(1, "without renewal the lock would have expired after 3 s and the second runner would have started it again");
+    }
+
+    [Fact]
+    public async Task TheLockOwnerId_IsStampedWithTheInjectedClock_NotTheSystemOne()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2031, 3, 4, 5, 6, 7, TimeSpan.Zero));
+        var runner = new MongoMigrationRunner(db, clock, NullLogger<MongoMigrationRunner>.Instance);
+        var slow = new SlowMigration(TimeSpan.FromSeconds(3));
+
+        Task<int> run = runner.RunAsync([slow], new MongoMigrationLockOptions(TimeSpan.FromMinutes(10), TimeSpan.FromSeconds(30)), CancellationToken.None);
+        IMongoCollection<BsonDocument> locks = db.GetCollection<BsonDocument>("_migration_lock");
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        BsonDocument? held;
+        while ((held = await locks.Find(new BsonDocument("_id", "migrations")).FirstOrDefaultAsync(bound.Token)) is null)
+        {
+            await Task.Delay(50, bound.Token);
+        }
+
+        string owner = held["owner"].AsString;
+        var id = Guid.ParseExact(owner[(owner.LastIndexOf(':') + 1)..], "N");
+        byte[] bytes = id.ToByteArray(bigEndian: true);
+        long unixMilliseconds = (long)bytes[0] << 40 | (long)bytes[1] << 32 | (long)bytes[2] << 24 | (long)bytes[3] << 16 | (long)bytes[4] << 8 | bytes[5];
+        await run.WaitAsync(TimeSpan.FromSeconds(30));
+
+        DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds).Should().Be(clock.GetUtcNow().AddTicks(-(clock.GetUtcNow().Ticks % TimeSpan.TicksPerMillisecond)));
     }
 
     [Fact]
@@ -203,13 +231,22 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     {
         IMongoDatabase db = mongo.NewDatabase();
         var slow = new SlowMigration(TimeSpan.FromSeconds(30));
-        var shortLock = new MongoMigrationLockOptions(TimeSpan.FromMilliseconds(600), TimeSpan.FromSeconds(10));
+        var shortLock = new MongoMigrationLockOptions(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10));
 
         Task<int> run = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
-        await Task.Delay(100);
-        await db.GetCollection<BsonDocument>("_migration_lock").DeleteOneAsync(new BsonDocument("_id", "migrations"));
 
-        Func<Task> act = () => run.WaitAsync(TimeSpan.FromSeconds(10));
+        // Remove the lock only once the runner really holds it (on a slow machine the first connection alone can take longer than any
+        // fixed pause); deleting it earlier would remove nothing and the migration would simply run its 30 seconds.
+        IMongoCollection<BsonDocument> locks = db.GetCollection<BsonDocument>("_migration_lock");
+        using var waitForLock = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (await locks.CountDocumentsAsync(new BsonDocument("_id", "migrations"), cancellationToken: waitForLock.Token) == 0)
+        {
+            await Task.Delay(50, waitForLock.Token);
+        }
+
+        await locks.DeleteOneAsync(new BsonDocument("_id", "migrations"));
+
+        Func<Task> act = () => run.WaitAsync(TimeSpan.FromSeconds(30));
 
         await act.Should().ThrowAsync<MongoMigrationLockLostException>();
         (await db.GetCollection<BsonDocument>("_migrations").CountDocumentsAsync(new BsonDocument())).Should().Be(0, "the interrupted migration is not recorded as applied");
