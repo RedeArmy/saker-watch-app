@@ -19,18 +19,10 @@ public static class JobServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(assemblies);
 
-        services.AddSingleton(JobRegistry.FromAssemblies(assemblies));
+        ServiceScanning.AddToRegistry(services, assemblies, JobRegistry.FromAssemblies);
         services.TryAddScoped<CorrelationContext>();
         services.TryAddScoped<ICorrelationContext>(provider => provider.GetRequiredService<CorrelationContext>());
-
-        foreach (Type implementation in assemblies.SelectMany(a => a.GetTypes()).Where(t => t is { IsClass: true, IsAbstract: false }))
-        {
-            foreach (Type handlerInterface in implementation.GetInterfaces()
-                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJobHandler<>)))
-            {
-                services.AddScoped(handlerInterface, implementation);
-            }
-        }
+        ServiceScanning.AddImplementationsOf(services, assemblies, typeof(IJobHandler<>));
 
         return services;
     }

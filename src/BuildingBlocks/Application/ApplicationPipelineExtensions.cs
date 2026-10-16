@@ -24,25 +24,15 @@ public static class ApplicationPipelineExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(applicationAssemblies);
 
-        services.AddScoped<ISender, Sender>();
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TracingBehavior<,>));
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkBehavior<,>));
+        services.TryAddScoped<ISender, Sender>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(TracingBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkBehavior<,>)));
         services.TryAddScoped<IUnitOfWork, NoOpUnitOfWork>();
         services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
 
-        foreach (Assembly assembly in applicationAssemblies)
-        {
-            foreach (Type implementation in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false }))
-            {
-                foreach (Type handlerInterface in implementation.GetInterfaces()
-                    .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>)))
-                {
-                    services.AddScoped(handlerInterface, implementation);
-                }
-            }
-        }
+        ServiceScanning.AddImplementationsOf(services, applicationAssemblies, typeof(IRequestHandler<,>));
 
         services.AddValidatorsFromAssemblies(applicationAssemblies, ServiceLifetime.Scoped, includeInternalTypes: true);
         return services;
