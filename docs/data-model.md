@@ -15,7 +15,7 @@
 ### 1.1 Security objects (ADR-0010, listed here as ADR-0010 requires)
 | Object | Kind | Who | Purpose |
 |---|---|---|---|
-| `identity.users` policy `users_self` | RLS policy | `api_role` | a user sees and updates only their own row (`id = app.current_user_id`); no direct insert or delete |
+| `identity.users` policy `users_self` | RLS policy | `api_role` | a user sees and updates only their own row (`id = app.current_user_id`); no direct insert or delete; the `UPDATE` grant covers only `locale` and `updated_at` (everything else changes through `provision_user` or the owner) |
 | `identity.provision_user(...)` | security-definer function | `api_role` | just-in-time provisioning keyed by `(issuer, subject)`; returns `(user_id, user_status, was_created)`; idempotent and race-safe; the id passed in is used only for a new user; email and name are refreshed only for active accounts and only when they differ (an unchanged login writes nothing; `updated_at` means "profile changed") |
 | `platform.idempotency_keys` policy `idempotency_keys_owner` | RLS policy | `api_role` | keys are visible and writable only for the current user |
 | `platform.purge_expired_idempotency_keys(before, batch)` | security-definer function | `worker_role` | retention purge across users without table access |
@@ -62,3 +62,5 @@ Implemented in milestone 1.5d for the platform tables (idempotency keys, process
 | `platform.audit_log` | 24 months, removed by partition drop by the retention role only (the one permitted exception to append-only) |
 | Telemetry (deployed sizing set in Phase 5) | logs 30 days, traces 7 days, metrics 13 months |
 | Soft-deleted users' personal data | Hard-deleted after the 30-day grace period; the Clavaris identity is deleted next, then the tombstone is removed (ADR-0009) |
+
+**Function and database hardening (migrations `HardenIdentityPrivileges`, `HardenPlatformPrivileges`).** Every security-definer function of `platform` and `identity` ends its `search_path` with `pg_temp` (a test fails otherwise); functions created later by the migrating role are not executable by `PUBLIC` (default privileges); `PUBLIC` has no `TEMPORARY` on the database.

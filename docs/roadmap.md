@@ -3,7 +3,7 @@
 - **Purpose:** the phases, their exit criteria and the working agreements.
 - **Owner:** Eder · **Status:** approved · **Target phase:** 0 (updated at every gate)
 
-Work proceeds in phases. Each phase ends at a **hard gate**: stop, report (Phase Report), and wait for the owner's approval. The current phase is in `docs/PHASE` (now 1: platform core, pending its plan).
+Work proceeds in phases. Each phase ends at a **hard gate**: stop, report (Phase Report), and wait for the owner's approval. The current phase is in `docs/PHASE` (now 2: market data, watchlist and calculator, pending its plan).
 
 ## Working agreements
 1. Plan first: list tasks, files, risks and open questions at the start of each phase.

@@ -16,9 +16,9 @@ public sealed class MongoReadinessCheck(IMongoDatabase database) : IHealthCheck
             await database.RunCommandAsync<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: cancellationToken);
             return HealthCheckResult.Healthy();
         }
-        catch (Exception ex) when (ex is MongoException or TimeoutException)
+        catch (Exception ex) when (ex is MongoException or TimeoutException or OperationCanceledException)
         {
-            return HealthCheckResult.Unhealthy("MongoDB is not reachable.", ex);
+            return HealthCheckResult.Unhealthy(ex is OperationCanceledException ? "MongoDB did not answer in time." : "MongoDB is not reachable.", ex);
         }
     }
 }

@@ -53,6 +53,18 @@ public sealed class RedisTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReadinessCheck_WhenTheTimeoutCancelsTheCheck_ReportsUnhealthyInsteadOfThrowing()
+    {
+        await using ServiceProvider provider = BuildProvider("127.0.0.1:1,connectTimeout=30000,syncTimeout=30000,asyncTimeout=30000");
+        var check = new RedisReadinessCheck(provider.GetRequiredService<IConnectionMultiplexer>());
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        HealthCheckResult result = await check.CheckHealthAsync(new HealthCheckContext(), timeout.Token);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
     public async Task VersionedKeys_RoundTripThroughTheSharedConnection()
     {
         await using ServiceProvider provider = BuildProvider(_container.GetConnectionString());

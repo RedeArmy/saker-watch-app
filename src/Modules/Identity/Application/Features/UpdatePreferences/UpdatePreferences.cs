@@ -20,6 +20,29 @@ public static class SupportedLocales
 {
     /// <summary>Locale tags accepted for the preference.</summary>
     public static readonly IReadOnlyList<string> All = ["es-GT", "en-US"];
+
+    /// <summary>
+    /// Maps a locale tag that arrives from outside (an identity-provider claim) to a supported one: an exact match in any letter case,
+    /// otherwise the first supported tag of the same language ("es-MX" gives "es-GT"). Returns <see langword="null"/> when the language
+    /// is not supported or the text is empty, so storage falls back to the default instead of keeping arbitrary text.
+    /// </summary>
+    public static string? Normalize(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            return null;
+        }
+
+        string candidate = tag.Trim();
+        string? exact = All.FirstOrDefault(supported => string.Equals(supported, candidate, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        string language = candidate[..(candidate.IndexOfAny(['-', '_']) is var cut and >= 0 ? cut : candidate.Length)];
+        return All.FirstOrDefault(supported => supported.StartsWith(language + "-", StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 /// <summary>Write port for the profile; row-level security limits it to the current user's own row.</summary>

@@ -1,6 +1,6 @@
 # ADR-0024: Project MCP servers are deferred; `.mcp.json` stays empty
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-15
 - **Deciders:** Eder
 

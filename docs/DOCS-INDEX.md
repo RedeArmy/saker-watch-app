@@ -51,7 +51,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | deploy/.env.example | Dev env placeholders | Eder | approved | 0 | 2026-10-12 |
 | tests/Architecture.Tests/ModuleBoundaryTests.cs | Module boundary tests | Eder | approved | 0 | 2026-10-12 |
 | deploy/docker-compose.dev-ports.yml | Dev port-publishing override | Eder | approved | 0 | 2026-10-12 |
-| docs/PHASE | Current phase pointer | Eder | approved | 0 | 2026-10-12 |
+| docs/PHASE | Current phase pointer | Eder | approved | 0 | 2026-10-16 |
 | docs/adr/0013-engineering-standards-clean-architecture-ddd.md | ADR 0013 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
@@ -66,15 +66,15 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/roadmap.md | Roadmap and phase gates | Eder | approved | 0 | 2026-10-12 |
 | docs/glossary.md | Glossary | Eder | draft | 1 | 2026-10-12 |
 | BannedSymbols.txt | Banned APIs enforced by the compiler | Eder | approved | 0 | 2026-10-12 |
-| docs/adr/0019-quality-gates-sonarcloud.md | ADR 0019 | Eder | draft | 1 | 2026-10-12 |
-| docs/adr/0020-phase-1-tooling-and-dispatcher.md | ADR 0020 | Eder | draft | 1 | 2026-10-12 |
-| docs/adr/0021-persistence-ef-core-and-migrator.md | ADR 0021 | Eder | draft | 1 | 2026-10-12 |
-| docs/adr/0022-reliability-unit-of-work-idempotency-outbox-jobs.md | ADR 0022 | Eder | draft | 1 | 2026-10-13 |
-| docs/adr/0023-api-surface-http-hardening-and-retention-defaults.md | ADR 0023 | Eder | draft | 1 | 2026-10-15 |
-| docs/adr/0024-mcp-servers-deferred.md | ADR 0024 | Eder | draft | 1 | 2026-10-15 |
+| docs/adr/0019-quality-gates-sonarcloud.md | ADR 0019 | Eder | approved | 1 | 2026-10-16 |
+| docs/adr/0020-phase-1-tooling-and-dispatcher.md | ADR 0020 | Eder | approved | 1 | 2026-10-16 |
+| docs/adr/0021-persistence-ef-core-and-migrator.md | ADR 0021 | Eder | approved | 1 | 2026-10-16 |
+| docs/adr/0022-reliability-unit-of-work-idempotency-outbox-jobs.md | ADR 0022 | Eder | approved | 1 | 2026-10-16 |
+| docs/adr/0023-api-surface-http-hardening-and-retention-defaults.md | ADR 0023 | Eder | approved | 1 | 2026-10-16 |
+| docs/adr/0024-mcp-servers-deferred.md | ADR 0024 | Eder | approved | 1 | 2026-10-16 |
 | docs/adr/0025-audit-log-retention-and-migration-down-policy.md | ADR 0025 | Eder | approved | 1 | 2026-10-16 |
 | docs/adr/0026-portfolios-groups-of-watchlist-stocks.md | ADR 0026 | Eder | draft | 2 | 2026-10-16 |
-| docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | draft | 1 | 2026-10-15 |
+| docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | draft | 1 | 2026-10-12 |

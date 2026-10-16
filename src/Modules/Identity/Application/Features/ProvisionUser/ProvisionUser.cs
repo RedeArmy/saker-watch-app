@@ -4,6 +4,7 @@ using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.Identity.Application.Features.UpdatePreferences;
 
 namespace SakerWatch.Identity.Application.Features.ProvisionUser;
 
@@ -51,7 +52,9 @@ public sealed class ProvisionUserHandler(IUserDirectory directory, IAuditTrail a
     /// <inheritdoc />
     public async ValueTask<Result<ResolvedUserResult>> Handle(ProvisionUserCommand request, CancellationToken cancellationToken)
     {
-        ResolvedUserResult resolved = await directory.ProvisionAsync(ids.NewGuid(), request.Identity, timeProvider.GetUtcNow(), cancellationToken);
+        // The locale comes from a token: only a supported tag is stored, anything else leaves the default.
+        ExternalIdentity identity = request.Identity with { Locale = SupportedLocales.Normalize(request.Identity.Locale) };
+        ResolvedUserResult resolved = await directory.ProvisionAsync(ids.NewGuid(), identity, timeProvider.GetUtcNow(), cancellationToken);
 
         if (resolved.Created)
         {

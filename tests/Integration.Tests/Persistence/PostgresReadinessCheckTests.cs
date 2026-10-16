@@ -30,6 +30,17 @@ public sealed class PostgresReadinessCheckTests(TimescalePostgresFixture postgre
         result.Description.Should().NotContain("127.0.0.1");
     }
 
+    [Fact]
+    public async Task ReadinessCheck_WhenTheTimeoutCancelsTheCheck_ReportsUnhealthyInsteadOfThrowing()
+    {
+        var check = CheckFor("Host=10.255.255.1;Port=5432;Username=x;Password=x;Database=x;Timeout=30");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        HealthCheckResult result = await check.CheckHealthAsync(new HealthCheckContext(), timeout.Token);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
     private static PostgresReadinessCheck CheckFor(string connectionString) =>
         new(Options.Create(new PostgresOptions { Postgres = connectionString }));
 }

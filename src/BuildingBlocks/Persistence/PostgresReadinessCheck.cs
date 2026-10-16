@@ -19,9 +19,9 @@ public sealed class PostgresReadinessCheck(IOptions<PostgresOptions> options) : 
             await command.ExecuteScalarAsync(cancellationToken);
             return HealthCheckResult.Healthy();
         }
-        catch (Exception ex) when (ex is NpgsqlException or TimeoutException or InvalidOperationException)
+        catch (Exception ex) when (ex is NpgsqlException or TimeoutException or InvalidOperationException or OperationCanceledException)
         {
-            return HealthCheckResult.Unhealthy("PostgreSQL is not reachable.", ex);
+            return HealthCheckResult.Unhealthy(ex is OperationCanceledException ? "PostgreSQL did not answer in time." : "PostgreSQL is not reachable.", ex);
         }
     }
 }

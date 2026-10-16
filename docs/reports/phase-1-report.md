@@ -1,7 +1,7 @@
 # Phase 1 report — Platform core
 
 - **Purpose:** Phase Report for the Phase 1 gate (`/phase-report`): what was built and not, evidence, risks, review findings with their disposition, and the proposed Phase 2 plan.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (gate); the owner approves, then the "Current phase" pointer moves to 2
+- **Owner:** Eder · **Status:** approved 2026-10-16 (gate passed) · **Target phase:** 1; the "Current phase" pointer moved to 2
 - **Range:** `e59898c` (end of Phase 0) to the head of `feat/phase-1-6-closing`; milestones 1.0–1.5 are merged to `main`, 1.6 is on its branch.
 
 ## 1. Built
@@ -33,8 +33,8 @@ Scaffolding completed in this milestone (local files, not versioned because `.cl
 | `dotnet format --verify-no-changes` | clean |
 | `bash tests/hooks/run.sh` | 60/60 |
 | `bash scripts/check-docs-index.sh`, `check-todos.sh` | OK |
-| `dotnet test` | 442 passed, 0 failed: Application 80, Architecture 9, Contract 11, Observability 33, Identity 52, Web 60, Integration 197 (real PostgreSQL/Timescale, MongoDB, Redis through Testcontainers) |
-| Coverage gate (`scripts/check-coverage.py`, merged line coverage) | passes: BuildingBlocks.Application 99.0 %, Kernel 97.0 %, Identity.Application 100 %, Retention.Application 94.6 %. The Domain assemblies have no executable lines yet |
+| `dotnet test` | 604 passed, 0 failed: Application 112, Architecture 12, Contract 13, Observability 41, Identity 76, Web 84, Integration 266 (real PostgreSQL/Timescale, MongoDB, Redis through Testcontainers) |
+| Coverage gate (`scripts/check-coverage.py`, merged line coverage) | passes: BuildingBlocks.Application 99.5 %, Kernel 95.7 %, Identity.Application 100 %, Retention.Application 98.5 %. The Domain assemblies have no executable lines yet |
 | `dotnet list package --vulnerable --include-transitive` | no vulnerable packages (security-auditor) |
 | gitleaks | clean on the branch |
 
@@ -74,15 +74,16 @@ Three read-only reviews ran on the whole Phase 1 diff: `code-reviewer`, `securit
 | Job handlers vs idle-in-transaction timeout (code 3) | Rule recorded in ADR-0022 |
 | Threat model not updated for Phase 1 (security) | Updated (T1–T6, T9, T15, T19, T20, T27, T28; new T29–T33) |
 
-**Needs the owner's decision**
-1. **`Down` of two applied migrations drops tables** (`CreatePlatformTables`, `CreateUsers`), against ADR-0021 and the "never edit an applied migration" rule. Not reachable by the migrator, but an operator running `dotnet ef database update <earlier>` would drop data including the audit log. Options: change both `Down` to throw (no database effect, but it edits applied files), or accept and document. Recommendation: change them and add a reflection test that every `Down` throws.
-2. **`audit_log` has no retention path** (migration 2): a plain table with `id` as the only key, immutable by trigger, while the data model promises 24-month retention by partition drop. Decide before data accumulates (hypertable with a composite key and `drop_chunks`, or declare the log never purged). Needs an ADR; suggested for the start of Phase 2.
-3. **ADR-0024:** keep `.mcp.json` empty (recommended) or add servers now.
-4. **ADR-0023** acceptance.
+**Decided by the owner and closed after the review (Phase 1.7 hardening)**
+1. `Down` of `CreatePlatformTables` and `CreateUsers` now throws; `MigrationsAreForwardOnlyTests` keeps every `Down` that way (ADR-0025).
+2. `audit_log` is kept for ever until it measurably matters; revisit with the off-database anchor in Phase 5 (ADR-0025, accepted).
+3. ADR-0023 and ADR-0024 (`.mcp.json` stays empty) were accepted by the owner together with the gate on 2026-10-16.
 
-**Backlog (Phase 2 unless noted)**: column-level `UPDATE` on `identity.users`; restrict job types `enqueue_job` accepts; off-database audit anchor (P5); default privileges revoking `EXECUTE` from `PUBLIC` for future functions, `pg_temp` last in `search_path`, `REVOKE TEMPORARY`; `CREATE SCHEMA IF NOT EXISTS platform` in the foundation and tolerant role creation; Mongo validator `collMod` and checksum; upgrade tests for `ProvisionUserWithStatus` and `RevokePublicFromAuditTrigger`; require an application scope and normalize the stored locale; scrub exception messages in logs; `/health/ready` only on the internal network (P5); migrator honoring SIGTERM; flaky-prone sleeps in scheduler and heartbeat tests; commit per retention batch; outbox dead-message gauge; pepper decode buffer; `AllowedHosts`, NU1900 as error, dependency review step (P5).
+**Closed in 1.7 (risk, security, performance, debt and future-debt series A–F)**: jobs run as the user they work for (`user_id`, checked by `enqueue_job`); column-level `UPDATE` on `identity.users`; `pg_temp` last in every definer function, default privileges that do not expose new functions to `PUBLIC`, no `TEMPORARY` for `PUBLIC`; Mongo validator `collMod` on existing collections; upgrade tests for `ProvisionUserWithStatus` and `RevokePublicFromAuditTrigger`; locale claim normalized to a supported locale; log strings and failure text scrubbed of credentials and emails; the migrator honors SIGTERM; pepper decoding no longer rejects long secrets; module-boundary and unwired-handler architecture tests; readiness caching and per-check timeouts.
+
+**Remaining backlog**: restrict the job types `enqueue_job` accepts (the user rule is in); off-database audit anchor (P5); Mongo checksum; `CREATE SCHEMA IF NOT EXISTS platform` in the foundation and tolerant role creation (would edit an applied migration, so only if a new environment needs it); one transaction per retention run instead of per batch (acceptable for the small platform tables, T28); outbox dead-message gauge (the outcome counter already carries `dead`); `/health/ready` only on the internal network (P5); `AllowedHosts`, NU1900 as error and a dependency review step (P5); `packages.lock.json` with `--locked-mode`, worker health probe, Dockerfiles and image digests (P5).
 
 ## 8. Open questions and Phase 2 plan
-Open (owner): exact markets/exchanges and currencies beyond USD→GTQ; market data provider and its licensing (Phase 2 ADR); LLM hardware (Phase 4); production base URL of Clavaris; whether the `Down` change above is allowed.
+Open (owner): exact markets/exchanges and currencies beyond USD→GTQ; market data provider and its licensing (Phase 2 ADR); LLM hardware (Phase 4); production base URL of Clavaris.
 
-Proposed Phase 2 plan (start in plan mode): stock catalog and provider port with fakes and contract tests; ingestion jobs (daily, backfill) on the Phase 1 queue; `price_daily` hypertable and FX with date/source; performance math on fixtures (splits, short histories); watchlist and calculator APIs; caching; provider-licensing ADR; k6 baseline. First step: the `audit_log` retention decision and the cheap migration hardening from the backlog.
+Proposed Phase 2 plan (start in plan mode): stock catalog and provider port with fakes and contract tests; ingestion jobs (daily, backfill) on the Phase 1 queue; `price_daily` hypertable and FX with date/source; performance math on fixtures (splits, short histories); watchlist and calculator APIs; caching; provider-licensing ADR; k6 baseline. First step: the Phase 2 plan, which now also includes portfolios (ADR-0026, proposed); the `audit_log` retention decision and the cheap migration hardening are already done.

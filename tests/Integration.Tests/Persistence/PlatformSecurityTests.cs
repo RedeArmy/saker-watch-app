@@ -350,10 +350,44 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
             SELECT string_agg(n.nspname || '.' || p.proname, ', ')
             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname IN ('platform', 'identity') AND p.prosecdef
-              AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%')
+              AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%, pg_temp')
             """);
 
-        unpinned.Should().BeNull("an unpinned search_path lets a caller shadow objects used by a privileged function");
+        unpinned.Should().BeNull("an unpinned search_path, or one that lets the temporary schema come first, lets a caller shadow objects used by a privileged function");
+    }
+
+    [Fact]
+    public async Task Public_CannotCreateTemporaryTables_SoApplicationLoginsCannotEither()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        (await db.Admin.ScalarAsync<bool>("SELECT has_database_privilege('api_role', current_database(), 'TEMPORARY')")).Should().BeFalse();
+        (await db.Admin.ScalarAsync<bool>("SELECT has_database_privilege('worker_role', current_database(), 'TEMPORARY')")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AFunctionCreatedLater_IsNotExecutableByPublicUntilGranted()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        await db.Admin.ExecuteAsync("CREATE FUNCTION platform.forgotten_revoke() RETURNS integer LANGUAGE sql AS 'SELECT 1'");
+
+        (await db.Admin.ScalarAsync<bool>("SELECT has_function_privilege('api_role', 'platform.forgotten_revoke()', 'EXECUTE')")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpgradeFromTheVersionBeforeTheAuditTriggerRevoke_KeepsTheAuditLogAndLocksTheTriggerFunction()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        var platform = MigrationSteps.PlatformStep(admin);
+        await platform.MigrateToAsync("PlatformSecurity", CancellationToken.None);
+        await admin.ExecuteAsync("SELECT platform.append_audit(now(), 'test.event', 'actor', null, '{}'::jsonb, null, null)");
+
+        await platform.RunAsync(CancellationToken.None);
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM platform.audit_log")).Should().Be(1);
+        (await admin.ScalarAsync<bool>("SELECT has_function_privilege('public', 'platform.audit_log_reject_change()', 'EXECUTE')")).Should().BeFalse();
+        (await admin.ScalarAsync<long?>("SELECT platform.verify_audit_chain()")).Should().BeNull("the chain is intact after the upgrade");
     }
 
     [Fact]
