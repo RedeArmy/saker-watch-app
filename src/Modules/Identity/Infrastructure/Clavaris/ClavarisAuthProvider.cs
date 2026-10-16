@@ -33,6 +33,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ClavarisAuthProvider> _logger;
     private readonly SigningKeyCache _keys;
+    private volatile ParametersForKeys? _parameters;
     private readonly JsonWebTokenHandler _handler = new() { MapInboundClaims = false };
 
     /// <summary>Creates the provider.</summary>
@@ -128,21 +129,36 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         return Rejected(reason);
     }
 
-    private TokenValidationParameters Parameters(IReadOnlyList<SecurityKey> keys) => new()
+    // The parameters depend only on the options and the key set, so they are built once per key set and shared by every request
+    // (the handler only reads them); a refreshed key set is a new list instance and gets new parameters.
+    private TokenValidationParameters Parameters(IReadOnlyList<SecurityKey> keys)
     {
-        ValidateIssuer = true,
-        ValidIssuer = _options.Authority.TrimEnd('/'),
-        ValidateAudience = true,
-        ValidAudience = _options.Audience,
-        ValidateLifetime = true,
-        RequireExpirationTime = true,
-        ClockSkew = _options.ClockSkew,
-        LifetimeValidator = ValidateLifetime,
-        RequireSignedTokens = true,
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKeys = keys,
-        ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
-    };
+        ParametersForKeys? cached = _parameters;
+        if (cached is not null && ReferenceEquals(cached.Keys, keys))
+        {
+            return cached.Parameters;
+        }
+
+        var built = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = _options.Authority.TrimEnd('/'),
+            ValidateAudience = true,
+            ValidAudience = _options.Audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            ClockSkew = _options.ClockSkew,
+            LifetimeValidator = ValidateLifetime,
+            RequireSignedTokens = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKeys = keys,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+        };
+        _parameters = new ParametersForKeys(keys, built);
+        return built;
+    }
+
+    private sealed record ParametersForKeys(IReadOnlyList<SecurityKey> Keys, TokenValidationParameters Parameters);
 
     private static AuthResult ToIdentity(TokenValidationResult validation)
     {

@@ -369,6 +369,18 @@ public sealed class ClavarisAuthProviderTests
     }
 
     [Fact]
+    public async Task ManyConcurrentValidations_ShareOneSetOfParameters_AndAllSucceed()
+    {
+        await using AuthHarness harness = await AuthHarness.StartAsync();
+        string[] tokens = [.. Enumerable.Range(0, 200).Select(i => harness.Idp.Mint(new TokenSpec { Subject = $"account-{i}" }))];
+
+        AuthResult[] results = await Task.WhenAll(tokens.Select(token => Task.Run(() => harness.Provider.AuthenticateAsync(token, CancellationToken.None))));
+
+        results.Should().OnlyContain(r => r.IsSuccess);
+        results.Select(r => ((AuthResult.Authenticated)r).Identity.Subject).Distinct().Should().HaveCount(200, "no token's claims leak into another's result");
+    }
+
+    [Fact]
     public async Task WithoutAnyCachedKeys_CallersWaitForTheFirstFetch()
     {
         await using AuthHarness harness = await AuthHarness.StartAsync();
