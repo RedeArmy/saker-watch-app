@@ -1,8 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -28,6 +27,7 @@ public sealed partial class OutboxProcessor
         "sakerwatch_outbox_messages_total",
         description: "Outbox messages by delivery outcome (published, retry, dead).");
     private static readonly ActivitySource _activities = new("SakerWatch");
+    private static readonly ConcurrentDictionary<Type, IEventDeliverer> _deliverers = new();
 
     private readonly IServiceScopeFactory _scopes;
     private readonly IntegrationEventRegistry _registry;
@@ -117,28 +117,34 @@ public sealed partial class OutboxProcessor
         return (bool)(await peek.ExecuteScalarAsync(cancellationToken))!;
     }
 
-    private static async Task DeliverAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken)
+    private static Task DeliverAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken) =>
+        _deliverers.GetOrAdd(message.GetType(), static type => (IEventDeliverer)Activator.CreateInstance(typeof(EventDeliverer<>).MakeGenericType(type))!)
+            .RunAsync(services, message, cancellationToken);
+
+    // One typed deliverer per event type, created once: the consumers are resolved and called through their generic interface, with no
+    // reflection per message and no TargetInvocationException wrapping a consumer's own failure.
+    private interface IEventDeliverer
     {
-        Type consumerType = typeof(IIntegrationEventConsumer<>).MakeGenericType(message.GetType());
-        MethodInfo consume = consumerType.GetMethod(nameof(IIntegrationEventConsumer<IDomainEvent>.ConsumeAsync))!;
-        var inbox = services.GetRequiredService<IInbox>();
+        Task RunAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken);
+    }
 
-        foreach (object consumer in services.GetServices(consumerType).Cast<object>())
+    private sealed class EventDeliverer<TEvent> : IEventDeliverer
+        where TEvent : IDomainEvent
+    {
+        public async Task RunAsync(IServiceProvider services, IDomainEvent message, CancellationToken cancellationToken)
         {
-            // Redelivery after a crash must not repeat this consumer's effect.
-            if (!await inbox.TryBeginAsync(consumer.GetType().FullName!, message.EventId, cancellationToken))
-            {
-                continue;
-            }
+            var inbox = services.GetRequiredService<IInbox>();
+            var typed = (TEvent)message;
 
-            try
+            foreach (IIntegrationEventConsumer<TEvent> consumer in services.GetServices<IIntegrationEventConsumer<TEvent>>())
             {
-                await (Task)consume.Invoke(consumer, [message, cancellationToken])!;
-            }
-            catch (TargetInvocationException ex) when (ex.InnerException is not null)
-            {
-                // Reflection wraps the consumer's own failure; surface that one so logs and last_error name the real cause.
-                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                // Redelivery after a crash must not repeat this consumer's effect.
+                if (!await inbox.TryBeginAsync(consumer.GetType().FullName!, message.EventId, cancellationToken))
+                {
+                    continue;
+                }
+
+                await consumer.ConsumeAsync(typed, cancellationToken);
             }
         }
     }

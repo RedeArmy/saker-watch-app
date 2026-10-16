@@ -1,8 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -52,6 +51,7 @@ public sealed partial class JobProcessor
         unit: "s",
         description: "Duration of job attempts by type and outcome.");
     private static readonly ActivitySource _activities = new("SakerWatch");
+    private static readonly ConcurrentDictionary<Type, IHandlerInvoker> _invokers = new();
 
     // Recording a failure or releasing a lease happens while the worker may be shutting down; a hung database must not block it.
     private const string _tokenParameter = "token";
@@ -215,20 +215,25 @@ public sealed partial class JobProcessor
         }
     }
 
-    private static async Task InvokeAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken)
-    {
-        Type handlerType = typeof(IJobHandler<>).MakeGenericType(payload.GetType());
-        object handler = services.GetService(handlerType)
-            ?? throw new JobPayloadException($"No handler is registered for job payload {payload.GetType().FullName}.");
-        MethodInfo handle = handlerType.GetMethod(nameof(IJobHandler<object>.HandleAsync))!;
+    private static Task InvokeAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken) =>
+        _invokers.GetOrAdd(payload.GetType(), static type => (IHandlerInvoker)Activator.CreateInstance(typeof(HandlerInvoker<>).MakeGenericType(type))!)
+            .RunAsync(services, payload, context, cancellationToken);
 
-        try
+    // One typed invoker per payload type, created once: a call goes straight to IJobHandler<TPayload>.HandleAsync, with no reflection
+    // per job and no TargetInvocationException wrapping the handler's own failure.
+    private interface IHandlerInvoker
+    {
+        Task RunAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken);
+    }
+
+    private sealed class HandlerInvoker<TPayload> : IHandlerInvoker
+        where TPayload : notnull
+    {
+        public Task RunAsync(IServiceProvider services, object payload, JobContext context, CancellationToken cancellationToken)
         {
-            await (Task)handle.Invoke(handler, [payload, context, cancellationToken])!;
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            IJobHandler<TPayload> handler = services.GetService<IJobHandler<TPayload>>()
+                ?? throw new JobPayloadException($"No handler is registered for job payload {typeof(TPayload).FullName}.");
+            return handler.HandleAsync((TPayload)payload, context, cancellationToken);
         }
     }
 
