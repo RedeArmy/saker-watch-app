@@ -44,6 +44,19 @@ public sealed class RetentionSchedulerLoopTests
         return advanced;
     }
 
+    // The clock is not involved in the first attempt, so wait for it by condition with a generous real-time bound: a loaded machine can
+    // take far longer than any fixed pause to start the loop.
+    private static async Task WaitForCallsAsync(FlakyEnqueuer enqueuer, int calls)
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (enqueuer.Calls < calls)
+        {
+            await Task.Delay(10, bound.Token);
+        }
+
+        await Task.Delay(30);
+    }
+
     [Theory]
     [InlineData("Production", true, true)]
     [InlineData("Production", false, false)]
@@ -90,7 +103,7 @@ public sealed class RetentionSchedulerLoopTests
         using var scheduler = new RetentionScheduler(provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(settings), clock, new TestHostEnvironment(Environments.Production), NullLogger<RetentionScheduler>.Instance);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await AdvanceUntilAsync(clock, () => enqueuer.Calls >= 1, TimeSpan.Zero, TimeSpan.Zero);
+        await WaitForCallsAsync(enqueuer, 1);
         enqueuer.Calls.Should().Be(1, "the first attempt runs immediately and fails");
 
         TimeSpan toRetry = await AdvanceUntilAsync(clock, () => enqueuer.Calls >= 2, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(5));
