@@ -25,4 +25,29 @@ public sealed class HostCompositionTests : IClassFixture<ApiFactory>
         services.GetService<JobRegistry>().Should().NotBeNull("the API can enqueue jobs, so it must know their types");
         services.GetService<IntegrationEventRegistry>().Should().NotBeNull("the API writes integration events to the outbox");
     }
+
+    [Fact]
+    public async Task EveryRequestHandlerOfEveryModule_IsReachableFromTheApi()
+    {
+        string[] modules = ["Identity", "MarketData", "Watchlist", "Analysis", "Signals", "Calculator", "Retention"];
+        var missing = new List<string>();
+        await using AsyncServiceScope scope = _factory.Services.CreateAsyncScope();
+
+        foreach (string module in modules)
+        {
+            var assembly = System.Reflection.Assembly.Load($"SakerWatch.{module}.Application");
+            foreach (Type handler in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, ContainsGenericParameters: false }))
+            {
+                foreach (Type contract in handler.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>)))
+                {
+                    if (scope.ServiceProvider.GetService(contract) is null)
+                    {
+                        missing.Add($"{handler.FullName} ({module})");
+                    }
+                }
+            }
+        }
+
+        missing.Should().BeEmpty("a handler a module defines must be in the module list of Host.Api, or its endpoint fails the first time it is called");
+    }
 }

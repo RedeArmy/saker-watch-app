@@ -75,4 +75,41 @@ public sealed class ModuleBoundaryTests
                 result.IsSuccessful.Should().BeTrue($"{m}.{layer} may only use other modules' Contracts");
             }
     }
+
+    [Fact]
+    public void ModuleApplication_TalksToStorageAndTheWebOnlyThroughPorts()
+    {
+        foreach (string m in _modules)
+        {
+            TestResult result = Types.InAssembly(Load(m, "Application")).ShouldNot().HaveDependencyOnAny(
+                "Npgsql", "Microsoft.EntityFrameworkCore", "MongoDB.Driver", "MongoDB.Bson", "StackExchange.Redis", "Microsoft.AspNetCore")
+                .GetResult();
+
+            result.IsSuccessful.Should().BeTrue($"{m}.Application depends on ports its Infrastructure implements, never on a driver or the web stack");
+        }
+    }
+
+    [Fact]
+    public void ModuleApplication_DoesNotReachIntoTheInfrastructureBuildingBlocks()
+    {
+        foreach (string m in _modules)
+        {
+            TestResult result = Types.InAssembly(Load(m, "Application")).ShouldNot().HaveDependencyOnAny(
+                "SakerWatch.BuildingBlocks.Persistence", "SakerWatch.BuildingBlocks.Mongo", "SakerWatch.BuildingBlocks.Redis",
+                "SakerWatch.BuildingBlocks.Web", "SakerWatch.BuildingBlocks.Resilience")
+                .GetResult();
+
+            result.IsSuccessful.Should().BeTrue($"{m}.Application may use only BuildingBlocks.Kernel and BuildingBlocks.Application");
+        }
+    }
+
+    [Fact]
+    public void ModuleContracts_AreDtosAndPorts_NotImplementations()
+    {
+        foreach (string m in _modules)
+        {
+            Types.InAssembly(Load(m, "Contracts")).That().AreClasses().And().AreNotAbstract().And().AreNotSealed().And().DoNotHaveName("AssemblyMarker")
+                .GetTypes().Should().BeEmpty($"{m}.Contracts exposes sealed records/DTOs and interfaces, so another module cannot inherit its behavior");
+        }
+    }
 }
