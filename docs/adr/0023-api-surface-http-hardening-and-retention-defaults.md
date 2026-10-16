@@ -1,6 +1,6 @@
 # ADR-0023: API surface, HTTP hardening and retention defaults
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-15
 - **Deciders:** Eder
 

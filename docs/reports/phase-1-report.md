@@ -1,7 +1,7 @@
 # Phase 1 report — Platform core
 
 - **Purpose:** Phase Report for the Phase 1 gate (`/phase-report`): what was built and not, evidence, risks, review findings with their disposition, and the proposed Phase 2 plan.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (gate); the owner approves, then the "Current phase" pointer moves to 2
+- **Owner:** Eder · **Status:** approved 2026-10-16 (gate passed) · **Target phase:** 1; the "Current phase" pointer moved to 2
 - **Range:** `e59898c` (end of Phase 0) to the head of `feat/phase-1-6-closing`; milestones 1.0–1.5 are merged to `main`, 1.6 is on its branch.
 
 ## 1. Built
@@ -77,7 +77,7 @@ Three read-only reviews ran on the whole Phase 1 diff: `code-reviewer`, `securit
 **Decided by the owner and closed after the review (Phase 1.7 hardening)**
 1. `Down` of `CreatePlatformTables` and `CreateUsers` now throws; `MigrationsAreForwardOnlyTests` keeps every `Down` that way (ADR-0025).
 2. `audit_log` is kept for ever until it measurably matters; revisit with the off-database anchor in Phase 5 (ADR-0025, accepted).
-3. ADR-0024 (`.mcp.json` stays empty) and ADR-0023 are waiting for the owner's acceptance together with the gate.
+3. ADR-0023 and ADR-0024 (`.mcp.json` stays empty) were accepted by the owner together with the gate on 2026-10-16.
 
 **Closed in 1.7 (risk, security, performance, debt and future-debt series A–F)**: jobs run as the user they work for (`user_id`, checked by `enqueue_job`); column-level `UPDATE` on `identity.users`; `pg_temp` last in every definer function, default privileges that do not expose new functions to `PUBLIC`, no `TEMPORARY` for `PUBLIC`; Mongo validator `collMod` on existing collections; upgrade tests for `ProvisionUserWithStatus` and `RevokePublicFromAuditTrigger`; locale claim normalized to a supported locale; log strings and failure text scrubbed of credentials and emails; the migrator honors SIGTERM; pepper decoding no longer rejects long secrets; module-boundary and unwired-handler architecture tests; readiness caching and per-check timeouts.
 
