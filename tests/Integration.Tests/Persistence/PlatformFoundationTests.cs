@@ -32,6 +32,20 @@ public sealed class PlatformFoundationTests(TimescalePostgresFixture postgres) :
     }
 
     [Fact]
+    public async Task Migrate_WhenTheRunIsCancelled_StopsBeforeApplyingAnything()
+    {
+        string db = await postgres.CreateDatabaseAsync();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
+        var pipeline = new MigrationPipeline([MigrationSteps.PlatformStep(db)], Microsoft.Extensions.Logging.Abstractions.NullLogger<MigrationPipeline>.Instance);
+
+        Func<Task> run = () => pipeline.RunAsync(stop.Token);
+
+        await run.Should().ThrowAsync<OperationCanceledException>("a SIGTERM during the deploy step cancels the run");
+        (await db.ScalarAsync<bool>("SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'platform')")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Migrate_RunTwice_SecondRunAppliesNothing()
     {
         string db = await postgres.CreateDatabaseAsync();

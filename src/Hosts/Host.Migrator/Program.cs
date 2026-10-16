@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,9 +29,15 @@ builder.Services.AddSingleton<IMigrationStep>(provider =>
 builder.Services.AddSingleton<MigrationPipeline>();
 
 using IHost host = builder.Build();
+
+// SIGTERM (a deploy stopping the step) and SIGINT cancel the run, so a held Mongo lock is released and the connection closes
+// instead of the process being killed in the middle of a statement.
+using var stop = new CancellationTokenSource();
+using PosixSignalRegistration sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; stop.Cancel(); });
+using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; stop.Cancel(); });
 try
 {
-    await host.Services.GetRequiredService<MigrationPipeline>().RunAsync(CancellationToken.None);
+    await host.Services.GetRequiredService<MigrationPipeline>().RunAsync(stop.Token);
     return 0;
 }
 catch (Exception)
