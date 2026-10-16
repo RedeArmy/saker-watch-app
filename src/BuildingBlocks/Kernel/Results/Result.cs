@@ -18,16 +18,33 @@ public interface IResult<TSelf>
     static abstract TSelf FromError(Error error);
 }
 
-/// <summary>Outcome of an operation without a value: success, or an expected <see cref="Kernel.Results.Error"/>.</summary>
+/// <summary>
+/// Outcome of an operation without a value: success, or an expected <see cref="Kernel.Results.Error"/>. A <c>default</c> value (a
+/// field never assigned, <c>new Result()</c>) is a <b>failure</b> with the code <see cref="UninitializedCode"/>: an operation that never
+/// reported must not read as one that succeeded.
+/// </summary>
 public readonly record struct Result : IResult<Result>
 {
-    private Result(Error? error) => Error = error;
+    /// <summary>Error code of a result that was never assigned.</summary>
+    public const string UninitializedCode = "result.uninitialized";
+
+    // Shared with Result<T>, which cannot hold a static of its own without one copy per closed type.
+    internal static readonly Error Uninitialized = Error.Failure(UninitializedCode, "The operation did not report a result.");
+
+    private readonly bool _initialized;
+    private readonly Error? _error;
+
+    private Result(Error? error)
+    {
+        _initialized = true;
+        _error = error;
+    }
 
     /// <inheritdoc />
-    public bool IsSuccess => Error is null;
+    public bool IsSuccess => _initialized && _error is null;
 
     /// <inheritdoc />
-    public Error? Error { get; }
+    public Error? Error => _initialized ? _error : Result.Uninitialized;
 
     /// <summary>A successful result.</summary>
     public static Result Success() => new(null);
@@ -48,23 +65,29 @@ public readonly record struct Result : IResult<Result>
     public static implicit operator Result(Error error) => Failure(error);
 }
 
-/// <summary>Outcome of an operation that yields <typeparamref name="T"/> on success. Create it through <see cref="Result"/>.</summary>
+/// <summary>
+/// Outcome of an operation that yields <typeparamref name="T"/> on success. Create it through <see cref="Result"/>. Like
+/// <see cref="Result"/>, a <c>default</c> value is a failure (<see cref="Result.UninitializedCode"/>), never a success with a null value.
+/// </summary>
 /// <typeparam name="T">The success value type.</typeparam>
 public readonly record struct Result<T> : IResult<Result<T>>
 {
+    private readonly bool _initialized;
     private readonly T? _value;
+    private readonly Error? _error;
 
     internal Result(T? value, Error? error)
     {
+        _initialized = true;
         _value = value;
-        Error = error;
+        _error = error;
     }
 
     /// <inheritdoc />
-    public bool IsSuccess => Error is null;
+    public bool IsSuccess => _initialized && _error is null;
 
     /// <inheritdoc />
-    public Error? Error { get; }
+    public Error? Error => _initialized ? _error : Result.Uninitialized;
 
     /// <summary>The success value; reading it from a failed result is a programming error.</summary>
     /// <exception cref="InvalidOperationException">The result is a failure.</exception>

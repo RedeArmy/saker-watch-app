@@ -9,15 +9,17 @@ public abstract class AggregateRoot<TId> : Entity<TId>
     where TId : notnull
 {
     private readonly List<IDomainEvent> _domainEvents = [];
+    private readonly IReadOnlyList<IDomainEvent> _domainEventsView;
 
     /// <summary>Creates an aggregate root with the given identity.</summary>
     protected AggregateRoot(TId id)
         : base(id)
     {
+        _domainEventsView = _domainEvents.AsReadOnly();
     }
 
     /// <summary>Events raised since the last <see cref="PullDomainEvents"/>.</summary>
-    public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents;
+    public IReadOnlyList<IDomainEvent> DomainEvents => _domainEventsView;
 
     /// <summary>Returns the pending events and clears them, so each event is published once.</summary>
     public IReadOnlyList<IDomainEvent> PullDomainEvents()

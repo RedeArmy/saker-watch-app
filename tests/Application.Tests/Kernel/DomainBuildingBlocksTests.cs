@@ -50,6 +50,19 @@ public sealed class DomainBuildingBlocksTests
     }
 
     [Fact]
+    public void DomainEvents_IsAReadOnlyViewOfTheLiveList_NotTheListItself()
+    {
+        var aggregate = new DemoAggregate(new DemoId(Guid.CreateVersion7()));
+        IReadOnlyList<IDomainEvent> view = aggregate.DomainEvents;
+
+        aggregate.Happen(new DemoHappened(Guid.CreateVersion7(), DateTimeOffset.UnixEpoch));
+
+        view.Should().HaveCount(1, "the view follows the aggregate");
+        view.Should().NotBeAssignableTo<List<IDomainEvent>>("a caller must not be able to cast it back and edit the aggregate's events");
+        ((System.Collections.Generic.ICollection<IDomainEvent>)view).IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
     public void PullDomainEvents_ReturnsPendingEventsOnce()
     {
         var aggregate = new DemoAggregate(new DemoId(Guid.CreateVersion7()));
