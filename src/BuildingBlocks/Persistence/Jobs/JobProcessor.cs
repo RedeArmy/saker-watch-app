@@ -65,7 +65,7 @@ public sealed partial class JobProcessor
     private readonly TimeProvider _timeProvider;
     private readonly ExponentialBackoff _backoff;
     private readonly ILogger<JobProcessor> _logger;
-    private readonly string _worker = $"{Environment.MachineName}:{Guid.CreateVersion7():N}";
+    private readonly string _worker;
     private long _nextParkCheckTicks;
 
     /// <summary>Creates a processor.</summary>
@@ -83,6 +83,7 @@ public sealed partial class JobProcessor
         _options = options.Value;
         _connectionString = postgres.Value.Postgres;
         _timeProvider = timeProvider;
+        _worker = $"{Environment.MachineName}:{Guid.CreateVersion7(timeProvider.GetUtcNow()):N}";
         _backoff = backoff;
         _logger = logger;
     }
@@ -256,7 +257,7 @@ public sealed partial class JobProcessor
             RETURNING j.id, j.job_key, j.type, j.payload::text, j.attempts, j.max_attempts, j.correlation_id, j.trace_id, j.lease_token
             """,
             connection);
-        claim.Parameters.AddWithValue(_tokenParameter, Guid.CreateVersion7());
+        claim.Parameters.AddWithValue(_tokenParameter, Guid.CreateVersion7(_timeProvider.GetUtcNow()));
         claim.Parameters.AddWithValue("expires", now + _options.LeaseDuration);
         claim.Parameters.AddWithValue("worker", _worker);
         claim.Parameters.AddWithValue("now", now);

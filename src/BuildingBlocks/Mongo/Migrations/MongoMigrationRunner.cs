@@ -51,7 +51,7 @@ public sealed partial class MongoMigrationRunner(IMongoDatabase database, TimePr
         }
 
         MongoMigrationLockOptions timing = lockOptions ?? MongoMigrationLockOptions.Default;
-        string owner = $"{Environment.MachineName}:{Guid.CreateVersion7():N}";
+        string owner = $"{Environment.MachineName}:{Guid.CreateVersion7(timeProvider.GetUtcNow()):N}";
         await AcquireLockAsync(owner, timing, cancellationToken);
 
         // A migration may outlast the lock's lifetime, so the lock is renewed while it runs; if it is ever lost the run stops.

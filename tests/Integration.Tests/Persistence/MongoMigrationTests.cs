@@ -201,6 +201,32 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     }
 
     [Fact]
+    public async Task TheLockOwnerId_IsStampedWithTheInjectedClock_NotTheSystemOne()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2031, 3, 4, 5, 6, 7, TimeSpan.Zero));
+        var runner = new MongoMigrationRunner(db, clock, NullLogger<MongoMigrationRunner>.Instance);
+        var slow = new SlowMigration(TimeSpan.FromSeconds(3));
+
+        Task<int> run = runner.RunAsync([slow], new MongoMigrationLockOptions(TimeSpan.FromMinutes(10), TimeSpan.FromSeconds(30)), CancellationToken.None);
+        IMongoCollection<BsonDocument> locks = db.GetCollection<BsonDocument>("_migration_lock");
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        BsonDocument? held;
+        while ((held = await locks.Find(new BsonDocument("_id", "migrations")).FirstOrDefaultAsync(bound.Token)) is null)
+        {
+            await Task.Delay(50, bound.Token);
+        }
+
+        string owner = held["owner"].AsString;
+        var id = Guid.ParseExact(owner[(owner.LastIndexOf(':') + 1)..], "N");
+        byte[] bytes = id.ToByteArray(bigEndian: true);
+        long unixMilliseconds = (long)bytes[0] << 40 | (long)bytes[1] << 32 | (long)bytes[2] << 24 | (long)bytes[3] << 16 | (long)bytes[4] << 8 | bytes[5];
+        await run.WaitAsync(TimeSpan.FromSeconds(30));
+
+        DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds).Should().Be(clock.GetUtcNow().AddTicks(-(clock.GetUtcNow().Ticks % TimeSpan.TicksPerMillisecond)));
+    }
+
+    [Fact]
     public async Task WhenTheLockIsLostMidRun_TheRunStopsInsteadOfInterleaving()
     {
         IMongoDatabase db = mongo.NewDatabase();
