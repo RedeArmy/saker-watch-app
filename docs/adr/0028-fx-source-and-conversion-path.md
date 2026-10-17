@@ -7,7 +7,18 @@
 ## Context
 The calculator and the optional GTQ view need a USD to GTQ rate with its date and source, and later CAD, EUR and JPY to GTQ (ADR-0018 pivots through USD). The Banco de Guatemala publishes the reference exchange rate through a web service.
 
-Facts checked on 2026-10-16: the service at `banguat.gob.gt/variables/ws/TipoCambio.asmx` exposes `TipoCambioDia`, `TipoCambioRango` (`fecha_ini`, `fecha_fin` in `dd/mm/aaaa`), `TipoCambioFechaInicial`, the `...Moneda` variants and `Variables`/`VariablesDisponibles`; range results are sorted by date; day functions return the reference rate where it applies. The bank states the service is free and not an official information source: only its home page is official. The exact request and response format (SOAP versus HTTP) must be taken from the service description when the adapter is written; the currency code mapping is not documented on the page.
+Facts checked on 2026-10-16: the service at `banguat.gob.gt/variables/ws/TipoCambio.asmx` exposes `TipoCambioDia`, `TipoCambioRango` (`fecha_ini`, `fecha_fin` in `dd/mm/aaaa`), `TipoCambioFechaInicial`, the `...Moneda` variants and `Variables`/`VariablesDisponibles`; range results are sorted by date; day functions return the reference rate where it applies. The bank states the service is free and not an official information source: only its home page is official. The request and response format was verified live on 2026-10-17 (below).
+
+## Verified against the live service (2026-10-17)
+Taken from the service description (`TipoCambio.asmx?WSDL`) and real calls, no key needed:
+- **Protocol:** SOAP 1.1 over HTTPS (`POST https://www.banguat.gob.gt/variables/ws/TipoCambio.asmx`, `Content-Type: text/xml; charset=utf-8`, header `SOAPAction: "http://www.banguat.gob.gt/variables/ws/<Operation>"`, namespace `http://www.banguat.gob.gt/variables/ws/`). An unknown `SOAPAction` is an HTTP 500 with a `soap:Fault`.
+- **Operations:** `TipoCambioDia` (today: `CambioDolar/VarDolar` with `fecha` and `referencia`), `TipoCambioRango` (`fechainit`, `fechafin`), `TipoCambioFechaInicial`, the `...Moneda` variants (extra `moneda` code) and `VariablesDisponibles` (currency codes).
+- **Format:** dates are `dd/MM/yyyy` and rates use a dot with five decimals (`7.64572`). Range rows are `Vars/Var` with `moneda`, `fecha`, `venta` and `compra`; for USD (`moneda` 2) the two are equal and equal to the daily reference. Rows come sorted by date.
+- **Weekends and holidays are filled by the bank** with the previous rate (10, 11 and 12 October 2026 carry the same value), so for USD there are no gaps.
+- **A future date has a rate**: the bank publishes the next day's rate ahead of time (20 October 2026 answered `7.63672` on the 17th). Ingestion therefore asks only up to today and never stores a date after it.
+- **Size:** ten years in one call is about 3 900 rows and 390 KB, so the first load is one request; the adapter caps the response size.
+- **Edge cases:** a reversed range answers an empty result (`TotalItems` 0), not an error.
+- **Other currencies exist**: `moneda` 3 yen, 7 Canadian dollar and 24 euro, quoted as units per US dollar (`1.4283` for CAD on 12 October). Their rows have gaps on weekends. This may replace the market FX source for CAD, EUR and JPY; to be decided with the Asia/Canada/Europe milestone.
 
 ## Decision
 - **Anchor:** `IFxProvider` has a Banco de Guatemala implementation for USD to GTQ, stored as `marketdata.fx_rates` (`base`, `quote`, `as_of_date`, `source`, `rate numeric`) with one row per day and unique `(base, quote, as_of_date, source)`.
@@ -18,4 +29,4 @@ Facts checked on 2026-10-16: the service at `banguat.gob.gt/variables/ws/TipoCam
 
 ## Consequences
 - The conversion is as good as the bank's daily reference; intraday FX is out of scope.
-- The service format is unverified until the adapter is written against its service description and a recorded fixture.
+- The adapter is written against recorded fixtures of the responses verified above (milestone 2.4b); the bank warns the service is not an official source, so a malformed answer is treated as a failed call, never as a rate.

@@ -147,3 +147,22 @@ public static class IngestionStatuses
 
     public const string Failed = "failed";
 }
+
+/// <summary>
+/// <c>marketdata.fx_rates</c>: one row per currency pair, day and source with the rate (units of the quote currency for one of the base).
+/// Unique on <c>(base, quote, as_of_date, source)</c>, so ingestion is an upsert.
+/// </summary>
+public sealed class FxRateRow
+{
+    public string Base { get; set; } = string.Empty;
+
+    public string Quote { get; set; } = string.Empty;
+
+    public DateOnly AsOfDate { get; set; }
+
+    public string Source { get; set; } = string.Empty;
+
+    public decimal Rate { get; set; }
+
+    public DateTimeOffset IngestedAt { get; set; }
+}

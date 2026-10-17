@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
@@ -68,6 +69,7 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.TryAddScoped<IPriceStore, PriceStore>();
+        services.TryAddScoped<IFxRateStore, FxRateStore>();
         services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
