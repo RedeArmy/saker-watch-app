@@ -71,7 +71,10 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
+        services.TryAddScoped<IFreshnessReader, FreshnessReader>();
         services.AddHostedService<MarketDataScheduler>();
+        services.AddSingleton<MarketDataFreshnessSampler>();
+        services.AddHostedService(provider => provider.GetRequiredService<MarketDataFreshnessSampler>());
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;

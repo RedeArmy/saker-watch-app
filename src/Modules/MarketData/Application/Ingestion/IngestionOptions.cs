@@ -41,4 +41,7 @@ public sealed class IngestionOptions
     /// <summary>Relative difference in a stored adjusted close, beyond which the provider is taken to have rewritten the history.</summary>
     [Range(0.0000001, 0.1)]
     public double RewriteTolerance { get; set; } = 0.000001;
+
+    /// <summary>How often the freshness gauges are measured.</summary>
+    public TimeSpan FreshnessInterval { get; set; } = TimeSpan.FromMinutes(5);
 }

@@ -110,3 +110,33 @@ public sealed class IngestionState(DbSession session) : IIngestionState
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
+
+/// <summary><see cref="IFreshnessReader"/> over the ingestable listings and <c>marketdata.price_daily</c>.</summary>
+/// <param name="session">The scope's database connection and transaction.</param>
+public sealed class FreshnessReader(DbSession session) : IFreshnessReader
+{
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ListingLatest>> LatestPerListingAsync(Mic market, CancellationToken cancellationToken)
+    {
+        // The newest day of a listing is the end of a backward scan of its primary key, so this is one index probe per listing.
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT s.id, (SELECT max(p.trade_date) FROM marketdata.price_daily p WHERE p.stock_id = s.id)
+            FROM marketdata.stocks s
+            LEFT JOIN marketdata.ingestion_state i ON i.stock_id = s.id
+            WHERE s.market_mic = @market AND s.is_active AND coalesce(i.status, 'pending') <> 'failed'
+            """,
+            session.Connection,
+            session.Transaction);
+        command.Parameters.AddWithValue("market", market.Value);
+
+        var listings = new List<ListingLatest>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            listings.Add(new ListingLatest(StockId.Create(reader.GetGuid(0)), reader.IsDBNull(1) ? null : reader.GetFieldValue<DateOnly>(1)));
+        }
+
+        return listings;
+    }
+}

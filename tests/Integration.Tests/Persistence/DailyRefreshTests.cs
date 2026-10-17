@@ -243,3 +243,36 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         RefreshStockJob.KeyFor(stock, day).Should().NotBe(RefreshStockJob.KeyFor(stock, day.AddDays(1)));
     }
 }
+
+[Trait("Category", "Integration")]
+public sealed class FreshnessReaderTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
+{
+    [Fact]
+    public async Task LatestPerListing_ReportsTheNewestDayOfEachIngestableListing_AndNoneForOneWithoutHistory()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        Guid[] ids = [Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()];
+        const string insert = "INSERT INTO marketdata.stocks (id, market_mic, ticker, name, currency, time_zone, asset_type, is_active, listed_at) VALUES (@id, @mic, @ticker, 'x', 'USD', 'America/New_York', 'equity', @active, now())";
+        await db.Admin.ExecuteAsync(insert, ("id", ids[0]), ("mic", "XNAS"), ("ticker", "WITH"), ("active", true));
+        await db.Admin.ExecuteAsync(insert, ("id", ids[1]), ("mic", "XNAS"), ("ticker", "NONE"), ("active", true));
+        await db.Admin.ExecuteAsync(insert, ("id", ids[2]), ("mic", "XNAS"), ("ticker", "GONE"), ("active", false));
+        await db.Admin.ExecuteAsync(insert, ("id", ids[3]), ("mic", "XNAS"), ("ticker", "FAIL"), ("active", true));
+        await db.Admin.ExecuteAsync(insert, ("id", ids[4]), ("mic", "XNYS"), ("ticker", "KO"), ("active", true));
+        await db.Admin.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status, failure_code) VALUES (@id, 'failed', 'x')", ("id", ids[3]));
+        foreach (string day in new[] { "2026-10-13", "2026-10-15", "2026-10-14" })
+        {
+            await db.Admin.ExecuteAsync(
+                "INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at) VALUES (@id, @day::date, 10, 11, 9, 10, 10, 1, 'fake', true, now())",
+                ("id", ids[0]), ("day", day));
+        }
+
+        await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = db.Worker }), new AnonymousCurrentUser());
+        await session.BeginAsync(CancellationToken.None);
+        IReadOnlyList<ListingLatest> listings = await new FreshnessReader(session).LatestPerListingAsync(Mic.Parse("XNAS"), CancellationToken.None);
+        await session.CommitAsync(CancellationToken.None);
+
+        listings.Should().HaveCount(2, "the inactive, the failed and the other market's listing are left out");
+        listings.Single(l => l.Stock.Value == ids[0]).Latest.Should().Be(new DateOnly(2026, 10, 15));
+        listings.Single(l => l.Stock.Value == ids[1]).Latest.Should().BeNull();
+    }
+}
