@@ -24,6 +24,9 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
 | `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed | daily refreshes of a listing: `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
+| `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
+| `sakerwatch_marketdata_fx_rows_total` (counter) | none | exchange rates written by the daily refresh |
+| `sakerwatch_marketdata_fx_age_days` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | pair, source | days since the date of the newest exchange rate (Guatemalan calendar); the bank fills weekends, so a value above `MarketData:Ingestion:FxMaxAgeDays` (3) means the ingestion stopped. Per process: aggregate with `max` |
 | `sakerwatch_retention_rows_total` (counter) | target=IdempotencyKeys\|OutboxProcessed\|InboxProcessed\|JobsSucceeded\|JobsDead, mode=dry_run\|delete | rows removed by a retention run, or that a dry run found removable; a delete run that keeps reporting `more remaining` means the backlog outgrows the batch limit |
 | `sakerwatch_jobs_queue_depth`, `sakerwatch_jobs_queue_oldest_age_seconds`, `sakerwatch_jobs_in_flight`, `sakerwatch_jobs_dead` (gauges, sampled every `Jobs:StatsInterval`) | none | backlog (pending plus leased jobs whose lease expired, which will be reclaimed), staleness (age of the oldest due or abandoned job), running (live leases) and parked jobs; each count reads one partial index, so sampling never scans finished rows. Gauges are sampled per process: with several worker replicas each reports the same queue, so aggregate with `max`, never `sum` |
 | `sakerwatch_jobs_total` (counter), `sakerwatch_jobs_duration_seconds` (histogram) | type, outcome=success\|retry\|dead\|lease_lost\|released | job attempts |
@@ -86,6 +89,8 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2201 | Warning | `The Banco de Guatemala answer had {Rejected} rows that are not a USD rate in the range; they were dropped` | `BanguatFxProvider` |
 | 2202 | Warning | `The Banco de Guatemala call failed in transit ({ExceptionType})` | `BanguatFxProvider` |
 | 2203 | Warning | `The raw Banco de Guatemala response could not be kept ({ExceptionType}); the data itself was fetched and parsed` | `BanguatFxProvider` |
+| 2301 | Information | `Exchange rates {Base}/{Quote} refreshed: {Rows} rows written` | `FxRefreshHandler` |
+| 2302 | Warning | `Refresh of the exchange rates {Base}/{Quote} failed for good with {Code}; the next day asks again` | `FxRefreshHandler` |
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |
 | 2112 | Information | `The adjusted history of {Market} {Ticker} was rewritten by the provider; a full reload is queued` | `RefreshStockHandler` |
 | 2113 | Warning | `Refresh of listing {StockId} failed for good with {Code}` | `RefreshStockHandler` |
@@ -93,6 +98,9 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2122 | Information | `Daily refresh of {Market} for {Day} queued` | `MarketDataScheduler` |
 | 2123 | Warning | `Could not queue the daily refresh of {Market}; it will be tried again shortly` (with exception) | `MarketDataScheduler` |
 | 2124 | Warning | `The market {Market} has a provider but no calendar, so its daily refresh cannot be scheduled` | `MarketDataScheduler` |
+| 2125 | Information | `Daily refresh of the exchange rates {Base}/{Quote} for {Day} queued` | `MarketDataScheduler` |
+| 2126 | Warning | `Could not queue the daily refresh of the exchange rates {Base}/{Quote}; it will be tried again shortly` (with exception) | `MarketDataScheduler` |
+| 2132 | Warning | `Could not measure the age of the exchange rate; its last measurement is kept` (with exception) | `MarketDataFreshnessSampler` |
 | 2131 | Warning | `Could not measure the freshness of {Market}; its last measurement is kept` (with exception) | `MarketDataFreshnessSampler` |
 
 ### Logging configuration and redaction

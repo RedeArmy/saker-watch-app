@@ -5,10 +5,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
+using SakerWatch.MarketData.Infrastructure.Providers.Banguat;
 
 namespace SakerWatch.MarketData.Infrastructure;
 
@@ -30,6 +32,7 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
     private readonly Meter _meter = SakerTelemetry.CreateMeter();
     private readonly object _gate = new();
     private Dictionary<string, MarketFreshness> _snapshot = [];
+    private double? _fxAgeDays;
 
     /// <summary>Creates the sampler and registers its gauges.</summary>
     public MarketDataFreshnessSampler(
@@ -55,6 +58,11 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
             ObserveStaleness,
             unit: "s",
             description: "How long the stalest listing of a market has been stale; zero when every listing is current.");
+        _meter.CreateObservableGauge(
+            "sakerwatch_marketdata_fx_age_days",
+            ObserveFxAge,
+            unit: "d",
+            description: "Days since the date of the newest USD to GTQ exchange rate; the bank fills weekends, so a value above the configured maximum means the ingestion stopped.");
     }
 
     /// <summary>The counts of one market at one moment.</summary>
@@ -70,6 +78,18 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
         lock (_gate)
         {
             return new Dictionary<string, MarketFreshness>(_snapshot);
+        }
+    }
+
+    /// <summary>Days since the newest USD to GTQ rate, as last measured, or <see langword="null"/> when none was ever stored or measured.</summary>
+    public double? FxAgeDays
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _fxAgeDays;
+            }
         }
     }
 
@@ -110,6 +130,33 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
         lock (_gate)
         {
             _snapshot = next;
+        }
+
+        await SampleFxAsync(now, cancellationToken);
+    }
+
+    // Skipped when the host registered no rate store. A failure keeps the last measurement.
+    private async Task SampleFxAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
+            if (scope.ServiceProvider.GetService<IFxRateStore>() is not { } store)
+            {
+                return;
+            }
+
+            (CurrencyCode baseCurrency, CurrencyCode quote) = FxFreshness.Anchor;
+            DateOnly? latest = await store.LatestDateAsync(baseCurrency, quote, BanguatOptions.ProviderName, cancellationToken);
+            double? age = latest is { } date ? FxFreshness.AgeDays(date, FxFreshness.TodayInGuatemala(now)) : null;
+            lock (_gate)
+            {
+                _fxAgeDays = age;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogFxSamplingFailed(ex);
         }
     }
 
@@ -172,10 +219,21 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
         }
     }
 
+    private IEnumerable<Measurement<double>> ObserveFxAge()
+    {
+        if (FxAgeDays is { } age)
+        {
+            yield return new Measurement<double>(age, new KeyValuePair<string, object?>("pair", "USD/GTQ"), new KeyValuePair<string, object?>("source", BanguatOptions.ProviderName));
+        }
+    }
+
     private static KeyValuePair<string, object?> Tags(string market) => new(_marketTag, market);
 
     private static KeyValuePair<string, object?> State(string state) => new("state", state);
 
     [LoggerMessage(EventId = 2131, Level = LogLevel.Warning, Message = "Could not measure the freshness of {Market}; its last measurement is kept")]
     private partial void LogSamplingFailed(string market, Exception exception);
+
+    [LoggerMessage(EventId = 2132, Level = LogLevel.Warning, Message = "Could not measure the age of the exchange rate; its last measurement is kept")]
+    private partial void LogFxSamplingFailed(Exception exception);
 }
