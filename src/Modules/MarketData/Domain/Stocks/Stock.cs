@@ -1,0 +1,132 @@
+using SakerWatch.BuildingBlocks.Kernel.Domain;
+using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.MarketData.Domain.Markets;
+
+namespace SakerWatch.MarketData.Domain.Stocks;
+
+/// <summary>
+/// A listing of an instrument on one market, shared by every user (ADR-0018). Its natural key is <c>(Mic, Ticker)</c>; the trading currency
+/// is the native currency of the market, so prices are never converted when stored. The catalog is filled on demand when a user adds the
+/// ticker to the watchlist.
+/// </summary>
+public sealed class Stock : AggregateRoot<StockId>
+{
+    /// <summary>Longest accepted instrument name.</summary>
+    public const int MaxNameLength = 200;
+
+    private Stock(StockId id, Mic market, Ticker ticker, string name, CurrencyCode currency, string timeZoneId, AssetType assetType, DateTimeOffset listedAt)
+        : base(id)
+    {
+        Market = market;
+        Ticker = ticker;
+        Name = name;
+        Currency = currency;
+        TimeZoneId = timeZoneId;
+        AssetType = assetType;
+        IsActive = true;
+        ListedAt = listedAt;
+    }
+
+    /// <summary>The market the instrument trades on.</summary>
+    public Mic Market { get; }
+
+    /// <summary>The ticker on that market.</summary>
+    public Ticker Ticker { get; }
+
+    /// <summary>The instrument name as the provider reports it, trimmed.</summary>
+    public string Name { get; private set; }
+
+    /// <summary>The currency the instrument trades in.</summary>
+    public CurrencyCode Currency { get; }
+
+    /// <summary>The IANA time zone of the market, which decides what "the close of day D" means.</summary>
+    public string TimeZoneId { get; }
+
+    /// <summary>The kind of instrument.</summary>
+    public AssetType AssetType { get; }
+
+    /// <summary>False once the instrument is delisted; its history is kept until the retention policy removes it.</summary>
+    public bool IsActive { get; private set; }
+
+    /// <summary>When the listing entered the catalog.</summary>
+    public DateTimeOffset ListedAt { get; }
+
+    /// <summary>Validates the parts and creates an active listing.</summary>
+    public static Result<Stock> Create(
+        StockId id, string? market, string? ticker, string? name, string? currency, string? timeZoneId, AssetType assetType, DateTimeOffset listedAt)
+    {
+        Result<Mic> mic = Mic.Create(market);
+        if (!mic.IsSuccess)
+        {
+            return mic.Error!;
+        }
+
+        Result<Ticker> symbol = Ticker.Create(ticker);
+        if (!symbol.IsSuccess)
+        {
+            return symbol.Error!;
+        }
+
+        Result<CurrencyCode> code = CurrencyCode.Create(currency);
+        if (!code.IsSuccess)
+        {
+            return code.Error!;
+        }
+
+        string? trimmedName = NormalizeName(name);
+        if (trimmedName is null)
+        {
+            return Error.Validation("marketdata.stock.name_invalid", $"The name has 1 to {MaxNameLength} characters.");
+        }
+
+        if (!IsKnownTimeZone(timeZoneId))
+        {
+            return Error.Validation("marketdata.stock.time_zone_invalid", "The time zone is not a known IANA time zone.");
+        }
+
+        return new Stock(id, mic.Value, symbol.Value, trimmedName, code.Value, timeZoneId!.Trim(), assetType, listedAt);
+    }
+
+    /// <summary>Takes the provider's current name for the instrument (companies rename); an empty or oversized name is refused.</summary>
+    public Result Rename(string? name)
+    {
+        string? trimmed = NormalizeName(name);
+        if (trimmed is null)
+        {
+            return Error.Validation("marketdata.stock.name_invalid", $"The name has 1 to {MaxNameLength} characters.");
+        }
+
+        Name = trimmed;
+        return Result.Success();
+    }
+
+    /// <summary>Marks the instrument as delisted. Idempotent.</summary>
+    public void Deactivate() => IsActive = false;
+
+    /// <summary>Marks the instrument as listed again (a relisting or a wrong delisting). Idempotent.</summary>
+    public void Reactivate() => IsActive = true;
+
+    private static string? NormalizeName(string? name)
+    {
+        string trimmed = (name ?? string.Empty).Trim();
+        return trimmed.Length is >= 1 and <= MaxNameLength ? trimmed : null;
+    }
+
+    private static bool IsKnownTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId.Trim());
+            return true;
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return false;
+        }
+    }
+}
