@@ -71,6 +71,23 @@ public sealed class FxRefreshIntegrationTests(TimescalePostgresFixture postgres)
         latest!.AsOfDate.Should().Be(new DateOnly(2026, 10, 17));
     }
 
+    [Fact]
+    public async Task Convert_OverTheStoredRates_GoesBothWays_AndAWeekendTakesFridaysRate()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        await RunAsync(db.Worker, new Bank((16, 7.64572m)), new DateOnly(2026, 10, 16));
+        await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = db.Api }), new AnonymousCurrentUser());
+        await session.BeginAsync(CancellationToken.None);
+        var converter = new FxConverter(new FxRateStore(session), Options.Create(new IngestionOptions()), new FakeTimeProvider(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero)));
+
+        FxConversion forward = (await converter.ConvertAsync(100m, _usd, _gtq, null, CancellationToken.None)).Value;
+        FxConversion back = (await converter.ConvertAsync(764.572m, _gtq, _usd, null, CancellationToken.None)).Value;
+
+        forward.Converted.Should().Be(764.572m);
+        forward.Legs.Single().AsOfDate.Should().Be(new DateOnly(2026, 10, 16));
+        back.Converted.Should().BeApproximately(100m, 0.0000000001m);
+    }
+
     private sealed class FxRateStoreReader(string connection)
     {
         public async Task<FxRate?> OnOrBeforeAsync(CurrencyCode baseCurrency, CurrencyCode quote, DateOnly date)
