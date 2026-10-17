@@ -28,7 +28,7 @@ public static class PriceSeriesMerger
         ArgumentNullException.ThrowIfNull(raw);
         ArgumentNullException.ThrowIfNull(adjusted);
 
-        Dictionary<DateOnly, DailyBar> adjustedByDay = adjusted.Bars.ToDictionary(bar => bar.Date);
+        var adjustedByDay = adjusted.Bars.ToDictionary(bar => bar.Date);
         var points = new List<PricePoint>(raw.Bars.Count);
         foreach (DailyBar bar in raw.Bars)
         {

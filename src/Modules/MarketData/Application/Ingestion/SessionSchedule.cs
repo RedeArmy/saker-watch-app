@@ -16,8 +16,8 @@ public static class SessionSchedule
     {
         ArgumentNullException.ThrowIfNull(calendar);
 
-        TimeZoneInfo zone = TimeZoneInfo.FindSystemTimeZoneById(calendar.TimeZoneId);
-        DateOnly day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(calendar.TimeZoneId);
+        var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
         for (int back = 0; back < _lookBackDays; back++, day = day.AddDays(-1))
         {
             if (calendar.CloseOf(day) is { } close && now >= close + settleDelay)

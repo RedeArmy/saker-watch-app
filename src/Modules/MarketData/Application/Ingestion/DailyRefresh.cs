@@ -42,7 +42,7 @@ public sealed partial class IngestMarketDayHandler(IStockCatalog catalog, IJobEn
     public async Task HandleAsync(IngestMarketDayJob payload, JobContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        Mic market = Mic.Parse(payload.Market);
+        var market = Mic.Parse(payload.Market);
 
         IReadOnlyList<StockId> stocks = await catalog.ListIngestableAsync(market, cancellationToken);
         int queued = 0;
