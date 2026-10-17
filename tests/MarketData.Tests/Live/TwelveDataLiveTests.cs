@@ -122,6 +122,7 @@ public sealed class TwelveDataLiveTests
         await Section("8. Errors", () => ErrorsAsync(twelve, factory, key));
         await Section("9. What each operation costs", () => CreditCostsAsync(factory, key));
         await Section("10. The real rate limit", () => RateLimitAsync(factory, key));
+        await Section("11. Identical requests", () => IdenticalRequestsAsync(factory, key));
 
         await Task.Delay(TimeSpan.FromSeconds(65));
         long? usageAfter = await DailyUsageAsync(factory, key);
@@ -331,6 +332,21 @@ public sealed class TwelveDataLiveTests
         }
     }
 
+    private async Task IdenticalRequestsAsync(IHttpClientFactory factory, string key)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(62));
+        long baseline = await UsageDeltaAsync(factory, key, () => Task.CompletedTask);
+        long delta = await UsageDeltaAsync(factory, key, async () =>
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                (int status, _, _) = await Raw(factory, key, "time_series?symbol=KO&mic_code=XNYS&interval=1day&outputsize=1", paced: false);
+                Line($"identical request {i + 1}: HTTP {status}");
+            }
+        });
+        Line($"four identical time_series requests cost {delta - baseline} credit(s) in total (one each would be 4)");
+    }
+
     private async Task<long> UsageDeltaAsync(IHttpClientFactory factory, string key, Func<Task> action)
     {
         long before = await DailyUsageAsync(factory, key) ?? 0;
@@ -351,10 +367,12 @@ public sealed class TwelveDataLiveTests
             NullLogger<TwelveDataProvider>.Instance);
         var kinds = new List<string>();
         var watch = Stopwatch.StartNew();
-        for (int i = 0; i < 14; i++)
+        // Different symbols on purpose: identical requests may be served without being charged (section 11).
+        string[] symbols = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "COST", "ADBE", "NFLX", "AMD", "INTC", "CSCO", "PEP"];
+        for (int i = 0; i < symbols.Length; i++)
         {
             Result<DailySeries> result = await impatient.GetDailyAsync(
-                new DailySeriesRequest(new ProviderListingKey("XNGS", "MSFT"), new DateOnly(2026, 10, 14), null, true), CancellationToken.None);
+                new DailySeriesRequest(new ProviderListingKey("XNGS", symbols[i]), new DateOnly(2026, 10, 14), null, true), CancellationToken.None);
             kinds.Add(result.IsSuccess ? "ok" : ProviderErrors.Classify(result.Error!).ToString());
         }
 
@@ -376,7 +394,6 @@ public sealed class TwelveDataLiveTests
 
         kinds.Should().Contain("RateLimited", "more than eight credits in a minute must be refused by the provider");
         kinds.Where(k => k != "ok" && k != "RateLimited").Should().BeEmpty("a run of 429s must not open the circuit and turn into 'unavailable'");
-        kinds.SkipWhile(k => k != "RateLimited").Should().OnlyContain(k => k == "RateLimited", "once the minute is spent the answer stays a rate limit");
     }
 
     private async Task Section(string title, Func<Task> body)

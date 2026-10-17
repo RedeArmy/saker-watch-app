@@ -218,7 +218,7 @@ public sealed class TwelveDataProviderTests
     {
         (TwelveDataProvider provider, _) = Build(_ =>
         {
-            HttpResponseMessage response = Json(Fixture("error_rate_limited.docs.json"), HttpStatusCode.TooManyRequests);
+            HttpResponseMessage response = Json(Fixture("error_rate_limited.json"), HttpStatusCode.TooManyRequests);
             response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
             return response;
         });
@@ -230,9 +230,21 @@ public sealed class TwelveDataProviderTests
     }
 
     [Fact]
+    public async Task TheRealRateLimit_HasNoRetryAfterHeader_SoTheWaitIsTheRestOfTheMinute()
+    {
+        // The recorded 429 has no Retry-After; the fixed clock says 21:00:00, so a full minute (plus a second of margin) remains.
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_rate_limited.json"), HttpStatusCode.TooManyRequests));
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily(), CancellationToken.None);
+
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
+        ProviderErrors.RetryAfter(result.Error!).Should().Be(TimeSpan.FromSeconds(61));
+    }
+
+    [Fact]
     public async Task ARateLimitReportedInsideAnHttp200Body_IsStillARateLimit()
     {
-        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_rate_limited.docs.json")));
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_rate_limited.json")));
 
         Result<DailySeries> result = await provider.GetDailyAsync(Daily(), CancellationToken.None);
 
@@ -438,7 +450,7 @@ public sealed class TwelveDataProviderTests
         listener.Start();
 
         (TwelveDataProvider ok, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")));
-        (TwelveDataProvider limited, _) = Build(_ => Json(Fixture("error_rate_limited.docs.json"), HttpStatusCode.TooManyRequests));
+        (TwelveDataProvider limited, _) = Build(_ => Json(Fixture("error_rate_limited.json"), HttpStatusCode.TooManyRequests));
         await ok.GetDailyAsync(Daily(), CancellationToken.None);
         await limited.GetDailyAsync(Daily(), CancellationToken.None);
 

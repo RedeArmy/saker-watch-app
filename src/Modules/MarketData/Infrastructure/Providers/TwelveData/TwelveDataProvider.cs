@@ -284,7 +284,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
         if (effective == 429 || status == (int)HttpStatusCode.TooManyRequests)
         {
-            return ProviderErrors.RateLimited(Name, retryAfter);
+            // Verified 2026-10-17: the 429 carries no Retry-After header, only "You have run out of API credits for the current minute ...
+            // Wait for the next minute", so the wait is the time left in the current minute.
+            return ProviderErrors.RateLimited(Name, retryAfter ?? (text.Contains("current minute", StringComparison.OrdinalIgnoreCase) ? UntilNextMinute() : null));
         }
 
         if (effective is 401 or 403 || status is 401 or 403)
@@ -317,6 +319,8 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             LogPayloadNotKept(payload.Operation, ex.GetType().Name);
         }
     }
+
+    private TimeSpan UntilNextMinute() => TimeSpan.FromSeconds(61 - _clock.GetUtcNow().Second);
 
     private static JsonDocument? TryParse(string body)
     {
