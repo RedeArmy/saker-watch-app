@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
+using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
+using SakerWatch.MarketData.Infrastructure.Persistence;
 using SakerWatch.MarketData.Infrastructure.Providers;
 using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 
@@ -63,6 +65,7 @@ public static class MarketDataServiceCollectionExtensions
             services.TryAddSingleton<IProviderPayloadStore, NoProviderPayloadStore>();
         }
 
+        services.TryAddScoped<IPriceStore, PriceStore>();
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;

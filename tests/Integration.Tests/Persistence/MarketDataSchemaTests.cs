@@ -40,7 +40,7 @@ public sealed class MarketDataSchemaTests(TimescalePostgresFixture postgres) : I
         int first = await step.RunAsync(CancellationToken.None);
         int second = await step.RunAsync(CancellationToken.None);
 
-        first.Should().Be(1);
+        first.Should().BeGreaterThan(0);
         second.Should().Be(0);
     }
 
@@ -153,5 +153,71 @@ public sealed class MarketDataSchemaTests(TimescalePostgresFixture postgres) : I
             "INSERT INTO marketdata.symbol_aliases (provider, provider_mic, provider_symbol, stock_id, created_at) VALUES ('twelvedata', 'XNGS', 'AAPL', @id, now())", ("id", id));
 
         await ExpectAsync(() => db.Admin.ExecuteAsync("DELETE FROM marketdata.stocks WHERE id = @id", ("id", id)), "23503");
+    }
+
+    [Fact]
+    public async Task PriceDaily_IsAHypertablePartitionedByTradeDate()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        (await db.Admin.ScalarAsync<string>(
+            "SELECT column_name FROM timescaledb_information.dimensions WHERE hypertable_schema = 'marketdata' AND hypertable_name = 'price_daily'"))
+            .Should().Be("trade_date");
+        (await db.Admin.ScalarAsync<long>(
+            "SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema = 'marketdata' AND hypertable_name = 'price_daily' AND compression_enabled")).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("0", "11", "9", "10", "10", 1, "twelvedata")] // a price that is not positive
+    [InlineData("10", "11", "9", "10", "0", 1, "twelvedata")] // an adjusted close that is not positive
+    [InlineData("10", "9", "8", "9", "9", 1, "twelvedata")] // the high is below the open
+    [InlineData("10", "11", "12", "10", "10", 1, "twelvedata")] // the low is above the high
+    [InlineData("10", "11", "9", "10", "10", -1, "twelvedata")] // a negative volume
+    [InlineData("10", "11", "9", "10", "10", 1, "Twelve Data")] // a source that is not a plain name
+    public async Task PriceDaily_RefusesRowsTheDomainWouldNeverProduce(string open, string high, string low, string close, string adjusted, long volume, string source)
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Worker.ExecuteAsync(_insertStock, Stock(id));
+
+        Func<Task> act = () => db.Worker.ExecuteAsync(
+            "INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at) VALUES (@id, '2026-10-14', @o::numeric, @h::numeric, @l::numeric, @c::numeric, @a::numeric, @v, @s, true, now())",
+            ("id", id), ("o", open), ("h", high), ("l", low), ("c", close), ("a", adjusted), ("v", volume), ("s", source));
+
+        await ExpectAsync(act, "23514");
+    }
+
+    [Fact]
+    public async Task PriceDaily_Grants_ApiReadsWorkerWritesNobodyDeletes()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Worker.ExecuteAsync(_insertStock, Stock(id));
+        const string insert = "INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at) VALUES (@id, '2026-10-14', 10, 11, 9, 10, 10, 5, 'twelvedata', true, now())";
+
+        await db.Worker.ExecuteAsync(insert, ("id", id));
+
+        (await db.Api.AsUserScalarAsync<long>(null, "SELECT count(*) FROM marketdata.price_daily")).Should().Be(1);
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(null, insert.Replace("2026-10-14", "2026-10-15", StringComparison.Ordinal), ("id", id)), "42501");
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(null, "UPDATE marketdata.price_daily SET volume = 1"), "42501");
+        (await db.Worker.ExecuteAsync("UPDATE marketdata.price_daily SET volume = 7 WHERE stock_id = @id", ("id", id))).Should().Be(1);
+        await ExpectAsync(() => db.Worker.ExecuteAsync("DELETE FROM marketdata.price_daily WHERE stock_id = @id", ("id", id)), "42501");
+        (await db.Admin.ScalarAsync<bool>("SELECT has_table_privilege('public', 'marketdata.price_daily', 'SELECT, INSERT, UPDATE, DELETE')")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpgradeFromTheCatalogVersion_KeepsTheStocksAndAddsThePriceTable()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        await MigrationSteps.PlatformStep(admin).RunAsync(CancellationToken.None);
+        var step = MigrationSteps.MarketDataStep(admin);
+        await step.MigrateToAsync("CreateMarketData", CancellationToken.None);
+        var id = Guid.CreateVersion7();
+        await admin.ExecuteAsync(_insertStock, Stock(id));
+
+        await step.RunAsync(CancellationToken.None);
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1);
+        (await admin.ScalarAsync<bool>("SELECT to_regclass('marketdata.price_daily') IS NOT NULL")).Should().BeTrue();
     }
 }

@@ -89,6 +89,74 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.PriceDailyRow", b =>
+                {
+                    b.Property<Guid>("StockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_id");
+
+                    b.Property<DateOnly>("TradeDate")
+                        .HasColumnType("date")
+                        .HasColumnName("trade_date");
+
+                    b.Property<decimal>("AdjustedClose")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)")
+                        .HasColumnName("adjusted_close");
+
+                    b.Property<decimal>("Close")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)")
+                        .HasColumnName("close");
+
+                    b.Property<decimal>("High")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)")
+                        .HasColumnName("high");
+
+                    b.Property<DateTimeOffset>("IngestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ingested_at");
+
+                    b.Property<bool>("IsFinal")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_final");
+
+                    b.Property<decimal>("Low")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)")
+                        .HasColumnName("low");
+
+                    b.Property<decimal>("Open")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)")
+                        .HasColumnName("open");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.Property<long>("Volume")
+                        .HasColumnType("bigint")
+                        .HasColumnName("volume");
+
+                    b.HasKey("StockId", "TradeDate")
+                        .HasName("pk_price_daily");
+
+                    b.ToTable("price_daily", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_price_daily_prices", "open > 0 AND high > 0 AND low > 0 AND close > 0 AND adjusted_close > 0");
+
+                            t.HasCheckConstraint("ck_price_daily_range", "high >= greatest(open, close, low) AND low <= least(open, close, high)");
+
+                            t.HasCheckConstraint("ck_price_daily_source", "source ~ '^[a-z0-9_]{1,32}$'");
+
+                            t.HasCheckConstraint("ck_price_daily_volume", "volume >= 0");
+                        });
+                });
+
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -198,6 +266,15 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.CorporateActionRow", b =>
+                {
+                    b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
+                        .WithMany()
+                        .HasForeignKey("StockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.PriceDailyRow", b =>
                 {
                     b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
                         .WithMany()
