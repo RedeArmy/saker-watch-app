@@ -14,6 +14,7 @@ public sealed class Stock : AggregateRoot<StockId>
     /// <summary>Longest accepted instrument name.</summary>
     public const int MaxNameLength = 200;
 
+    // The constructor takes the already validated parts; Create is the only way in, so the parameter count stays here and not in the API.
     private Stock(StockId id, Mic market, Ticker ticker, string name, CurrencyCode currency, string timeZoneId, AssetType assetType, DateTimeOffset listedAt)
         : base(id)
     {
@@ -51,40 +52,41 @@ public sealed class Stock : AggregateRoot<StockId>
     /// <summary>When the listing entered the catalog.</summary>
     public DateTimeOffset ListedAt { get; }
 
-    /// <summary>Validates the parts and creates an active listing.</summary>
-    public static Result<Stock> Create(
-        StockId id, string? market, string? ticker, string? name, string? currency, string? timeZoneId, AssetType assetType, DateTimeOffset listedAt)
+    /// <summary>Validates the parts of <paramref name="listing"/> and creates an active listing.</summary>
+    public static Result<Stock> Create(StockId id, NewListing listing, DateTimeOffset listedAt)
     {
-        Result<Mic> mic = Mic.Create(market);
+        ArgumentNullException.ThrowIfNull(listing);
+
+        Result<Mic> mic = Mic.Create(listing.Market);
         if (!mic.IsSuccess)
         {
             return mic.Error!;
         }
 
-        Result<Ticker> symbol = Ticker.Create(ticker);
+        Result<Ticker> symbol = Ticker.Create(listing.Ticker);
         if (!symbol.IsSuccess)
         {
             return symbol.Error!;
         }
 
-        Result<CurrencyCode> code = CurrencyCode.Create(currency);
+        Result<CurrencyCode> code = CurrencyCode.Create(listing.Currency);
         if (!code.IsSuccess)
         {
             return code.Error!;
         }
 
-        string? trimmedName = NormalizeName(name);
+        string? trimmedName = NormalizeName(listing.Name);
         if (trimmedName is null)
         {
             return Error.Validation("marketdata.stock.name_invalid", $"The name has 1 to {MaxNameLength} characters.");
         }
 
-        if (!IsKnownTimeZone(timeZoneId))
+        if (!IsKnownTimeZone(listing.TimeZoneId))
         {
             return Error.Validation("marketdata.stock.time_zone_invalid", "The time zone is not a known IANA time zone.");
         }
 
-        return new Stock(id, mic.Value, symbol.Value, trimmedName, code.Value, timeZoneId!.Trim(), assetType, listedAt);
+        return new Stock(id, mic.Value, symbol.Value, trimmedName, code.Value, listing.TimeZoneId!.Trim(), listing.AssetType, listedAt);
     }
 
     /// <summary>Takes the provider's current name for the instrument (companies rename); an empty or oversized name is refused.</summary>

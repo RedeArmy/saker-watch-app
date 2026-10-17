@@ -10,7 +10,7 @@ public sealed class StockTests
 
     private static Result<Stock> Create(
         string? market = "XNAS", string? ticker = "AAPL", string? name = "Apple Inc.", string? currency = "USD", string? zone = "America/New_York") =>
-        Stock.Create(StockId.Create(Guid.CreateVersion7()), market, ticker, name, currency, zone, AssetType.Equity, _now);
+        Stock.Create(StockId.Create(Guid.CreateVersion7()), new NewListing(market, ticker, name, currency, zone, AssetType.Equity), _now);
 
     [Fact]
     public void Create_WithValidParts_ReturnsAnActiveListing()
@@ -71,8 +71,8 @@ public sealed class StockTests
     public void TwoStocksWithTheSameId_AreTheSameEntity()
     {
         var id = StockId.Create(Guid.CreateVersion7());
-        Stock a = Stock.Create(id, "XNAS", "AAPL", "Apple", "USD", "America/New_York", AssetType.Equity, _now).Value;
-        Stock b = Stock.Create(id, "XNAS", "AAPL", "Apple Inc.", "USD", "America/New_York", AssetType.Equity, _now).Value;
+        Stock a = Stock.Create(id, new NewListing("XNAS", "AAPL", "Apple", "USD", "America/New_York", AssetType.Equity), _now).Value;
+        Stock b = Stock.Create(id, new NewListing("XNAS", "AAPL", "Apple Inc.", "USD", "America/New_York", AssetType.Equity), _now).Value;
 
         a.Should().Be(b);
     }
