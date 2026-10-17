@@ -124,6 +124,7 @@ public sealed class TwelveDataLiveTests
         await Section("10. The real rate limit", () => RateLimitAsync(factory, key));
         await Section("11. Identical requests", () => IdenticalRequestsAsync(factory, key));
         await Section("12. A range with no sessions", () => NoSessionsAsync(twelve, factory, key));
+        await Section("13. Corporate action endpoints", () => CorporateActionsAsync(factory, key));
 
         await Task.Delay(TimeSpan.FromSeconds(65));
         long? usageAfter = await DailyUsageAsync(factory, key);
@@ -330,6 +331,25 @@ public sealed class TwelveDataLiveTests
         {
             long delta = await UsageDeltaAsync(factory, key, async () => _ = await Raw(factory, key, path));
             Line($"{label}: daily delta {delta} (minus the api_usage baseline: {delta - baseline})");
+        }
+    }
+
+    // Observation only: the product does not read these endpoints yet. Whether the free plan serves them, what they cost and what they look like
+    // decide whether corporate actions are ingested from the provider or kept deduced from the rewrite of the adjusted history.
+    private async Task CorporateActionsAsync(IHttpClientFactory factory, string key)
+    {
+        foreach ((string label, string path) in new[]
+        {
+            ("splits of NVDA since 2024", "splits?symbol=NVDA&mic_code=XNGS&start_date=2024-01-01&end_date=2024-12-31"),
+            ("dividends of AAPL in 2025", "dividends?symbol=AAPL&mic_code=XNGS&start_date=2025-01-01&end_date=2025-12-31"),
+        })
+        {
+            long delta = await UsageDeltaAsync(factory, key, async () =>
+            {
+                (int status, _, string body) = await Raw(factory, key, path);
+                Line($"{label}: HTTP {status}, body {Truncate(body)}");
+            });
+            Line($"  daily credits moved by {delta} (one of them is the api_usage call that opens the measurement)");
         }
     }
 

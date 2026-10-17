@@ -91,3 +91,59 @@ public static class CorporateActionKinds
 
     public const string Delisting = "delisting";
 }
+
+/// <summary>
+/// <c>marketdata.price_daily</c>, a Timescale hypertable partitioned by <c>trade_date</c>: one row per listing and trading day with the raw bar,
+/// the adjusted close, where it came from and whether the day is final. Unique on <c>(stock_id, trade_date)</c>, so ingestion is an upsert.
+/// </summary>
+public sealed class PriceDailyRow
+{
+    public Guid StockId { get; set; }
+
+    public DateOnly TradeDate { get; set; }
+
+    public decimal Open { get; set; }
+
+    public decimal High { get; set; }
+
+    public decimal Low { get; set; }
+
+    public decimal Close { get; set; }
+
+    public decimal AdjustedClose { get; set; }
+
+    public long Volume { get; set; }
+
+    public string Source { get; set; } = string.Empty;
+
+    public bool IsFinal { get; set; }
+
+    public DateTimeOffset IngestedAt { get; set; }
+}
+
+/// <summary>
+/// <c>marketdata.ingestion_state</c>: one row per listing saying whether ingestion works for it. A permanent failure (unknown symbol, plan, missing
+/// alias or calendar) is recorded with its stable code, so the listing is not retried blindly and a person can see why prices are missing.
+/// </summary>
+public sealed class IngestionStateRow
+{
+    public Guid StockId { get; set; }
+
+    public string Status { get; set; } = IngestionStatuses.Pending;
+
+    public DateTimeOffset? LastSuccessAt { get; set; }
+
+    public DateTimeOffset? LastAttemptAt { get; set; }
+
+    public string? FailureCode { get; set; }
+}
+
+/// <summary>Allowed values of <see cref="IngestionStateRow.Status"/>.</summary>
+public static class IngestionStatuses
+{
+    public const string Pending = "pending";
+
+    public const string Ok = "ok";
+
+    public const string Failed = "failed";
+}

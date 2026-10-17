@@ -50,6 +50,23 @@ public sealed class FakeMarketDataProvider : IMarketDataProvider
         return this;
     }
 
+    /// <summary>
+    /// Records a dividend whose ex-date is <paramref name="exDate"/>: the adjusted prices of every earlier day are multiplied by
+    /// <paramref name="factor"/> (a little below 1), as a real provider rewrites its adjusted history. Raw prices do not change.
+    /// </summary>
+    public FakeMarketDataProvider WithDividend(ProviderListingKey key, DateOnly exDate, decimal factor)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(factor);
+        if (!_listings.TryGetValue(key, out FakeListing? listing))
+        {
+            throw new ArgumentException("The listing is not known to the fake provider.", nameof(key));
+        }
+
+        listing.Dividends.Add((exDate, factor));
+        return this;
+    }
+
     /// <summary>Makes the next <paramref name="times"/> calls fail with <paramref name="error"/>, in order, before behaving normally again.</summary>
     public FakeMarketDataProvider FailNext(Error error, int times = 1)
     {
@@ -119,6 +136,11 @@ public sealed class FakeMarketDataProvider : IMarketDataProvider
             if (day >= from)
             {
                 decimal factor = !request.Adjusted && listing.SplitDate is { } split && day < split ? listing.SplitRatio : 1;
+                if (request.Adjusted)
+                {
+                    factor = listing.Dividends.Where(dividend => day < dividend.ExDate).Aggregate(1m, (all, dividend) => all * dividend.Factor);
+                }
+
                 decimal open = previous * factor;
                 decimal scaledClose = close * factor;
                 decimal high = Math.Round(Math.Max(open, scaledClose) * 1.005m, 4);
@@ -152,5 +174,8 @@ public sealed class FakeMarketDataProvider : IMarketDataProvider
         return hash & 0x7FFFFFFF;
     }
 
-    private sealed record FakeListing(ProviderListing Listing, decimal StartPrice, DateOnly? SplitDate, int SplitRatio);
+    private sealed record FakeListing(ProviderListing Listing, decimal StartPrice, DateOnly? SplitDate, int SplitRatio)
+    {
+        public List<(DateOnly ExDate, decimal Factor)> Dividends { get; } = [];
+    }
 }

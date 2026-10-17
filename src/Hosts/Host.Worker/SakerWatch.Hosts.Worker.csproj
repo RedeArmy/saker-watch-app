@@ -27,6 +27,7 @@
     <ProjectReference Include="../../Modules/Calculator/Contracts/SakerWatch.Calculator.Contracts.csproj" />
     <ProjectReference Include="../../Modules/Calculator/Infrastructure/SakerWatch.Calculator.Infrastructure.csproj" />
     <ProjectReference Include="../../Modules/Retention/Contracts/SakerWatch.Retention.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/MarketData/Infrastructure/SakerWatch.MarketData.Infrastructure.csproj" />
     <ProjectReference Include="../../Modules/Retention/Infrastructure/SakerWatch.Retention.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

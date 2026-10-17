@@ -19,6 +19,12 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
     /// <summary>Splits, dividends, symbol changes and delistings.</summary>
     public DbSet<CorporateActionRow> CorporateActions => Set<CorporateActionRow>();
 
+    /// <summary>Whether ingestion works for each listing.</summary>
+    public DbSet<IngestionStateRow> IngestionStates => Set<IngestionStateRow>();
+
+    /// <summary>Daily prices (a hypertable).</summary>
+    public DbSet<PriceDailyRow> PricesDaily => Set<PriceDailyRow>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -74,6 +80,38 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             e.Property(x => x.Source).HasMaxLength(32);
             e.HasOne<StockRow>().WithMany().HasForeignKey(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.StockId, x.Kind, x.EffectiveDate }).IsUnique();
+        });
+
+        modelBuilder.Entity<PriceDailyRow>(e =>
+        {
+            e.ToTable("price_daily", t =>
+            {
+                t.HasCheckConstraint("ck_price_daily_prices", "open > 0 AND high > 0 AND low > 0 AND close > 0 AND adjusted_close > 0");
+                t.HasCheckConstraint("ck_price_daily_range", "high >= greatest(open, close, low) AND low <= least(open, close, high)");
+                t.HasCheckConstraint("ck_price_daily_volume", "volume >= 0");
+                t.HasCheckConstraint("ck_price_daily_source", "source ~ '^[a-z0-9_]{1,32}$'");
+            });
+            e.HasKey(x => new { x.StockId, x.TradeDate });
+            e.Property(x => x.Open).HasPrecision(20, 8);
+            e.Property(x => x.High).HasPrecision(20, 8);
+            e.Property(x => x.Low).HasPrecision(20, 8);
+            e.Property(x => x.Close).HasPrecision(20, 8);
+            e.Property(x => x.AdjustedClose).HasPrecision(20, 8);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.HasOne<StockRow>().WithMany().HasForeignKey(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<IngestionStateRow>(e =>
+        {
+            e.ToTable("ingestion_state", t =>
+            {
+                t.HasCheckConstraint("ck_ingestion_state_status", "status IN ('pending', 'ok', 'failed')");
+                t.HasCheckConstraint("ck_ingestion_state_failure", "(status = 'failed') = (failure_code IS NOT NULL)");
+            });
+            e.HasKey(x => x.StockId);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.FailureCode).HasMaxLength(64);
+            e.HasOne<StockRow>().WithOne().HasForeignKey<IngestionStateRow>(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.UseSnakeCaseNames();
