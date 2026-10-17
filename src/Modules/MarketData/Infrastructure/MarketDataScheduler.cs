@@ -66,9 +66,9 @@ public sealed partial class MarketDataScheduler(
                 continue;
             }
 
-            DateOnly day = SessionSchedule.LatestSettled(calendar.Value, now, options.Value.SettleDelay);
             try
             {
+                DateOnly day = SessionSchedule.LatestSettled(calendar.Value, now, options.Value.SettleDelay);
                 await using AsyncServiceScope scope = scopes.CreateAsyncScope();
                 var jobs = scope.ServiceProvider.GetRequiredService<IJobEnqueuer>();
                 bool created = await jobs.EnqueueAsync(IngestMarketDayJob.KeyFor(market, day), new IngestMarketDayJob(market.Value, day), options: null, cancellationToken);
@@ -80,6 +80,7 @@ public sealed partial class MarketDataScheduler(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // Also an unexpected calendar answer: one market failing must not stop the loop, and a hosted service that throws stops the host.
                 failures++;
                 LogQueueFailed(market.Value, ex);
             }

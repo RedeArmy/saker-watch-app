@@ -24,7 +24,7 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
     // Saturday 2026-10-17 12:00 UTC: Friday the 16th closed at 20:00 UTC and its settle delay (3 h) has long passed.
     private static FakeTimeProvider Clock() => new(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero));
 
-    private sealed record World(string Admin, string Worker, StockId Id, FakeMarketDataProvider Provider, FakeTimeProvider Time);
+    private sealed record World(string Admin, string Worker, StockId Id, FakeMarketDataProvider Provider, FakeTimeProvider Time, RecordingEnqueuer Jobs);
 
     private static async Task<World> SetUpAsync(TimescalePostgresFixture postgres, bool withAlias = true, string market = "XNAS", DateTimeOffset? at = null)
     {
@@ -42,14 +42,14 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         FakeTimeProvider clock = at is { } start ? new FakeTimeProvider(start) : Clock();
         var provider = new FakeMarketDataProvider(ExchangeCalendars.Default(), clock)
             .WithListing(new ProviderListing(_providerKey, "Apple", "USD", "America/New_York", AssetType.Equity), 100m);
-        return new World(db.Admin, db.Worker, id, provider, clock);
+        return new World(db.Admin, db.Worker, id, provider, clock, new RecordingEnqueuer());
     }
 
-    private static BackfillStockHandler HandlerFor(DbSession session, IMarketDataProviderRouter router, TimeProvider time)
+    private static BackfillStockHandler HandlerFor(DbSession session, IMarketDataProviderRouter router, FakeTimeProvider time, RecordingEnqueuer jobs)
     {
         var options = Options.Create(new IngestionOptions());
         var ingestion = new ListingIngestion(new StockCatalog(session), new SymbolAliases(session), router, ExchangeCalendars.Default(), new IngestionState(session), options);
-        return new BackfillStockHandler(ingestion, new PriceStore(session), new IngestionState(session), options, time, NullLogger<BackfillStockHandler>.Instance);
+        return new BackfillStockHandler(ingestion, new PriceStore(session), new IngestionState(session), new RateLimitWaiter(jobs, options, time), options, time, NullLogger<BackfillStockHandler>.Instance);
     }
 
     private static async Task RunAsync(World world, Dictionary<string, string>? markets = null)
@@ -59,7 +59,7 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         var router = new MarketDataProviderRouter(
             [world.Provider],
             Options.Create(new MarketDataProvidersOptions { Markets = markets ?? new() { ["XNAS"] = "fake" } }));
-        BackfillStockHandler handler = HandlerFor(session, router, world.Time);
+        BackfillStockHandler handler = HandlerFor(session, router, world.Time, world.Jobs);
         await handler.HandleAsync(new BackfillStockJob(world.Id.Value), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
         await session.CommitAsync(CancellationToken.None);
     }
@@ -124,23 +124,53 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.price_daily WHERE trade_date = '2026-10-16' AND close = adjusted_close")).Should().Be(1);
     }
 
-    [Theory]
-    [InlineData("RateLimited")]
-    [InlineData("Unavailable")]
-    public async Task Backfill_ARateLimitOrAnOutage_ThrowsSoTheQueueRetries_AndWritesNothing(string failure)
+    [Fact]
+    public async Task Backfill_AnOutage_ThrowsSoTheQueueRetries_AndWritesNothing()
     {
         World world = await SetUpAsync(postgres);
-        world.Provider.FailNext(failure == "RateLimited" ? ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(30)) : ProviderErrors.Unavailable("fake"));
+        world.Provider.FailNext(ProviderErrors.Unavailable("fake"));
 
         Func<Task> act = () => RunAsync(world);
 
-        (await act.Should().ThrowAsync<IngestionRetryException>()).Which.Code.Should().StartWith("marketdata.provider.");
+        (await act.Should().ThrowAsync<IngestionRetryException>()).Which.Code.Should().Be(ProviderErrors.UnavailableCode);
         (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.price_daily")).Should().Be(0);
         (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.ingestion_state")).Should().Be(0, "a failure that will be retried leaves no mark");
     }
 
     [Fact]
-    public async Task Backfill_TheRawSeriesFailingAfterTheAdjustedOne_StillRetriesAndWritesNothing()
+    public async Task Backfill_WhenTheCallBudgetIsSpent_WaitsInTheQueueInsteadOfFailing_AndWritesNothing()
+    {
+        World world = await SetUpAsync(postgres);
+        world.Provider.FailNext(ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(45)));
+
+        await RunAsync(world);
+
+        (string key, object payload, JobEnqueueOptions? options) = world.Jobs.Queued.Should().ContainSingle().Subject;
+        key.Should().Be("k:w1");
+        payload.Should().Be(new BackfillStockJob(world.Id.Value, Waits: 1));
+        options!.AvailableAt.Should().BeOnOrAfter(world.Time.GetUtcNow().AddSeconds(45)).And.BeOnOrBefore(world.Time.GetUtcNow().AddSeconds(75));
+        options.MaxAttempts.Should().Be(8);
+        (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.price_daily")).Should().Be(0);
+        (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.ingestion_state")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Backfill_AfterWaitingAsOftenAsAllowed_FailsSoTheQueueCountsIt()
+    {
+        World world = await SetUpAsync(postgres);
+        world.Provider.FailNext(ProviderErrors.RateLimited("fake"));
+        await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = world.Worker }), new AnonymousCurrentUser());
+        await session.BeginAsync(CancellationToken.None);
+        BackfillStockHandler handler = HandlerFor(session, new MarketDataProviderRouter([world.Provider], Options.Create(new MarketDataProvidersOptions { Markets = new() { ["XNAS"] = "fake" } })), world.Time, world.Jobs);
+
+        Func<Task> act = () => handler.HandleAsync(new BackfillStockJob(world.Id.Value, Waits: new IngestionOptions().MaxRateLimitWaits), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
+
+        await act.Should().ThrowAsync<IngestionRetryException>();
+        world.Jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Backfill_TheRawSeriesBeingRateLimitedAfterTheAdjustedOne_WaitsAndWritesNothing()
     {
         World world = await SetUpAsync(postgres);
         // The first call (adjusted) works; the second (raw) is rate limited.
@@ -151,12 +181,13 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         BackfillStockHandler handler = HandlerFor(
             session,
             new MarketDataProviderRouter([skipFirst], Options.Create(new MarketDataProvidersOptions { Markets = new() { ["XNAS"] = "fake" } })),
-            world.Time);
+            world.Time,
+            world.Jobs);
 
-        Func<Task> act = () => handler.HandleAsync(new BackfillStockJob(world.Id.Value), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
+        await handler.HandleAsync(new BackfillStockJob(world.Id.Value), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
+        await session.CommitAsync(CancellationToken.None);
 
-        await act.Should().ThrowAsync<IngestionRetryException>();
-        await session.RollbackAsync(CancellationToken.None);
+        world.Jobs.Queued.Should().ContainSingle().Which.Key.Should().Be("k:w1");
         (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.price_daily")).Should().Be(0);
     }
 
@@ -231,7 +262,7 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
     public async Task Backfill_ForAStockNotInTheCatalog_EndsWithoutAFailureOrARow()
     {
         World world = await SetUpAsync(postgres);
-        var ghost = new World(world.Admin, world.Worker, StockId.Create(Guid.CreateVersion7()), world.Provider, world.Time);
+        var ghost = world with { Id = StockId.Create(Guid.CreateVersion7()) };
 
         await RunAsync(ghost);
 

@@ -7,6 +7,7 @@ using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Calendars;
+using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Infrastructure;
 
 namespace SakerWatch.MarketData.Tests;
@@ -46,8 +47,23 @@ public sealed class MarketDataSchedulerTests
             throw new NotSupportedException();
     }
 
+    private sealed class BrokenCalendar : IExchangeCalendar
+    {
+        public Mic Market { get; } = Mic.Parse("XNAS");
+
+        public string TimeZoneId => "America/New_York";
+
+        public bool IsTradingDay(DateOnly date) => throw new InvalidOperationException("calendar data missing");
+
+        public DateTimeOffset? CloseOf(DateOnly date) => throw new InvalidOperationException("calendar data missing");
+
+        public DateOnly PreviousTradingDay(DateOnly date) => throw new InvalidOperationException("calendar data missing");
+
+        public DateOnly NextTradingDay(DateOnly date) => throw new InvalidOperationException("calendar data missing");
+    }
+
     private static (MarketDataScheduler Scheduler, RecordingEnqueuer Jobs, FakeTimeProvider Clock) Build(
-        DateTimeOffset now, string[] markets, bool failQueue = false, bool enabled = true)
+        DateTimeOffset now, string[] markets, bool failQueue = false, bool enabled = true, ExchangeCalendars? calendars = null)
     {
         var jobs = new RecordingEnqueuer(failQueue);
         ServiceProvider provider = new ServiceCollection().AddSingleton<IJobEnqueuer>(jobs).BuildServiceProvider();
@@ -58,7 +74,7 @@ public sealed class MarketDataSchedulerTests
         var scheduler = new MarketDataScheduler(
             provider.GetRequiredService<IServiceScopeFactory>(),
             router,
-            ExchangeCalendars.Default(),
+            calendars ?? ExchangeCalendars.Default(),
             Options.Create(new IngestionOptions { Enabled = enabled }),
             clock,
             NullLogger<MarketDataScheduler>.Instance);
@@ -110,6 +126,20 @@ public sealed class MarketDataSchedulerTests
 
         failures.Should().Be(0);
         jobs.Queued.Should().ContainSingle().Which.Key.Should().Be("marketdata.ingest-daily:XNAS:20261016");
+    }
+
+    [Fact]
+    public async Task EnsureJobs_ACalendarThatThrows_CountsTheFailureAndKeepsGoing()
+    {
+        (MarketDataScheduler scheduler, RecordingEnqueuer jobs, _) = Build(
+            new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero),
+            markets: ["XNAS", "XNYS"],
+            calendars: new ExchangeCalendars([new BrokenCalendar(), new UsEquityCalendar(Mic.Parse("XNYS"))]));
+
+        int failures = await scheduler.EnsureJobsAsync(CancellationToken.None);
+
+        failures.Should().Be(1);
+        jobs.Queued.Should().ContainSingle().Which.Key.Should().Be("marketdata.ingest-daily:XNYS:20261016");
     }
 
     [Fact]

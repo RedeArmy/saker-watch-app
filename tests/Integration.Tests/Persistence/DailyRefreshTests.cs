@@ -21,23 +21,6 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
 {
     private static readonly ProviderListingKey _providerKey = new("XNGS", "AAPL");
 
-    private sealed class RecordingEnqueuer : IJobEnqueuer
-    {
-        public List<(string Key, object Payload, JobEnqueueOptions? Options)> Queued { get; } = [];
-
-        public Task<bool> EnqueueAsync<TPayload>(string jobKey, TPayload payload, JobEnqueueOptions? options, CancellationToken cancellationToken)
-            where TPayload : notnull
-        {
-            bool created = Queued.TrueForAll(q => q.Key != jobKey);
-            if (created)
-            {
-                Queued.Add((jobKey, payload, options));
-            }
-
-            return Task.FromResult(created);
-        }
-    }
-
     private sealed record World(string Admin, string Worker, StockId Id, FakeMarketDataProvider Provider, FakeTimeProvider Time, RecordingEnqueuer Jobs);
 
     // Thursday 2026-10-15 23:30 UTC: Thursday closed at 20:00 UTC and settled at 23:00, so a backfill now stores Thursday as final.
@@ -70,12 +53,14 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
     }
 
     private static Task BackfillAsync(World world) => InSessionAsync(world, session =>
-        new BackfillStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), Options.Create(new IngestionOptions()), world.Time, NullLogger<BackfillStockHandler>.Instance)
+        new BackfillStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<BackfillStockHandler>.Instance)
             .HandleAsync(new BackfillStockJob(world.Id.Value), Context(), CancellationToken.None));
 
     private static Task RefreshAsync(World world, DateOnly day) => InSessionAsync(world, session =>
-        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
             .HandleAsync(new RefreshStockJob(world.Id.Value, day), Context(), CancellationToken.None));
+
+    private static RateLimitWaiter WaiterFor(World world) => new(world.Jobs, Options.Create(new IngestionOptions()), world.Time);
 
     private static JobContext Context() => new(Guid.CreateVersion7(), "k", 1, 5, null);
 
@@ -180,7 +165,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         World world = await SetUpAsync(postgres);
         await BackfillAsync(world);
         world.Time.Advance(TimeSpan.FromHours(36));
-        world.Provider.FailNext(retryable ? ProviderErrors.RateLimited("fake") : ProviderErrors.PlanRestricted("fake"));
+        world.Provider.FailNext(retryable ? ProviderErrors.Unavailable("fake") : ProviderErrors.PlanRestricted("fake"));
 
         Func<Task> act = () => RefreshAsync(world, new DateOnly(2026, 10, 16));
 
@@ -193,6 +178,58 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
             await act();
             (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("failed");
         }
+    }
+
+    [Fact]
+    public async Task Refresh_WhenTheCallBudgetIsSpent_WaitsInTheQueueInsteadOfFailing()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Time.Advance(TimeSpan.FromHours(36));
+        long before = await RowsAsync(world);
+        world.Provider.FailNext(ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(45)));
+        var day = new DateOnly(2026, 10, 16);
+
+        await RefreshAsync(world, day);
+
+        (string key, object payload, JobEnqueueOptions? options) = world.Jobs.Queued.Should().ContainSingle().Subject;
+        key.Should().Be("k:w1", "the continuation takes the job's key plus a wait counter");
+        payload.Should().Be(new RefreshStockJob(world.Id.Value, day, Waits: 1));
+        options!.AvailableAt.Should().BeOnOrAfter(world.Time.GetUtcNow().AddSeconds(45)).And.BeOnOrBefore(world.Time.GetUtcNow().AddSeconds(75));
+        (await RowsAsync(world)).Should().Be(before, "nothing was written");
+        (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("ok", "a wait leaves no mark on the listing");
+    }
+
+    [Fact]
+    public async Task Refresh_AContinuationThatWaitsAgain_ReplacesTheCounterInItsKey()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Time.Advance(TimeSpan.FromHours(36));
+        world.Provider.FailNext(ProviderErrors.RateLimited("fake"));
+
+        await InSessionAsync(world, session =>
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+                .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16), Waits: 3), new JobContext(Guid.CreateVersion7(), "marketdata.refresh:abc:20261016:w3", 1, 5, null), CancellationToken.None));
+
+        world.Jobs.Queued.Should().ContainSingle().Which.Key.Should().Be("marketdata.refresh:abc:20261016:w4");
+    }
+
+    [Fact]
+    public async Task Refresh_AfterWaitingAsOftenAsAllowed_FailsSoTheQueueCountsIt()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Time.Advance(TimeSpan.FromHours(36));
+        world.Provider.FailNext(ProviderErrors.RateLimited("fake"));
+        int max = new IngestionOptions().MaxRateLimitWaits;
+
+        Func<Task> act = () => InSessionAsync(world, session =>
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+                .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16), Waits: max), Context(), CancellationToken.None));
+
+        await act.Should().ThrowAsync<IngestionRetryException>();
+        world.Jobs.Queued.Should().BeEmpty();
     }
 
     [Fact]

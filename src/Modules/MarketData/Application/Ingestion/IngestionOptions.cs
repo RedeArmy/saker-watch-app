@@ -44,4 +44,16 @@ public sealed class IngestionOptions
 
     /// <summary>How often the freshness gauges are measured.</summary>
     public TimeSpan FreshnessInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How many times one job may put itself back in the queue to wait for the provider's call budget before it counts as a failure. Each wait
+    /// lasts until the exhausted window ends (up to a minute for the per-minute budget, until midnight UTC for the daily one), so the default
+    /// outlasts a full day of waiting.
+    /// </summary>
+    [Range(1, 5000)]
+    public int MaxRateLimitWaits { get; set; } = 1500;
+
+    /// <summary>Seconds, at most, added to a wait so the jobs that ran out of budget together do not all return at the same instant.</summary>
+    [Range(0, 600)]
+    public int RateLimitJitterSeconds { get; set; } = 30;
 }

@@ -5,6 +5,7 @@ using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.MarketData.Application.Prices;
+using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
 
@@ -23,8 +24,9 @@ public sealed record IngestMarketDayJob(string Market, DateOnly Day)
 /// <summary>The refresh of one listing for one trading day, queued by <see cref="IngestMarketDayJob"/>.</summary>
 /// <param name="StockId">The catalog id of the listing.</param>
 /// <param name="Day">The trading day.</param>
+/// <param name="Waits">How many times this refresh has put itself back in the queue to wait for the provider's call budget.</param>
 [JobType("marketdata.refresh.v1")]
-public sealed record RefreshStockJob(Guid StockId, DateOnly Day)
+public sealed record RefreshStockJob(Guid StockId, DateOnly Day, int Waits = 0)
 {
     /// <summary>The deterministic job key of a listing's refresh for a day.</summary>
     public static string KeyFor(StockId stock, DateOnly day) => $"marketdata.refresh:{stock.Value:N}:{day:yyyyMMdd}";
@@ -70,13 +72,14 @@ public sealed partial class RefreshStockHandler(
     IPriceStore prices,
     IIngestionState state,
     IJobEnqueuer jobs,
+    RateLimitWaiter waiter,
     IOptions<IngestionOptions> options,
     TimeProvider clock,
     ILogger<RefreshStockHandler> logger) : IJobHandler<RefreshStockJob>
 {
     private static readonly Counter<long> _refreshes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_refreshes_total",
-        description: "Daily refreshes of a listing by outcome (completed, backfill_queued, reload_queued, retry, failed).");
+        description: "Daily refreshes of a listing by outcome (completed, backfill_queued, reload_queued, waiting, retry, failed).");
 
     private static readonly Counter<long> _rows = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_price_rows_total",
@@ -93,7 +96,7 @@ public sealed partial class RefreshStockHandler(
         Result<ResolvedListing> listing = await ingestion.ResolveAsync(id, cancellationToken);
         if (!listing.IsSuccess)
         {
-            await StopAsync(id, listing.Error!, now, cancellationToken);
+            await StopAsync(payload, context, listing.Error!, now, cancellationToken);
             return;
         }
 
@@ -108,7 +111,7 @@ public sealed partial class RefreshStockHandler(
         Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, cancellationToken);
         if (!merged.IsSuccess)
         {
-            await StopAsync(id, merged.Error!, now, cancellationToken);
+            await StopAsync(payload, context, merged.Error!, now, cancellationToken);
             return;
         }
 
@@ -136,10 +139,19 @@ public sealed partial class RefreshStockHandler(
 
     private static void Count(string outcome) => _refreshes.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
 
-    private async Task StopAsync(StockId id, Error error, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task StopAsync(RefreshStockJob payload, JobContext context, Error error, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        var id = StockId.Create(payload.StockId);
         if (error.Code == ListingIngestion.StockMissingCode)
         {
+            return;
+        }
+
+        // An exhausted call budget is not a failure: the refresh waits in the queue until the budget has room again.
+        if (ProviderErrors.Classify(error) == ProviderFailureKind.RateLimited
+            && await waiter.TryWaitAsync(payload with { Waits = payload.Waits + 1 }, payload.Waits, context.JobKey, error, maxAttempts: 5, cancellationToken))
+        {
+            Count("waiting");
             return;
         }
 

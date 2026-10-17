@@ -13,8 +13,9 @@ namespace SakerWatch.MarketData.Application.Ingestion;
 
 /// <summary>Loads the history of one listing. One job per listing, keyed by the listing, so asking twice queues it once (ADR-0029).</summary>
 /// <param name="StockId">The catalog id of the listing.</param>
+/// <param name="Waits">How many times this load has put itself back in the queue to wait for the provider's call budget.</param>
 [JobType("marketdata.backfill.v1")]
-public sealed record BackfillStockJob(Guid StockId)
+public sealed record BackfillStockJob(Guid StockId, int Waits = 0)
 {
     /// <summary>The deterministic job key of a listing's first backfill.</summary>
     public static string KeyFor(StockId stock) => $"marketdata.backfill:{stock.Value:N}";
@@ -43,6 +44,7 @@ public sealed partial class BackfillStockHandler(
     ListingIngestion ingestion,
     IPriceStore prices,
     IIngestionState state,
+    RateLimitWaiter waiter,
     IOptions<IngestionOptions> options,
     TimeProvider clock,
     ILogger<BackfillStockHandler> logger) : IJobHandler<BackfillStockJob>
@@ -58,7 +60,7 @@ public sealed partial class BackfillStockHandler(
 
     private static readonly Counter<long> _backfills = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_backfills_total",
-        description: "Backfills of a listing by outcome (completed, retry, failed).");
+        description: "Backfills of a listing by outcome (completed, waiting, retry, failed).");
 
     private static readonly Counter<long> _rows = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_price_rows_total",
@@ -74,7 +76,7 @@ public sealed partial class BackfillStockHandler(
         Result<ResolvedListing> listing = await ingestion.ResolveAsync(id, cancellationToken);
         if (!listing.IsSuccess)
         {
-            await StopAsync(id, listing.Error!, now, cancellationToken);
+            await StopAsync(payload, context, listing.Error!, now, cancellationToken);
             return;
         }
 
@@ -82,35 +84,46 @@ public sealed partial class BackfillStockHandler(
         Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, cancellationToken);
         if (!merged.IsSuccess)
         {
-            await StopAsync(id, merged.Error!, now, cancellationToken);
+            await StopAsync(payload, context, merged.Error!, now, cancellationToken);
             return;
         }
 
         int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
         await state.RecordSuccessAsync(id, now, cancellationToken);
 
-        _backfills.Add(1, new KeyValuePair<string, object?>("outcome", "completed"));
+        _backfills.Add(1, Outcome("completed"));
         _rows.Add(written, new KeyValuePair<string, object?>("operation", "backfill"));
         LogBackfillCompleted(listing.Value.Stock.Market.Value, listing.Value.Stock.Ticker.Value, written, merged.Value.Unmatched);
     }
 
+    private static KeyValuePair<string, object?> Outcome(string outcome) => new("outcome", outcome);
+
     // A listing that is gone is skipped; a failure that retrying can fix throws so the queue retries; the rest is recorded and the job ends.
-    private async Task StopAsync(StockId id, Error error, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task StopAsync(BackfillStockJob payload, JobContext context, Error error, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        var id = StockId.Create(payload.StockId);
         if (error.Code == ListingIngestion.StockMissingCode)
         {
             LogStockSkipped(id.Value);
             return;
         }
 
+        // An exhausted call budget is not a failure: the job waits in the queue until the budget has room again.
+        if (ProviderErrors.Classify(error) == ProviderFailureKind.RateLimited
+            && await waiter.TryWaitAsync(payload with { Waits = payload.Waits + 1 }, payload.Waits, context.JobKey, error, options.Value.BackfillMaxAttempts, cancellationToken))
+        {
+            _backfills.Add(1, Outcome("waiting"));
+            return;
+        }
+
         if (ListingIngestion.IsRetryable(error))
         {
-            _backfills.Add(1, new KeyValuePair<string, object?>("outcome", "retry"));
+            _backfills.Add(1, Outcome("retry"));
             throw new IngestionRetryException(error.Code);
         }
 
         await ingestion.RecordPermanentFailureAsync(id, error.Code, now, cancellationToken);
-        _backfills.Add(1, new KeyValuePair<string, object?>("outcome", "failed"));
+        _backfills.Add(1, Outcome("failed"));
         LogBackfillFailed(id.Value, error.Code);
     }
 
