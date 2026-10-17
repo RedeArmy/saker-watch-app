@@ -123,12 +123,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         ArgumentNullException.ThrowIfNull(request);
         using Activity? span = SakerTelemetry.Source.StartActivity("MarketData.Provider.TwelveData.GetDaily");
 
-        string query = $"time_series?symbol={Uri.EscapeDataString(request.Key.Symbol)}&mic_code={Uri.EscapeDataString(request.Key.ProviderMic)}"
-            + $"&interval=1day&order=asc&adjust={(request.Adjusted ? "all" : "none")}&outputsize={_maxRows}"
-            + (request.From is { } from ? $"&start_date={from:yyyy-MM-dd}" : string.Empty)
-            // Observed on 2026-10-16: with end_date 2024-06-20 the last bar returned was 2024-06-18, so the bound looks exclusive (June 19 was a
-            // holiday). Asking for the day after is correct either way, and the range is enforced again below on what comes back.
-            + (request.To is { } to ? $"&end_date={to.AddDays(1):yyyy-MM-dd}" : string.Empty);
+        string query = DailyQuery(request);
 
         Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, cancellationToken);
         if (!response.IsSuccess)
@@ -144,24 +139,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         }
 
         bool truncated = values.GetArrayLength() >= _maxRows;
-        var bars = new SortedDictionary<DateOnly, DailyBar>();
-        int rejected = 0;
-        foreach (JsonElement row in values.EnumerateArray())
-        {
-            if (TryReadBar(row) is { } bar)
-            {
-                if ((request.From is { } first && bar.Date < first) || (request.To is { } last && bar.Date > last))
-                {
-                    continue;
-                }
-
-                bars[bar.Date] = bar;
-            }
-            else
-            {
-                rejected++;
-            }
-        }
+        (SortedDictionary<DateOnly, DailyBar> bars, int rejected) = CollectBars(values, request);
 
         if (rejected > 0)
         {
@@ -174,6 +152,44 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         _calls.Add(1, Tags(_dailyOperation, "success"));
         return new DailySeries(request.Key, [.. bars.Values], request.Adjusted, rejected, truncated);
     }
+
+    private static string DailyQuery(DailySeriesRequest request)
+    {
+        string query = $"time_series?symbol={Uri.EscapeDataString(request.Key.Symbol)}&mic_code={Uri.EscapeDataString(request.Key.ProviderMic)}"
+            + $"&interval=1day&order=asc&adjust={(request.Adjusted ? "all" : "none")}&outputsize={_maxRows}";
+        if (request.From is { } from)
+        {
+            query += $"&start_date={from:yyyy-MM-dd}";
+        }
+
+        // Verified on 2026-10-17: end_date is exclusive (end_date 2024-06-20 stops at the 18th). Asking for the day after is correct either
+        // way, and the range is enforced again on what comes back.
+        return request.To is { } to ? query + $"&end_date={to.AddDays(1):yyyy-MM-dd}" : query;
+    }
+
+    // Reads every row: a valid bar inside the requested range is kept (the later row wins for a repeated date), a row outside the range is
+    // ignored, and a row that cannot be a bar is counted as rejected.
+    private static (SortedDictionary<DateOnly, DailyBar> Bars, int Rejected) CollectBars(JsonElement values, DailySeriesRequest request)
+    {
+        var bars = new SortedDictionary<DateOnly, DailyBar>();
+        int rejected = 0;
+        foreach (JsonElement row in values.EnumerateArray())
+        {
+            if (TryReadBar(row) is not { } bar)
+            {
+                rejected++;
+            }
+            else if (IsInRange(bar.Date, request))
+            {
+                bars[bar.Date] = bar;
+            }
+        }
+
+        return (bars, rejected);
+    }
+
+    private static bool IsInRange(DateOnly date, DailySeriesRequest request) =>
+        (request.From is not { } first || date >= first) && (request.To is not { } last || date <= last);
 
     private static DailyBar? TryReadBar(JsonElement row)
     {
@@ -215,15 +231,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
     private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, int credits, CancellationToken cancellationToken)
     {
-        // A denied call is never sent. A call that costs no credit needs no budget.
-        TwelveDataOptions settings = _options.Value;
-        if (credits > 0)
+        if (await SpendBudgetAsync(credits, cancellationToken) is { } refused)
         {
-            BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
-            if (!decision.Granted)
-            {
-                return ProviderErrors.RateLimited(Name, decision.RetryAfter);
-            }
+            return refused;
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
@@ -235,38 +245,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             using HttpClient client = _clients.CreateClient(ClientName);
             using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
             string body = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            JsonDocument? document = TryParse(body);
-            if (document is not null && document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                // Every Twelve Data answer is a JSON object; anything else cannot be the contract, and indexing it would throw.
-                document.Dispose();
-                document = null;
-            }
-
-            string? message = null;
-            int? code = null;
-            if (document is not null)
-            {
-                if (document.RootElement.TryGetProperty("code", out JsonElement c) && c.TryGetInt32(out int value))
-                {
-                    code = value;
-                }
-
-                message = Text(document.RootElement, "message");
-            }
-
-            bool isError = !response.IsSuccessStatusCode
-                || (document is not null && string.Equals(Text(document.RootElement, "status"), "error", StringComparison.OrdinalIgnoreCase));
-            if (isError)
-            {
-                document?.Dispose();
-                return message is not null && message.Contains("No data is available", StringComparison.OrdinalIgnoreCase)
-                    ? EmptyRange(body)
-                    : Classify((int)response.StatusCode, code, message, symbol, response.Headers.RetryAfter?.Delta);
-            }
-
-            return document is null ? ProviderErrors.InvalidResponse(Name) : new ProviderResponse(document, body);
+            return Interpret(response, body, symbol);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -280,6 +259,55 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         }
     }
 
+    // A denied call is never sent. A call that costs no credit needs no budget. Returns the refusal, or null when the call may go ahead.
+    private async Task<Error?> SpendBudgetAsync(int credits, CancellationToken cancellationToken)
+    {
+        if (credits <= 0)
+        {
+            return null;
+        }
+
+        TwelveDataOptions settings = _options.Value;
+        BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
+        return decision.Granted ? null : ProviderErrors.RateLimited(Name, decision.RetryAfter);
+    }
+
+    private Result<ProviderResponse> Interpret(HttpResponseMessage response, string body, string symbol)
+    {
+        JsonDocument? document = ParseObject(body);
+        (int? code, string? message) = document is null ? (null, null) : ReadErrorFields(document);
+        bool isError = !response.IsSuccessStatusCode
+            || (document is not null && string.Equals(Text(document.RootElement, "status"), "error", StringComparison.OrdinalIgnoreCase));
+        if (!isError)
+        {
+            return document is null ? ProviderErrors.InvalidResponse(Name) : new ProviderResponse(document, body);
+        }
+
+        document?.Dispose();
+        return message is not null && message.Contains("No data is available", StringComparison.OrdinalIgnoreCase)
+            ? EmptyRange(body)
+            : Classify((int)response.StatusCode, code, message, symbol, response.Headers.RetryAfter?.Delta);
+    }
+
+    // Every Twelve Data answer is a JSON object; anything else cannot be the contract, and indexing it would throw.
+    private static JsonDocument? ParseObject(string body)
+    {
+        JsonDocument? document = TryParse(body);
+        if (document is not null && document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            document.Dispose();
+            return null;
+        }
+
+        return document;
+    }
+
+    private static (int? Code, string? Message) ReadErrorFields(JsonDocument document)
+    {
+        int? code = document.RootElement.TryGetProperty("code", out JsonElement c) && c.TryGetInt32(out int value) ? value : null;
+        return (code, Text(document.RootElement, "message"));
+    }
+
     private Error Classify(int status, int? code, string? message, string symbol, TimeSpan? retryAfter)
     {
         int effective = code ?? status;
@@ -289,26 +317,35 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         {
             // Verified 2026-10-17: the 429 carries no Retry-After header, only "You have run out of API credits for the current minute ...
             // Wait for the next minute", so the wait is the time left in the current minute.
-            return ProviderErrors.RateLimited(Name, retryAfter ?? (text.Contains("current minute", StringComparison.OrdinalIgnoreCase) ? UntilNextMinute() : null));
+            return ProviderErrors.RateLimited(Name, retryAfter ?? (Mentions(text, "current minute") ? UntilNextMinute() : null));
         }
 
+        return ClassifyAccess(status, effective, text) ?? ClassifyLookup(status, effective, text, symbol);
+    }
+
+    // The key was refused, or the plan does not include what was asked.
+    private Error? ClassifyAccess(int status, int effective, string text)
+    {
         if (effective is 401 or 403 || status is 401 or 403)
         {
-            return text.Contains("plan", StringComparison.OrdinalIgnoreCase) ? ProviderErrors.PlanRestricted(Name) : ProviderErrors.Unauthorized(Name);
+            return Mentions(text, "plan") ? ProviderErrors.PlanRestricted(Name) : ProviderErrors.Unauthorized(Name);
         }
 
-        if (text.Contains("available starting with", StringComparison.OrdinalIgnoreCase) || text.Contains("upgrade", StringComparison.OrdinalIgnoreCase))
-        {
-            return ProviderErrors.PlanRestricted(Name);
-        }
+        return Mentions(text, "available starting with") || Mentions(text, "upgrade") ? ProviderErrors.PlanRestricted(Name) : null;
+    }
 
-        if (effective == 404 || text.Contains("missing or invalid", StringComparison.OrdinalIgnoreCase) || text.Contains("not found", StringComparison.OrdinalIgnoreCase))
+    // Whatever else the answer says: an unknown symbol, a server problem, or something that is not the contract.
+    private Error ClassifyLookup(int status, int effective, string text, string symbol)
+    {
+        if (effective == 404 || Mentions(text, "missing or invalid") || Mentions(text, "not found"))
         {
             return ProviderErrors.SymbolNotFound(Name, symbol);
         }
 
         return status >= 500 || effective >= 500 ? ProviderErrors.Unavailable(Name) : ProviderErrors.InvalidResponse(Name);
     }
+
+    private static bool Mentions(string text, string fragment) => text.Contains(fragment, StringComparison.OrdinalIgnoreCase);
 
     // Best effort: the data was already fetched and parsed, so a store that is down must not turn a good answer into a failure.
     private async Task KeepAsync(ProviderPayload payload, CancellationToken cancellationToken)
