@@ -36,5 +36,5 @@ public sealed class V0001BaseCollections : MongoMigration
 public static class MongoMigrations
 {
     /// <summary>The migrations the migrator applies.</summary>
-    public static IReadOnlyList<IMongoMigration> All { get; } = [new V0001BaseCollections()];
+    public static IReadOnlyList<IMongoMigration> All { get; } = [new V0001BaseCollections(), new V0002ProviderPayloadIndex()];
 }

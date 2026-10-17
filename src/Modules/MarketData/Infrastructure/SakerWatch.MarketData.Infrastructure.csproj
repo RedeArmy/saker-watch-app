@@ -7,9 +7,13 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Application/SakerWatch.MarketData.Application.csproj" />
     <ProjectReference Include="../../../BuildingBlocks/Persistence/SakerWatch.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Mongo/SakerWatch.BuildingBlocks.Mongo.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Redis/SakerWatch.BuildingBlocks.Redis.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Resilience/SakerWatch.BuildingBlocks.Resilience.csproj" />
   </ItemGroup>
 </Project>

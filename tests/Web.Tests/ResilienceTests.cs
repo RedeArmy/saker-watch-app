@@ -62,6 +62,75 @@ public sealed class ResilienceTests
     }
 
     [Fact]
+    public async Task Get_TooManyRequests_IsRetriedByDefault()
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.TooManyRequests, HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary);
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        HttpResponseMessage response = await client.GetAsync("quote");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        primary.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Get_TooManyRequests_IsNotRetried_WhenTheCallerTracksTheQuota()
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.TooManyRequests, HttpStatusCode.OK);
+        using ServiceProvider provider = Build(primary, o => o.RateLimitIsTransient = false);
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        HttpResponseMessage response = await client.GetAsync("quote");
+
+        response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        primary.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ARunOfRateLimitAnswers_DoesNotOpenTheCircuit_WhenTheCallerTracksTheQuota()
+    {
+        var primary = new ScriptedHandler([.. Enumerable.Repeat(HttpStatusCode.TooManyRequests, 14), HttpStatusCode.OK]);
+        using ServiceProvider provider = Build(primary, o =>
+        {
+            o.RateLimitIsTransient = false;
+            o.MaxRetries = 0;
+            o.CircuitMinimumThroughput = 5;
+        });
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        for (int i = 0; i < 14; i++)
+        {
+            (await client.GetAsync("quote")).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        (await client.GetAsync("quote")).StatusCode.Should().Be(HttpStatusCode.OK, "the circuit stayed closed, so the next call reached the service");
+        primary.Calls.Should().Be(15);
+    }
+
+    [Fact]
+    public async Task ARunOfRateLimitAnswers_OpensTheCircuit_ByDefault()
+    {
+        var primary = new ScriptedHandler(HttpStatusCode.TooManyRequests);
+        using ServiceProvider provider = Build(primary, o =>
+        {
+            o.MaxRetries = 0;
+            o.CircuitMinimumThroughput = 5;
+        });
+        HttpClient client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName);
+
+        Func<Task> act = async () =>
+        {
+            for (int i = 0; i < 14; i++)
+            {
+                await client.GetAsync("quote");
+            }
+        };
+
+        await act.Should().ThrowAsync<Polly.CircuitBreaker.BrokenCircuitException>();
+    }
+
+    [Fact]
     public async Task Post_TransientServerError_IsNotRetried()
     {
         var primary = new ScriptedHandler(HttpStatusCode.ServiceUnavailable, HttpStatusCode.OK);

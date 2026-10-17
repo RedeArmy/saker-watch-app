@@ -77,6 +77,7 @@ public static class SakerHttpClientExtensions
                     BackoffType = DelayBackoffType.Exponential,
                     UseJitter = true,
                     Delay = options.RetryBaseDelay,
+                    ShouldHandle = args => ValueTask.FromResult(ShouldHandle(args.Outcome, options.RateLimitIsTransient)),
                 };
                 retry.DisableForUnsafeHttpMethods();
                 pipeline.AddRetry(retry);
@@ -88,10 +89,16 @@ public static class SakerHttpClientExtensions
                 MinimumThroughput = options.CircuitMinimumThroughput,
                 BreakDuration = options.CircuitBreakDuration,
                 SamplingDuration = TimeSpan.FromTicks(options.CircuitBreakDuration.Ticks * 2),
+                ShouldHandle = args => ValueTask.FromResult(ShouldHandle(args.Outcome, options.RateLimitIsTransient)),
             });
             pipeline.AddTimeout(options.AttemptTimeout);
         });
 
         return builder;
     }
+
+    // The standard transient set (timeouts, 5xx, 408 and 429), minus 429 when the caller tracks the quota itself.
+    private static bool ShouldHandle(Outcome<HttpResponseMessage> outcome, bool rateLimitIsTransient) =>
+        (rateLimitIsTransient || outcome.Result is not { StatusCode: System.Net.HttpStatusCode.TooManyRequests })
+        && HttpClientResiliencePredicates.IsTransient(outcome);
 }

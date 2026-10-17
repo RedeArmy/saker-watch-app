@@ -10,7 +10,10 @@ using Serilog;
 
 namespace SakerWatch.Observability.Tests;
 
-/// <summary>The console is the log collector's input; it is written off the request path. Console.Out is process-wide, so these run alone.</summary>
+/// <summary>
+/// The console is the log collector's input; it is written off the request path. Console.Out and Serilog's static Log.Logger are process-wide, so
+/// these run alone, and so does every test that builds a host with <c>AddSakerObservability</c> (they share the "Console.Out" collection).
+/// </summary>
 [Collection("Console.Out")]
 public sealed class ConsoleSinkTests
 {
