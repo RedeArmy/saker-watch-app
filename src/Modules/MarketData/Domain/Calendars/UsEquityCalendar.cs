@@ -32,6 +32,20 @@ public sealed class UsEquityCalendar : IExchangeCalendar
         new(2025, 1, 9),
     }.ToFrozenSet();
 
+    // Early closes that no rule predicts: the eve of 2000 and the Friday after Christmas 2003, and the 2002 pair where the early close fell on
+    // Friday July 5 instead of Wednesday July 3, which the July 3 rule would have shortened.
+    private static readonly FrozenSet<DateOnly> _extraordinaryEarlyCloses = new DateOnly[]
+    {
+        new(1999, 12, 31),
+        new(2002, 7, 5),
+        new(2003, 12, 26),
+    }.ToFrozenSet();
+
+    private static readonly FrozenSet<DateOnly> _fullDaysDespiteTheRule = new DateOnly[]
+    {
+        new(2002, 7, 3),
+    }.ToFrozenSet();
+
     private readonly TimeZoneInfo _zone;
 
     /// <summary>Creates the calendar for one of the US markets that share the schedule (<c>XNYS</c>, <c>XNAS</c>, <c>ARCX</c>...).</summary>
@@ -43,6 +57,9 @@ public sealed class UsEquityCalendar : IExchangeCalendar
 
     /// <summary>The days the US markets closed outside their schedule, kept as data because no rule produces them.</summary>
     public static IReadOnlyCollection<DateOnly> ExtraordinaryClosures => _extraordinaryClosures;
+
+    /// <summary>The days that closed early without a rule to say so, and the day a rule would have shortened but did not, kept as data.</summary>
+    public static IReadOnlyCollection<DateOnly> ExtraordinaryEarlyCloses => _extraordinaryEarlyCloses;
 
     /// <inheritdoc />
     public Mic Market { get; }
@@ -121,6 +138,16 @@ public sealed class UsEquityCalendar : IExchangeCalendar
 
     private static bool IsEarlyClose(DateOnly date)
     {
+        if (_extraordinaryEarlyCloses.Contains(date))
+        {
+            return true;
+        }
+
+        if (_fullDaysDespiteTheRule.Contains(date))
+        {
+            return false;
+        }
+
         if (date == Thanksgiving(date.Year).AddDays(1))
         {
             return true;

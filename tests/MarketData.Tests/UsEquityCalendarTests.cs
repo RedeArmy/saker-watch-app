@@ -107,6 +107,15 @@ public sealed class UsEquityCalendarTests
     public void CloseOf_EarlyCloseDay_IsOneInTheAfternoonLocalTime(int year, int month, int day, int utcHour) =>
         _calendar.CloseOf(new DateOnly(year, month, day)).Should().Be(new DateTimeOffset(year, month, day, utcHour, 0, 0, TimeSpan.Zero));
 
+    // Checked against exchange_calendars (XNYS) for every session from 1998 to 2035: these four days were the only disagreements with the rules.
+    [Theory]
+    [InlineData(1999, 12, 31, 18)] // 13:00 EST on the eve of 2000
+    [InlineData(2002, 7, 5, 17)] // 13:00 EDT: the 2002 early close was the Friday
+    [InlineData(2003, 12, 26, 18)] // 13:00 EST the Friday after Christmas
+    [InlineData(2002, 7, 3, 20)] // a full day: the July 3 rule does not apply in 2002
+    public void CloseOf_HistoricalSpecialDays_FollowTheirPublishedTimes(int year, int month, int day, int utcHour) =>
+        _calendar.CloseOf(new DateOnly(year, month, day)).Should().Be(new DateTimeOffset(year, month, day, utcHour, 0, 0, TimeSpan.Zero));
+
     [Fact]
     public void CloseOf_ANonTradingDay_IsNull()
     {
