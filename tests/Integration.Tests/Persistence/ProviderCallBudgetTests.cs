@@ -40,7 +40,7 @@ public sealed class ProviderCallBudgetTests : IAsyncLifetime
         FakeTimeProvider clock = Clock();
         RedisProviderCallBudget budget = Budget(clock);
 
-        var granted = 0;
+        int granted = 0;
         for (int i = 0; i < 8; i++)
         {
             granted += (await budget.TryAcquireAsync("p1", _freePlan, 1, CancellationToken.None)).Granted ? 1 : 0;

@@ -181,7 +181,7 @@ public sealed class TwelveDataLiveTests
         missing.Length.Should().BeLessThanOrEqualTo(3, "the provider may have rare gaps, but the calendar must not invent sessions");
 
         string body = _store.Stored.Last(p => p.Operation == "daily").Body;
-        using JsonDocument meta = JsonDocument.Parse(body);
+        using var meta = JsonDocument.Parse(body);
         JsonElement m = meta.RootElement.GetProperty("meta");
         Line($"meta: {m.GetRawText()}");
         m.GetProperty("mic_code").GetString().Should().Be("XNGS");
@@ -200,7 +200,7 @@ public sealed class TwelveDataLiveTests
         ProviderErrors.Classify(canadian.Error!).Should().Be(ProviderFailureKind.PlanRestricted);
 
         DailySeries us = (await Retry(() => twelve.GetDailyAsync(new DailySeriesRequest(new ProviderListingKey("XNGS", "SHOP"), new DateOnly(2026, 9, 1), null, true), CancellationToken.None))).Value;
-        using JsonDocument meta = JsonDocument.Parse(_store.Stored.Last(p => p.Operation == "daily").Body);
+        using var meta = JsonDocument.Parse(_store.Stored.Last(p => p.Operation == "daily").Body);
         string currency = meta.RootElement.GetProperty("meta").GetProperty("currency").GetString()!;
         Line($"SHOP asked on XNGS: {us.Bars.Count} bars, currency {currency} (the US listing, not the Canadian one)");
         currency.Should().Be("USD");
@@ -211,7 +211,7 @@ public sealed class TwelveDataLiveTests
         foreach (string end in new[] { "2024-06-20", "2024-06-21" })
         {
             (int status, _, string body) = await Raw(factory, key, $"time_series?symbol=NVDA&mic_code=XNGS&interval=1day&order=asc&adjust=all&start_date=2024-06-03&end_date={end}&outputsize=5000");
-            using JsonDocument d = JsonDocument.Parse(body);
+            using var d = JsonDocument.Parse(body);
             string[] dates = [.. d.RootElement.GetProperty("values").EnumerateArray().Select(v => v.GetProperty("datetime").GetString()!)];
             Line($"raw end_date={end}: HTTP {status}, first {dates[0]}, last {dates[^1]}, {dates.Length} rows");
         }
@@ -474,7 +474,7 @@ public sealed class TwelveDataLiveTests
             return null;
         }
 
-        using JsonDocument d = JsonDocument.Parse(body);
+        using var d = JsonDocument.Parse(body);
         return d.RootElement.TryGetProperty("daily_usage", out JsonElement usage) && usage.TryGetInt64(out long value) ? value : null;
     }
 
