@@ -71,8 +71,7 @@ public sealed partial class RefreshStockHandler(
     ListingIngestion ingestion,
     IPriceStore prices,
     IIngestionState state,
-    IJobEnqueuer jobs,
-    RateLimitWaiter waiter,
+    FollowUpJobs followUps,
     IOptions<IngestionOptions> options,
     TimeProvider clock,
     ILogger<RefreshStockHandler> logger) : IJobHandler<RefreshStockJob>
@@ -102,7 +101,7 @@ public sealed partial class RefreshStockHandler(
 
         if (await prices.LatestAsync(id, cancellationToken) is not { } latest)
         {
-            await jobs.EnqueueAsync(BackfillStockJob.KeyFor(id), new BackfillStockJob(id.Value), new JobEnqueueOptions(MaxAttempts: settings.BackfillMaxAttempts), cancellationToken);
+            await followUps.QueueBackfillAsync(id, cancellationToken);
             Count("backfill_queued");
             return;
         }
@@ -124,8 +123,7 @@ public sealed partial class RefreshStockHandler(
 
         if (rewritten)
         {
-            await jobs.EnqueueAsync(
-                BackfillStockJob.ReloadKeyFor(id, payload.Day), new BackfillStockJob(id.Value), new JobEnqueueOptions(MaxAttempts: settings.BackfillMaxAttempts), cancellationToken);
+            await followUps.QueueReloadAsync(id, payload.Day, cancellationToken);
             Count("reload_queued");
             LogHistoryRewritten(listing.Value.Stock.Market.Value, listing.Value.Stock.Ticker.Value);
             return;
@@ -149,7 +147,7 @@ public sealed partial class RefreshStockHandler(
 
         // An exhausted call budget is not a failure: the refresh waits in the queue until the budget has room again.
         if (ProviderErrors.Classify(error) == ProviderFailureKind.RateLimited
-            && await waiter.TryWaitAsync(payload with { Waits = payload.Waits + 1 }, payload.Waits, context.JobKey, error, maxAttempts: 5, cancellationToken))
+            && await followUps.TryWaitAsync(payload with { Waits = payload.Waits + 1 }, payload.Waits, context.JobKey, error, maxAttempts: 5, cancellationToken))
         {
             Count("waiting");
             return;

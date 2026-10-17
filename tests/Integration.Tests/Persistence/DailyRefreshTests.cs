@@ -57,10 +57,10 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
             .HandleAsync(new BackfillStockJob(world.Id.Value), Context(), CancellationToken.None));
 
     private static Task RefreshAsync(World world, DateOnly day) => InSessionAsync(world, session =>
-        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
             .HandleAsync(new RefreshStockJob(world.Id.Value, day), Context(), CancellationToken.None));
 
-    private static RateLimitWaiter WaiterFor(World world) => new(world.Jobs, Options.Create(new IngestionOptions()), world.Time);
+    private static FollowUpJobs WaiterFor(World world) => new(world.Jobs, Options.Create(new IngestionOptions()), world.Time);
 
     private static JobContext Context() => new(Guid.CreateVersion7(), "k", 1, 5, null);
 
@@ -209,7 +209,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         world.Provider.FailNext(ProviderErrors.RateLimited("fake"));
 
         await InSessionAsync(world, session =>
-            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
                 .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16), Waits: 3), new JobContext(Guid.CreateVersion7(), "marketdata.refresh:abc:20261016:w3", 1, 5, null), CancellationToken.None));
 
         world.Jobs.Queued.Should().ContainSingle().Which.Key.Should().Be("marketdata.refresh:abc:20261016:w4");
@@ -225,7 +225,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         int max = new IngestionOptions().MaxRateLimitWaits;
 
         Func<Task> act = () => InSessionAsync(world, session =>
-            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), world.Jobs, WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
                 .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16), Waits: max), Context(), CancellationToken.None));
 
         await act.Should().ThrowAsync<IngestionRetryException>();

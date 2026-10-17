@@ -49,7 +49,7 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
     {
         var options = Options.Create(new IngestionOptions());
         var ingestion = new ListingIngestion(new StockCatalog(session), new SymbolAliases(session), router, ExchangeCalendars.Default(), new IngestionState(session), options);
-        return new BackfillStockHandler(ingestion, new PriceStore(session), new IngestionState(session), new RateLimitWaiter(jobs, options, time), options, time, NullLogger<BackfillStockHandler>.Instance);
+        return new BackfillStockHandler(ingestion, new PriceStore(session), new IngestionState(session), new FollowUpJobs(jobs, options, time), options, time, NullLogger<BackfillStockHandler>.Instance);
     }
 
     private static async Task RunAsync(World world, Dictionary<string, string>? markets = null)

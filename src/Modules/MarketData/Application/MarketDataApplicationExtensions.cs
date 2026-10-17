@@ -27,7 +27,7 @@ public static class MarketDataApplicationExtensions
         services.AddOptions<IngestionOptions>().ValidateDataAnnotations().ValidateOnStart();
         services.TryAddSingleton(ExchangeCalendars.Default());
         services.TryAddScoped<ListingIngestion>();
-        services.TryAddScoped<RateLimitWaiter>();
+        services.TryAddScoped<FollowUpJobs>();
         return services;
     }
 }

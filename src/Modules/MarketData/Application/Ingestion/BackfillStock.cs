@@ -44,7 +44,7 @@ public sealed partial class BackfillStockHandler(
     ListingIngestion ingestion,
     IPriceStore prices,
     IIngestionState state,
-    RateLimitWaiter waiter,
+    FollowUpJobs waiter,
     IOptions<IngestionOptions> options,
     TimeProvider clock,
     ILogger<BackfillStockHandler> logger) : IJobHandler<BackfillStockJob>

@@ -7,7 +7,7 @@ using SakerWatch.MarketData.Application.Providers;
 
 namespace SakerWatch.MarketData.Tests;
 
-public sealed class RateLimitWaiterTests
+public sealed class FollowUpJobsTests
 {
     private sealed class Enqueuer : IJobEnqueuer
     {
@@ -23,10 +23,10 @@ public sealed class RateLimitWaiterTests
 
     private static readonly DateTimeOffset _now = new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
 
-    private static (RateLimitWaiter Waiter, Enqueuer Jobs) Build(IngestionOptions? options = null)
+    private static (FollowUpJobs Waiter, Enqueuer Jobs) Build(IngestionOptions? options = null)
     {
         var jobs = new Enqueuer();
-        return (new RateLimitWaiter(jobs, Options.Create(options ?? new IngestionOptions()), new FakeTimeProvider(_now)), jobs);
+        return (new FollowUpJobs(jobs, Options.Create(options ?? new IngestionOptions()), new FakeTimeProvider(_now)), jobs);
     }
 
     [Theory]
@@ -34,12 +34,12 @@ public sealed class RateLimitWaiterTests
     [InlineData("marketdata.backfill:abc:w1", 2, "marketdata.backfill:abc:w2")]
     [InlineData("marketdata.refresh:abc:20261016:w41", 42, "marketdata.refresh:abc:20261016:w42")]
     public void ContinuationKey_ReplacesTheCounterInsteadOfStackingIt(string current, int waits, string expected) =>
-        RateLimitWaiter.ContinuationKey(current, waits).Should().Be(expected);
+        FollowUpJobs.ContinuationKey(current, waits).Should().Be(expected);
 
     [Fact]
     public void ContinuationKey_WithoutAKey_Throws()
     {
-        Action act = () => RateLimitWaiter.ContinuationKey(" ", 1);
+        Action act = () => FollowUpJobs.ContinuationKey(" ", 1);
 
         act.Should().Throw<ArgumentException>();
     }
@@ -47,7 +47,7 @@ public sealed class RateLimitWaiterTests
     [Fact]
     public async Task TryWait_WaitsWhatTheProviderAskedPlusASpreadOfAtMostTheJitter()
     {
-        (RateLimitWaiter waiter, Enqueuer jobs) = Build();
+        (FollowUpJobs waiter, Enqueuer jobs) = Build();
 
         bool waited = await waiter.TryWaitAsync("p", 0, "k", ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(20)), 8, CancellationToken.None);
 
@@ -62,7 +62,7 @@ public sealed class RateLimitWaiterTests
     [Fact]
     public async Task TryWait_WithoutAHintFromTheProvider_WaitsAMinute()
     {
-        (RateLimitWaiter waiter, Enqueuer jobs) = Build(new IngestionOptions { RateLimitJitterSeconds = 0 });
+        (FollowUpJobs waiter, Enqueuer jobs) = Build(new IngestionOptions { RateLimitJitterSeconds = 0 });
 
         await waiter.TryWaitAsync("p", 0, "k", ProviderErrors.RateLimited("fake"), 8, CancellationToken.None);
 
@@ -72,7 +72,7 @@ public sealed class RateLimitWaiterTests
     [Fact]
     public async Task TryWait_TheSameJobAlwaysWaitsTheSame()
     {
-        (RateLimitWaiter waiter, Enqueuer jobs) = Build();
+        (FollowUpJobs waiter, Enqueuer jobs) = Build();
 
         await waiter.TryWaitAsync("p", 0, "k", ProviderErrors.RateLimited("fake"), 8, CancellationToken.None);
         await waiter.TryWaitAsync("p", 0, "k", ProviderErrors.RateLimited("fake"), 8, CancellationToken.None);
@@ -83,7 +83,7 @@ public sealed class RateLimitWaiterTests
     [Fact]
     public async Task TryWait_AfterTheAllowedWaits_QueuesNothingAndSaysSo()
     {
-        (RateLimitWaiter waiter, Enqueuer jobs) = Build(new IngestionOptions { MaxRateLimitWaits = 3 });
+        (FollowUpJobs waiter, Enqueuer jobs) = Build(new IngestionOptions { MaxRateLimitWaits = 3 });
 
         bool waited = await waiter.TryWaitAsync("p", 3, "k", ProviderErrors.RateLimited("fake"), 8, CancellationToken.None);
 
