@@ -159,6 +159,56 @@ public sealed class UsEquityCalendarTests
         }
     }
 
+    // Sessions per year as the NYSE published them: 2012 lost two days to Hurricane Sandy, 2018 and 2025 one each to a day of mourning,
+    // 2007 one to the Ford funeral. Early closes still count as a session.
+    [Theory]
+    [InlineData(2005, 252)]
+    [InlineData(2006, 251)]
+    [InlineData(2007, 251)]
+    [InlineData(2008, 253)]
+    [InlineData(2009, 252)]
+    [InlineData(2010, 252)]
+    [InlineData(2011, 252)]
+    [InlineData(2012, 250)]
+    [InlineData(2013, 252)]
+    [InlineData(2014, 252)]
+    [InlineData(2015, 252)]
+    [InlineData(2016, 252)]
+    [InlineData(2017, 251)]
+    [InlineData(2018, 251)]
+    [InlineData(2019, 252)]
+    [InlineData(2020, 253)]
+    [InlineData(2021, 252)]
+    [InlineData(2022, 251)]
+    [InlineData(2023, 250)]
+    [InlineData(2024, 252)]
+    [InlineData(2025, 250)]
+    [InlineData(2026, 251)]
+    public void SessionsPerYear_MatchThePublishedExchangeSchedule(int year, int expected)
+    {
+        int sessions = 0;
+        for (var day = new DateOnly(year, 1, 1); day.Year == year; day = day.AddDays(1))
+        {
+            if (_calendar.IsTradingDay(day))
+            {
+                sessions++;
+            }
+        }
+
+        sessions.Should().Be(expected);
+    }
+
+    [Fact]
+    public void ExtraordinaryClosures_CannotBeChangedByACaller()
+    {
+        var closures = (ISet<DateOnly>)UsEquityCalendar.ExtraordinaryClosures;
+
+        Action add = () => closures.Add(new DateOnly(2030, 1, 2));
+
+        add.Should().Throw<NotSupportedException>("the list is shared by every calendar");
+        _calendar.IsTradingDay(new DateOnly(2030, 1, 2)).Should().BeTrue();
+    }
+
     [Fact]
     public void TheCalendar_KnowsItsMarketAndZone()
     {

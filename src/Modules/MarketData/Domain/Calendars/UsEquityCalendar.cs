@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using SakerWatch.MarketData.Domain.Markets;
 
 namespace SakerWatch.MarketData.Domain.Calendars;
@@ -17,8 +18,8 @@ public sealed class UsEquityCalendar : IExchangeCalendar
     private static readonly TimeSpan _earlyClose = new(13, 0, 0);
 
     // Days the exchanges closed outside their schedule: 9/11 attacks, national days of mourning and Hurricane Sandy.
-    private static readonly HashSet<DateOnly> _extraordinaryClosures =
-    [
+    private static readonly FrozenSet<DateOnly> _extraordinaryClosures = new DateOnly[]
+    {
         new(2001, 9, 11),
         new(2001, 9, 12),
         new(2001, 9, 13),
@@ -29,7 +30,7 @@ public sealed class UsEquityCalendar : IExchangeCalendar
         new(2012, 10, 30),
         new(2018, 12, 5),
         new(2025, 1, 9),
-    ];
+    }.ToFrozenSet();
 
     private readonly TimeZoneInfo _zone;
 
