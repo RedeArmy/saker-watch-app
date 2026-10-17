@@ -39,7 +39,7 @@ public sealed class TimescalePostgresFixture : IAsyncLifetime
         return new NpgsqlConnectionStringBuilder(ConnectionString) { Database = name }.ConnectionString;
     }
 
-    /// <summary>Creates a database, applies every migration (platform, then identity) and creates one login per runtime role.</summary>
+    /// <summary>Creates a database, applies every migration (platform, identity, marketdata) and creates one login per runtime role.</summary>
     internal async Task<MigratedDatabase> CreateMigratedDatabaseAsync()
     {
         string admin = await CreateDatabaseAsync();

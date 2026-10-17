@@ -2,6 +2,7 @@ using System.Reflection;
 using AwesomeAssertions;
 using NetArchTest.Rules;
 using SakerWatch.BuildingBlocks.Application.Messaging;
+using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Mongo;
 using SakerWatch.BuildingBlocks.Observability;
@@ -63,5 +64,37 @@ public sealed class BuildingBlockRulesTests
 
             result.IsSuccessful.Should().BeTrue($"{module}.Domain may use only BuildingBlocks.Kernel");
         }
+    }
+
+    [Fact]
+    public void DomainEntities_HaveNoPublicSetters_AndValueObjectsAreSealed()
+    {
+        foreach (string module in _modules)
+        {
+            Type[] types = Assembly.Load($"SakerWatch.{module}.Domain").GetTypes();
+
+            string[] settable = [.. types
+                .Where(t => t.IsPublic && IsSubclassOfOpenGeneric(t, typeof(Entity<>)))
+                .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+                .Where(p => p.SetMethod is { IsPublic: true })
+                .Select(p => $"{p.DeclaringType!.Name}.{p.Name}")];
+            settable.Should().BeEmpty($"{module}.Domain entities change only through methods that keep their invariants");
+
+            string[] open = [.. types.Where(t => t.IsPublic && t.IsSubclassOf(typeof(ValueObject)) && !t.IsSealed && !t.IsAbstract).Select(t => t.Name)];
+            open.Should().BeEmpty($"{module}.Domain value objects are sealed so equality stays by value");
+        }
+    }
+
+    private static bool IsSubclassOfOpenGeneric(Type type, Type openGeneric)
+    {
+        for (Type? current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == openGeneric)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

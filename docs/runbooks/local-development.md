@@ -18,7 +18,7 @@ ConnectionStrings__PostgresAdmin="Host=127.0.0.1;Port=5432;Database=saker;Userna
 ConnectionStrings__MongoAdmin="mongodb://saker_admin:<MONGO_PASSWORD>@127.0.0.1:27017/?authSource=admin" \
 dotnet run --project src/Hosts/Host.Migrator
 ```
-It applies platform, then identity, then MongoDB, and exits non-zero on the first failure. Running it again applies nothing. Migrations are forward-only (ADR-0021).
+It applies platform, then identity, then marketdata, then MongoDB, and exits non-zero on the first failure. Running it again applies nothing. Migrations are forward-only (ADR-0021).
 
 ## 4. Create the runtime logins
 The platform migration creates two `NOLOGIN` group roles, `api_role` and `worker_role` (ADR-0010). The hosts connect with **logins** that belong to one of them, never with the admin login:
