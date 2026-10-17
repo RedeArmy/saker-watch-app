@@ -70,4 +70,11 @@ public sealed class IngestionOptions
     /// </summary>
     [Range(1, 30)]
     public int FxMaxAgeDays { get; set; } = 3;
+
+    /// <summary>
+    /// Attempts the queue gives the daily exchange rate refresh before it is parked as dead. A day has one job, so it must outlast an outage of the
+    /// bank's service: with the queue's backoff (5 s doubling, capped at 30 minutes) twelve attempts span about an hour and a half.
+    /// </summary>
+    [Range(1, 20)]
+    public int FxMaxAttempts { get; set; } = 12;
 }

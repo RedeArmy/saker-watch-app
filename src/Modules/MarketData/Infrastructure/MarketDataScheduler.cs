@@ -103,7 +103,7 @@ public sealed partial class MarketDataScheduler(
             bool created = await jobs.EnqueueAsync(
                 FxRefreshJob.KeyFor(baseCurrency, quote, day),
                 new FxRefreshJob(baseCurrency.Value, quote.Value, day),
-                new JobEnqueueOptions(MaxAttempts: options.Value.BackfillMaxAttempts),
+                new JobEnqueueOptions(MaxAttempts: options.Value.FxMaxAttempts),
                 cancellationToken);
             if (created)
             {

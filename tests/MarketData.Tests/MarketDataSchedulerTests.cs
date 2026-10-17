@@ -17,7 +17,7 @@ public sealed class MarketDataSchedulerTests
 {
     private sealed class RecordingEnqueuer(bool fail = false) : IJobEnqueuer
     {
-        public List<(string Key, object Payload)> Queued { get; } = [];
+        public List<(string Key, object Payload, JobEnqueueOptions? Options)> Queued { get; } = [];
 
         public Task<bool> EnqueueAsync<TPayload>(string jobKey, TPayload payload, JobEnqueueOptions? options, CancellationToken cancellationToken)
             where TPayload : notnull
@@ -30,7 +30,7 @@ public sealed class MarketDataSchedulerTests
             bool created = Queued.TrueForAll(q => q.Key != jobKey);
             if (created)
             {
-                Queued.Add((jobKey, payload));
+                Queued.Add((jobKey, payload, options));
             }
 
             return Task.FromResult(created);
@@ -166,6 +166,7 @@ public sealed class MarketDataSchedulerTests
 
         jobs.Queued.Select(q => q.Key).Should().Equal("marketdata.fx-refresh:USD:GTQ:20261016", "marketdata.fx-refresh:USD:GTQ:20261017");
         jobs.Queued[1].Payload.Should().Be(new FxRefreshJob("USD", "GTQ", new DateOnly(2026, 10, 17)));
+        jobs.Queued[1].Options!.MaxAttempts.Should().Be(12, "a day has one job, so it must outlast an outage of the bank");
     }
 
     [Fact]
@@ -202,8 +203,13 @@ public sealed class MarketDataSchedulerTests
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitForAsync(() => jobs.Queued.Count >= 1);
-        clock.Advance(TimeSpan.FromHours(2));
-        await WaitForAsync(() => jobs.Queued.Count >= 2);
+        // The loop may not have armed its timer yet when the first queueing is seen, and a timer armed after an Advance would wait for the
+        // next one: keep moving the clock, one check interval at a time, until the later session has been queued.
+        await WaitForAsync(() =>
+        {
+            clock.Advance(TimeSpan.FromMinutes(10));
+            return jobs.Queued.Count >= 2;
+        });
         await scheduler.StopAsync(CancellationToken.None);
 
         jobs.Queued.Select(q => q.Key).Should().Equal("marketdata.ingest-daily:XNAS:20261015", "marketdata.ingest-daily:XNAS:20261016");

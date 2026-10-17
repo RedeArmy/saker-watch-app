@@ -94,6 +94,35 @@ public sealed class FxConverterTests
     }
 
     [Fact]
+    public async Task Convert_AStoredNonUsdPair_IsUsedDirectlyInsteadOfThroughUsd()
+    {
+        Rates rates = Bank().With("USD", "CAD", 17, 1.4283m).With("CAD", "JPY", 17, 105m);
+
+        FxConversion conversion = (await ConvertAsync(Converter(rates), 10m, _cad, _jpy)).Value;
+
+        conversion.Converted.Should().Be(1050m);
+        conversion.Legs.Should().ContainSingle().Which.Inverted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Convert_WhenTheOppositePairIsNewer_UsesItsReciprocal()
+    {
+        Rates rates = new Rates().With("USD", "GTQ", 10, 8m).With("GTQ", "USD", 16, 0.125m);
+
+        FxLeg leg = (await ConvertAsync(Converter(rates), 8m, _usd, _gtq)).Value.Legs.Single();
+
+        (leg.Inverted, leg.AsOfDate, leg.Rate).Should().Be((true, new DateOnly(2026, 10, 16), 8m));
+    }
+
+    [Fact]
+    public async Task Convert_WhenBothDirectionsShareTheDay_PrefersTheAskedDirection()
+    {
+        Rates rates = new Rates().With("USD", "GTQ", 16, 7.6m).With("GTQ", "USD", 16, 0.13m);
+
+        (await ConvertAsync(Converter(rates), 1m, _usd, _gtq)).Value.Legs.Single().Inverted.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Convert_TheSameCurrency_IsTheSameAmount_WithNoLegs()
     {
         FxConversion conversion = (await ConvertAsync(Converter(new Rates()), 42.5m, _usd, _usd)).Value;

@@ -49,7 +49,7 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
         }
 
         var legs = new List<FxLeg>(2);
-        foreach ((CurrencyCode legFrom, CurrencyCode legTo) in Path(from, to))
+        foreach ((CurrencyCode legFrom, CurrencyCode legTo) in await PathAsync(from, to, day, cancellationToken))
         {
             FxLeg? leg = await ResolveAsync(legFrom, legTo, day, cancellationToken);
             if (leg is null)
@@ -63,30 +63,28 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
         return Combine(amount, from, to, day, legs);
     }
 
-    // Directly when one side is the pivot (or the pair is stored); otherwise through the pivot.
-    private static IEnumerable<(CurrencyCode From, CurrencyCode To)> Path(CurrencyCode from, CurrencyCode to)
+    // One step when the pair is stored (in either direction) or one side is the pivot; otherwise through the pivot (ADR-0018).
+    private async Task<(CurrencyCode From, CurrencyCode To)[]> PathAsync(CurrencyCode from, CurrencyCode to, DateOnly day, CancellationToken cancellationToken)
     {
-        if (from == _pivot || to == _pivot)
+        if (from == _pivot || to == _pivot || await ResolveAsync(from, to, day, cancellationToken) is not null)
         {
-            yield return (from, to);
-            yield break;
+            return [(from, to)];
         }
 
-        yield return (from, _pivot);
-        yield return (_pivot, to);
+        return [(from, _pivot), (_pivot, to)];
     }
 
-    // The stored rate in the asked direction, or the reciprocal of the stored rate in the other one.
+    // The stored rate in the asked direction or the reciprocal of the opposite one, whichever is newer (the asked direction on a tie).
     private async Task<FxLeg?> ResolveAsync(CurrencyCode from, CurrencyCode to, DateOnly day, CancellationToken cancellationToken)
     {
-        if (await store.OnOrBeforeAsync(from, to, day, cancellationToken) is { } direct)
+        FxRate? direct = await store.OnOrBeforeAsync(from, to, day, cancellationToken);
+        FxRate? inverse = await store.OnOrBeforeAsync(to, from, day, cancellationToken);
+        if (direct is not null && (inverse is null || direct.AsOfDate >= inverse.AsOfDate))
         {
             return new FxLeg(from, to, direct.Rate, direct.AsOfDate, direct.Source, Inverted: false);
         }
 
-        return await store.OnOrBeforeAsync(to, from, day, cancellationToken) is { } inverse
-            ? new FxLeg(from, to, 1m / inverse.Rate, inverse.AsOfDate, inverse.Source, Inverted: true)
-            : null;
+        return inverse is null ? null : new FxLeg(from, to, 1m / inverse.Rate, inverse.AsOfDate, inverse.Source, Inverted: true);
     }
 
     private Result<FxConversion> Combine(decimal amount, CurrencyCode from, CurrencyCode to, DateOnly day, List<FxLeg> legs)
