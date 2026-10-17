@@ -12,7 +12,7 @@ using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 namespace SakerWatch.MarketData.Tests;
 
 /// <summary>
-/// The Twelve Data adapter against responses recorded from the real API on 2026-10-16 (files without a suffix), taken from its documentation
+/// The Twelve Data adapter against responses recorded from the real API on 2026-10-16 and 2026-10-17 (files without a suffix), taken from its documentation
 /// (<c>.docs</c>) or written by hand (<c>.synthetic</c>). Nothing here calls the network.
 /// </summary>
 public sealed class TwelveDataProviderTests
@@ -242,7 +242,7 @@ public sealed class TwelveDataProviderTests
     [Fact]
     public async Task ARefusedKey_IsAPermanentFailure_WithoutEchoingTheProvidersText()
     {
-        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_unauthorized.docs.json"), HttpStatusCode.Unauthorized));
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_unauthorized.json"), HttpStatusCode.Unauthorized));
 
         Result<DailySeries> result = await provider.GetDailyAsync(Daily(), CancellationToken.None);
 

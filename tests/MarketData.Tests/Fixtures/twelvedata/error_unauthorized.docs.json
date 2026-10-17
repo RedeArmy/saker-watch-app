@@ -1,5 +1,0 @@
-{
- "code": 401,
- "message": "**apikey** parameter is incorrect or not specified.",
- "status": "error"
-}
