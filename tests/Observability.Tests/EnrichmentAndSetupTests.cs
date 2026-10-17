@@ -13,6 +13,10 @@ using Serilog.Events;
 
 namespace SakerWatch.Observability.Tests;
 
+// Building a host through AddSakerObservability replaces the process-wide Serilog logger (Log.Logger) and disposing it closes whatever that
+// logger is at that moment. Two such hosts alive at once, in parallel tests, close each other's logger: ConsoleSinkTests lost its last lines
+// in about one run in seventeen when a class like this one ran beside it. They share the collection so they run one after the other.
+[Collection("Console.Out")]
 public sealed class EnrichmentAndSetupTests
 {
     [Fact]
