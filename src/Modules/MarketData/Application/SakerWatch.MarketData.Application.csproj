@@ -4,7 +4,12 @@
     <RootNamespace>SakerWatch.MarketData.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Domain/SakerWatch.MarketData.Domain.csproj" />
     <ProjectReference Include="../Contracts/SakerWatch.MarketData.Contracts.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
   </ItemGroup>
 </Project>
