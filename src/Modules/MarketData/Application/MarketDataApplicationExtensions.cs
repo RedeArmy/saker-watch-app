@@ -26,6 +26,7 @@ public static class MarketDataApplicationExtensions
         services.TryAddSingleton<IMarketDataProviderRouter, MarketDataProviderRouter>();
         services.AddOptions<IngestionOptions>().ValidateDataAnnotations().ValidateOnStart();
         services.TryAddSingleton(ExchangeCalendars.Default());
+        services.TryAddScoped<ListingIngestion>();
         return services;
     }
 }

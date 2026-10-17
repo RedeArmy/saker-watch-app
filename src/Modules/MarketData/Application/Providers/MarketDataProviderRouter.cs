@@ -44,6 +44,9 @@ public sealed class MarketDataProvidersOptionsValidator : IValidateOptions<Marke
 /// <summary>Finds the provider for a market.</summary>
 public interface IMarketDataProviderRouter
 {
+    /// <summary>The markets that have a provider configured, which are the ones ingestion works for.</summary>
+    IReadOnlyCollection<Mic> EnabledMarkets { get; }
+
     /// <summary>The provider that serves <paramref name="market"/>, or a failure when the market is disabled or its provider is not registered.</summary>
     Result<IMarketDataProvider> For(Mic market);
 }
@@ -64,6 +67,9 @@ public sealed class MarketDataProviderRouter(IEnumerable<IMarketDataProvider> pr
 
     private readonly Dictionary<Mic, string> _byMarket = options.Value.Markets
         .ToDictionary(pair => Mic.Parse(pair.Key), pair => pair.Value.Trim());
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<Mic> EnabledMarkets => _byMarket.Keys;
 
     /// <inheritdoc />
     public Result<IMarketDataProvider> For(Mic market)

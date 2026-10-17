@@ -75,6 +75,24 @@ public sealed class PriceStore(DbSession session) : IPriceStore
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<DateOnly, decimal>> FinalAdjustedClosesAsync(StockId stock, DateOnly from, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = Command(
+            "SELECT trade_date, adjusted_close FROM marketdata.price_daily WHERE stock_id = @stock AND trade_date >= @from AND is_final");
+        command.Parameters.AddWithValue("stock", stock.Value);
+        command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Date) { Value = from });
+
+        var closes = new Dictionary<DateOnly, decimal>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            closes[reader.GetFieldValue<DateOnly>(0)] = reader.GetDecimal(1);
+        }
+
+        return closes;
+    }
+
+    /// <inheritdoc />
     public async Task<decimal?> AdjustedCloseAsync(StockId stock, DateOnly date, CancellationToken cancellationToken)
     {
         await using NpgsqlCommand command = Command(

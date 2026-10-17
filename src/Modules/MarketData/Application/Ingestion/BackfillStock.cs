@@ -16,8 +16,14 @@ namespace SakerWatch.MarketData.Application.Ingestion;
 [JobType("marketdata.backfill.v1")]
 public sealed record BackfillStockJob(Guid StockId)
 {
-    /// <summary>The deterministic job key of a listing's backfill.</summary>
+    /// <summary>The deterministic job key of a listing's first backfill.</summary>
     public static string KeyFor(StockId stock) => $"marketdata.backfill:{stock.Value:N}";
+
+    /// <summary>
+    /// The job key of a full reload because the provider rewrote the adjusted history (a dividend or a split). It carries the day, so a listing
+    /// is reloaded at most once a day and the earlier, finished backfill does not block it.
+    /// </summary>
+    public static string ReloadKeyFor(StockId stock, DateOnly day) => $"marketdata.reload:{stock.Value:N}:{day:yyyyMMdd}";
 }
 
 /// <summary>A failure that retrying later may fix (a rate limit, an outage): the queue retries the job with backoff.</summary>
@@ -34,10 +40,7 @@ public sealed class IngestionRetryException(string code) : Exception($"The provi
 /// against the listing and the job ends, because retrying it would only spend credits.
 /// </summary>
 public sealed partial class BackfillStockHandler(
-    IStockCatalog catalog,
-    ISymbolAliases aliases,
-    IMarketDataProviderRouter router,
-    ExchangeCalendars calendars,
+    ListingIngestion ingestion,
     IPriceStore prices,
     IIngestionState state,
     IOptions<IngestionOptions> options,
@@ -45,13 +48,13 @@ public sealed partial class BackfillStockHandler(
     ILogger<BackfillStockHandler> logger) : IJobHandler<BackfillStockJob>
 {
     /// <summary>Code recorded when the market has no provider configured.</summary>
-    public const string MarketDisabledCode = "market_disabled";
+    public const string MarketDisabledCode = ListingIngestion.MarketDisabledCode;
 
     /// <summary>Code recorded when no provider symbol was recorded for the listing.</summary>
-    public const string NoAliasCode = "no_symbol_alias";
+    public const string NoAliasCode = ListingIngestion.NoAliasCode;
 
     /// <summary>Code recorded when the market has no calendar yet.</summary>
-    public const string NoCalendarCode = "no_calendar";
+    public const string NoCalendarCode = ListingIngestion.NoCalendarCode;
 
     private static readonly Counter<long> _backfills = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_backfills_total",
@@ -68,73 +71,47 @@ public sealed partial class BackfillStockHandler(
         DateTimeOffset now = clock.GetUtcNow();
         var id = StockId.Create(payload.StockId);
 
-        if (await catalog.FindAsync(id, cancellationToken) is not { IsActive: true } stock)
+        Result<ResolvedListing> listing = await ingestion.ResolveAsync(id, cancellationToken);
+        if (!listing.IsSuccess)
         {
-            LogStockSkipped(payload.StockId);
+            await StopAsync(id, listing.Error!, now, cancellationToken);
             return;
         }
 
-        string? refusal = null;
-        Result<IMarketDataProvider> provider = router.For(stock.Market);
-        ProviderListingKey? key = provider.IsSuccess ? await aliases.FindAsync(id, provider.Value.Name, cancellationToken) : null;
-        Result<IExchangeCalendar> calendar = calendars.TryGet(stock.Market);
-        if (!provider.IsSuccess)
+        DateOnly from = DateOnly.FromDateTime(now.UtcDateTime).AddYears(-options.Value.BackfillYears);
+        Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, cancellationToken);
+        if (!merged.IsSuccess)
         {
-            refusal = MarketDisabledCode;
-        }
-        else if (key is null)
-        {
-            refusal = NoAliasCode;
-        }
-        else if (!calendar.IsSuccess)
-        {
-            refusal = NoCalendarCode;
-        }
-
-        if (refusal is not null)
-        {
-            await FailPermanentlyAsync(id, refusal, now, cancellationToken);
+            await StopAsync(id, merged.Error!, now, cancellationToken);
             return;
         }
 
-        IngestionOptions settings = options.Value;
-        DateOnly from = DateOnly.FromDateTime(now.UtcDateTime).AddYears(-settings.BackfillYears);
-        Result<DailySeries> adjusted = await provider.Value.GetDailyAsync(new DailySeriesRequest(key!, from, null, Adjusted: true), cancellationToken);
-        Result<DailySeries> raw = adjusted.IsSuccess
-            ? await provider.Value.GetDailyAsync(new DailySeriesRequest(key!, from, null, Adjusted: false), cancellationToken)
-            : adjusted;
-        if (!adjusted.IsSuccess || !raw.IsSuccess)
-        {
-            await HandleProviderFailureAsync(id, (adjusted.IsSuccess ? raw : adjusted).Error!, now, cancellationToken);
-            return;
-        }
-
-        MergedPrices merged = PriceSeriesMerger.Merge(raw.Value, adjusted.Value, calendar.Value, now, settings.SettleDelay);
-        int written = await prices.UpsertAsync(id, provider.Value.Name, merged.Points, now, cancellationToken);
+        int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
         await state.RecordSuccessAsync(id, now, cancellationToken);
 
         _backfills.Add(1, new KeyValuePair<string, object?>("outcome", "completed"));
         _rows.Add(written, new KeyValuePair<string, object?>("operation", "backfill"));
-        LogBackfillCompleted(stock.Market.Value, stock.Ticker.Value, written, merged.Unmatched);
+        LogBackfillCompleted(listing.Value.Stock.Market.Value, listing.Value.Stock.Ticker.Value, written, merged.Value.Unmatched);
     }
 
-    private async Task HandleProviderFailureAsync(StockId id, Error error, DateTimeOffset now, CancellationToken cancellationToken)
+    // A listing that is gone is skipped; a failure that retrying can fix throws so the queue retries; the rest is recorded and the job ends.
+    private async Task StopAsync(StockId id, Error error, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        ProviderFailureKind kind = ProviderErrors.Classify(error);
-        if (kind is ProviderFailureKind.RateLimited or ProviderFailureKind.Transient)
+        if (error.Code == ListingIngestion.StockMissingCode)
+        {
+            LogStockSkipped(id.Value);
+            return;
+        }
+
+        if (ListingIngestion.IsRetryable(error))
         {
             _backfills.Add(1, new KeyValuePair<string, object?>("outcome", "retry"));
             throw new IngestionRetryException(error.Code);
         }
 
-        await FailPermanentlyAsync(id, error.Code, now, cancellationToken);
-    }
-
-    private async Task FailPermanentlyAsync(StockId id, string code, DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        await state.RecordFailureAsync(id, code, permanent: true, now, cancellationToken);
+        await ingestion.RecordPermanentFailureAsync(id, error.Code, now, cancellationToken);
         _backfills.Add(1, new KeyValuePair<string, object?>("outcome", "failed"));
-        LogBackfillFailed(id.Value, code);
+        LogBackfillFailed(id.Value, error.Code);
     }
 
     [LoggerMessage(EventId = 2101, Level = LogLevel.Information, Message = "Backfill of {Market} {Ticker} wrote {Rows} daily rows ({Unmatched} days were in only one of the two series)")]

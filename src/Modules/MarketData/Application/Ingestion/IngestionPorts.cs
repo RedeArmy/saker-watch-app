@@ -16,6 +16,9 @@ public interface IStockCatalog
 {
     /// <summary>The listing with this id, or <see langword="null"/> when it is not in the catalog.</summary>
     Task<CatalogStock?> FindAsync(StockId id, CancellationToken cancellationToken);
+
+    /// <summary>The active listings of a market that ingestion has not given up on (those whose ingestion did not fail for good).</summary>
+    Task<IReadOnlyList<StockId>> ListIngestableAsync(Mic market, CancellationToken cancellationToken);
 }
 
 /// <summary>How a provider names a catalog listing (<c>symbol_aliases</c>).</summary>

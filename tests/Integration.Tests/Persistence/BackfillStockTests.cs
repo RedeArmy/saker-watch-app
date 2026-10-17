@@ -45,6 +45,13 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         return new World(db.Admin, db.Worker, id, provider, clock);
     }
 
+    private static BackfillStockHandler HandlerFor(DbSession session, IMarketDataProviderRouter router, TimeProvider time)
+    {
+        var options = Options.Create(new IngestionOptions());
+        var ingestion = new ListingIngestion(new StockCatalog(session), new SymbolAliases(session), router, ExchangeCalendars.Default(), new IngestionState(session), options);
+        return new BackfillStockHandler(ingestion, new PriceStore(session), new IngestionState(session), options, time, NullLogger<BackfillStockHandler>.Instance);
+    }
+
     private static async Task RunAsync(World world, Dictionary<string, string>? markets = null)
     {
         await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = world.Worker }), new AnonymousCurrentUser());
@@ -52,16 +59,7 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         var router = new MarketDataProviderRouter(
             [world.Provider],
             Options.Create(new MarketDataProvidersOptions { Markets = markets ?? new() { ["XNAS"] = "fake" } }));
-        var handler = new BackfillStockHandler(
-            new StockCatalog(session),
-            new SymbolAliases(session),
-            router,
-            ExchangeCalendars.Default(),
-            new PriceStore(session),
-            new IngestionState(session),
-            Options.Create(new IngestionOptions()),
-            world.Time,
-            NullLogger<BackfillStockHandler>.Instance);
+        BackfillStockHandler handler = HandlerFor(session, router, world.Time);
         await handler.HandleAsync(new BackfillStockJob(world.Id.Value), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
         await session.CommitAsync(CancellationToken.None);
     }
@@ -150,16 +148,10 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
 
         await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = world.Worker }), new AnonymousCurrentUser());
         await session.BeginAsync(CancellationToken.None);
-        var handler = new BackfillStockHandler(
-            new StockCatalog(session),
-            new SymbolAliases(session),
+        BackfillStockHandler handler = HandlerFor(
+            session,
             new MarketDataProviderRouter([skipFirst], Options.Create(new MarketDataProvidersOptions { Markets = new() { ["XNAS"] = "fake" } })),
-            ExchangeCalendars.Default(),
-            new PriceStore(session),
-            new IngestionState(session),
-            Options.Create(new IngestionOptions()),
-            world.Time,
-            NullLogger<BackfillStockHandler>.Instance);
+            world.Time);
 
         Func<Task> act = () => handler.HandleAsync(new BackfillStockJob(world.Id.Value), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
 

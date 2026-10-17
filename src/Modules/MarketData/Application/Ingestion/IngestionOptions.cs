@@ -24,4 +24,21 @@ public sealed class IngestionOptions
     /// <summary>Attempts the queue gives a backfill before it is parked as dead (rate limits and outages are retried with backoff).</summary>
     [Range(1, 20)]
     public int BackfillMaxAttempts { get; set; } = 8;
+
+    /// <summary>Whether the worker schedules the daily refresh of each enabled market.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>How often the scheduler looks for a market whose latest session has settled and has no refresh yet.</summary>
+    public TimeSpan CheckInterval { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Days before the newest stored one that a daily refresh asks for again. They catch a provisional day that settled and a late correction, and
+    /// they are what the refresh compares against to notice that a dividend or a split rewrote the adjusted history.
+    /// </summary>
+    [Range(2, 60)]
+    public int RefreshOverlapDays { get; set; } = 10;
+
+    /// <summary>Relative difference in a stored adjusted close, beyond which the provider is taken to have rewritten the history.</summary>
+    [Range(0.0000001, 0.1)]
+    public double RewriteTolerance { get; set; } = 0.000001;
 }

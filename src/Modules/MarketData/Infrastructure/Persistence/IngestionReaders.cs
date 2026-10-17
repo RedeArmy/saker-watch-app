@@ -23,6 +23,30 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
             ? new CatalogStock(id, Mic.Parse(reader.GetString(0)), Ticker.Parse(reader.GetString(1)), reader.GetBoolean(2))
             : null;
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<StockId>> ListIngestableAsync(Mic market, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT s.id FROM marketdata.stocks s
+            LEFT JOIN marketdata.ingestion_state i ON i.stock_id = s.id
+            WHERE s.market_mic = @market AND s.is_active AND coalesce(i.status, 'pending') <> 'failed'
+            ORDER BY s.ticker
+            """,
+            session.Connection,
+            session.Transaction);
+        command.Parameters.AddWithValue("market", market.Value);
+
+        var ids = new List<StockId>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            ids.Add(StockId.Create(reader.GetGuid(0)));
+        }
+
+        return ids;
+    }
 }
 
 /// <summary><see cref="ISymbolAliases"/> over <c>marketdata.symbol_aliases</c>.</summary>

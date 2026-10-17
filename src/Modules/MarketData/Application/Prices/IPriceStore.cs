@@ -23,6 +23,12 @@ public interface IPriceStore
     /// <summary>The newest day stored for <paramref name="stock"/>, or <see langword="null"/> when none is.</summary>
     Task<LatestPrice?> LatestAsync(StockId stock, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The adjusted closes stored as final from <paramref name="from"/> on. Only final days are returned: a provisional day is expected to change
+    /// when it settles, which says nothing about the history being rewritten.
+    /// </summary>
+    Task<IReadOnlyDictionary<DateOnly, decimal>> FinalAdjustedClosesAsync(StockId stock, DateOnly from, CancellationToken cancellationToken);
+
     /// <summary>The adjusted close stored for one day, or <see langword="null"/> when that day is not stored.</summary>
     Task<decimal?> AdjustedCloseAsync(StockId stock, DateOnly date, CancellationToken cancellationToken);
 }
