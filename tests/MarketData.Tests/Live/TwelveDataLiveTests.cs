@@ -359,9 +359,8 @@ public sealed class TwelveDataLiveTests
         }
 
         Line($"14 quick time_series calls in {watch.Elapsed.TotalSeconds:F1}s: {string.Join(", ", kinds)}");
-        kinds.Should().Contain("RateLimited", "more than eight calls in a minute must be refused by the provider");
-        kinds.Where(k => k != "ok" && k != "RateLimited").Should().BeEmpty("the only failure expected is the rate limit");
 
+        // Look at the raw answer first, so the report has it even when an assertion below fails.
         (int status, HttpResponseHeaders headers, string body) = await Raw(factory, key, "time_series?symbol=MSFT&mic_code=XNGS&interval=1day&outputsize=1");
         Line($"raw call right after: HTTP {status}, Retry-After {headers.RetryAfter?.ToString() ?? "absent"}, headers {string.Join("; ", headers.Select(h => h.Key + "=" + string.Join(",", h.Value)))}, body {Truncate(body)}");
         await File.WriteAllTextAsync(Path.Combine(_reportDirectory, "raw-after-rate-limit.json"), body);
@@ -374,6 +373,10 @@ public sealed class TwelveDataLiveTests
         }
 
         Line($"for comparison, 14 quick symbol_search calls right after: {string.Join(", ", burst)}");
+
+        kinds.Should().Contain("RateLimited", "more than eight credits in a minute must be refused by the provider");
+        kinds.Where(k => k != "ok" && k != "RateLimited").Should().BeEmpty("a run of 429s must not open the circuit and turn into 'unavailable'");
+        kinds.SkipWhile(k => k != "RateLimited").Should().OnlyContain(k => k == "RateLimited", "once the minute is spent the answer stays a rate limit");
     }
 
     private async Task Section(string title, Func<Task> body)

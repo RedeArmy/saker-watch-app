@@ -33,6 +33,10 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     private const string _searchOperation = "search";
     private const string _dailyOperation = "daily";
 
+    // Measured on 2026-10-17 with /api_usage: a time_series call costs one credit even when it fails (unknown symbol, plan restriction),
+    // and symbol_search costs none, so a search never touches the budget.
+    private const int _timeSeriesCredits = 1;
+
     private static readonly Counter<long> _calls = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_provider_calls_total",
         description: "Calls to external market data providers by provider, operation and outcome.");
@@ -77,7 +81,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         using Activity? span = SakerTelemetry.Source.StartActivity("MarketData.Provider.TwelveData.Search");
 
         Result<ProviderResponse> response = await GetAsync(
-            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, cancellationToken);
+            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, credits: 0, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_searchOperation, response.Error!);
@@ -126,7 +130,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             // holiday). Asking for the day after is correct either way, and the range is enforced again below on what comes back.
             + (request.To is { } to ? $"&end_date={to.AddDays(1):yyyy-MM-dd}" : string.Empty);
 
-        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, cancellationToken);
+        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_dailyOperation, response.Error!);
@@ -208,14 +212,17 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     private static KeyValuePair<string, object?>[] Tags(string operation, string outcome) =>
         [new("provider", TwelveDataOptions.ProviderName), new("operation", operation), new("outcome", outcome)];
 
-    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, CancellationToken cancellationToken)
+    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, int credits, CancellationToken cancellationToken)
     {
-        // One credit per symbol requested (verified: time_series and symbol_search each cost 1). A denied call is never sent.
+        // A denied call is never sent. A call that costs no credit needs no budget.
         TwelveDataOptions settings = _options.Value;
-        BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), 1, cancellationToken);
-        if (!decision.Granted)
+        if (credits > 0)
         {
-            return ProviderErrors.RateLimited(Name, decision.RetryAfter);
+            BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
+            if (!decision.Granted)
+            {
+                return ProviderErrors.RateLimited(Name, decision.RetryAfter);
+            }
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);

@@ -46,6 +46,13 @@ public sealed class HttpClientResilienceOptions
     [Range(typeof(TimeSpan), "00:00:00.001", "01:00:00")]
     public TimeSpan CircuitBreakDuration { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Whether HTTP 429 counts as a transient failure: retried with backoff and counted by the circuit. Turn it off for a provider whose quota
+    /// the caller tracks itself: retrying a refused call only wastes the wait, and a run of 429s would open the circuit and make every
+    /// call fail as "unavailable" until it closes, hiding that the real cause is the quota.
+    /// </summary>
+    public bool RateLimitIsTransient { get; set; } = true;
+
     /// <summary>Maximum concurrent calls (bulkhead).</summary>
     [Range(1, 1000)]
     public int MaxConcurrency { get; set; } = 20;

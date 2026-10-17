@@ -302,16 +302,39 @@ public sealed class TwelveDataProviderTests
     }
 
     [Fact]
-    public async Task EveryCall_SpendsOneCreditOfTheConfiguredBudget_BeforeItIsSent()
+    public async Task ATimeSeriesCall_SpendsOneCreditOfTheConfiguredBudget_BeforeItIsSent()
     {
         var budget = new ScriptedBudget();
         (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
 
         await provider.GetDailyAsync(Daily(), CancellationToken.None);
-        await provider.SearchAsync("SPY", CancellationToken.None);
 
-        budget.Spent.Should().HaveCount(2).And.OnlyContain(s => s.Provider == "twelvedata" && s.Credits == 1 && s.Limits == new BudgetLimits(8, 800));
-        handler.Requests.Should().HaveCount(2);
+        budget.Spent.Should().ContainSingle().Which.Should().Be(("twelvedata", new BudgetLimits(8, 800), 1));
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task AFailedTimeSeriesCall_StillSpendsItsCredit_BecauseTheProviderChargesIt()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_invalid_symbol.json"), HttpStatusCode.NotFound), budget);
+
+        await provider.GetDailyAsync(Daily(symbol: "NOPE"), CancellationToken.None);
+
+        budget.Spent.Should().ContainSingle().Which.Credits.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ASymbolSearch_CostsNoCredit_SoItNeverTouchesTheBudget()
+    {
+        var budget = new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromMinutes(5)));
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("symbol_search_shop.json")), budget);
+
+        Result<IReadOnlyList<ProviderListing>> result = await provider.SearchAsync("SHOP", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue("a search is free, so an exhausted budget does not stop it");
+        budget.Spent.Should().BeEmpty();
+        handler.Requests.Should().ContainSingle();
     }
 
     [Fact]

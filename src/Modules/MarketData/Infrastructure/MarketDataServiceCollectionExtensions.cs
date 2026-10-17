@@ -48,6 +48,8 @@ public static class MarketDataServiceCollectionExtensions
                 http.AllowedHosts = [baseAddress.IsDefaultPort ? baseAddress.Host : $"{baseAddress.Host}:{baseAddress.Port}"];
                 http.MaxResponseBytes = 4 * 1024 * 1024;
                 http.MaxRetries = 2;
+                // The shared Redis budget tracks the quota; a 429 is a quota answer and not a sign that the service is unwell.
+                http.RateLimitIsTransient = false;
             });
 
         services.TryAddSingleton(TimeProvider.System);
