@@ -52,6 +52,27 @@ Facts checked on 2026-10-16 from the providers' own pages (they change; re-check
 - **Budget signals:** every response carries `api-credits-left`, `api-credits-used` (this minute) and `api-credits-request`; `/api_usage` returns `current_usage`, `plan_limit` (8), `daily_usage` and `plan_daily_limit` (800). The JSON error body has `code`, `message`, `status`.
 - **Still unverified:** non-US data on a paid plan, the dividends and splits endpoints, and the licence text for display to other users.
 
+## Provider strategy by market (decided 2026-10-17)
+Phase 2 ships with the US only, on Twelve Data's free plan. Other markets are added after Phase 2, one at a time, each with its own calendar, its currency in the FX table, its provider mapping and fixtures recorded from the real service. A market is routed to **one** provider; a second provider is never a silent fallback for the same listing, because adjusted closes from two vendors differ (ADR-0029). Candidates checked from the vendors' public pages on 2026-10-17 (re-check before paying or relying on them):
+
+| Market | Candidate | What is known | What must be verified with a real key first |
+|---|---|---|---|
+| US (`XNAS`, `XNYS`, `ARCX`...) | **Twelve Data, free (in use)** | Verified end to end (this ADR) | n/a |
+| Japan (`XJPX`) | **J-Quants Light** (JPX, about 1 650 JPY a month: 5 years of history, 60 requests a minute) or **iTick free** | J-Quants is the exchange itself; its free plan is delayed 12 weeks and keeps 2 years, so it is good for building the adapter and not for current prices. iTick lists Japan | J-Quants: terms of use, authentication, adjusted fields. iTick: that Japan is in the free plan, history depth, adjustment |
+| Hong Kong, China, Singapore | **iTick free** | Free plan: 5 REST calls a minute, end of day, historical data and corporate actions, personal use only; the owner states the free plan does not expire (the pricing page labels it "Time Limited Free"; confirm in the terms) | Markets in the free plan, years of daily history, adjusted or raw closes, daily cap, shape of corporate actions and errors |
+| Canada, Europe | **EODHD** (19.99 USD a month) or **Twelve Data Grow** (29 USD) | Both advertise global end-of-day data; neither page names TSX, Xetra or Euronext | Exchange lists with a free key, then one paid month only when the market is switched on |
+
+Rejected for now: **Massive (formerly Polygon.io)**, US only, so it adds nothing new there; it stays a possible US backup. **Infoway**, a seven-day trial instead of a plan, no published quotas, prices, history depth, adjustment or licence terms, and a real-time focus the product does not need.
+
+How a market is added (one milestone each, after Phase 2):
+1. A short live check of the candidate with the owner's key, in the style of `scripts/run-live-twelvedata.sh`: history depth, adjusted or raw closes, corporate actions, error shapes, credit costs, and the provider's dates against our calendar of that exchange. Its answers are recorded here.
+2. The exchange calendar (JPX, HKEX, SGX, the Chinese exchanges) checked against an independent source, as was done for the NYSE.
+3. The currency pairs to GTQ in the FX table (JPY, HKD, CNY, SGD through the USD pivot, ADR-0028).
+4. The provider adapter behind `IMarketDataProvider`, its recorded fixtures, its budget and its routing entry (`MarketData:Providers:Markets:<MIC>`).
+5. The time zone of each listing comes from our calendar of its market, never from the provider (Twelve Data reported Mexico City as `America/Swift_Current` and Sao Paulo as `America/Paramaribo`).
+
+All the free plans considered are for personal, non-commercial use. Opening the app to other users needs a licence review of every provider at once (A-007) and a new ADR.
+
 ## Consequences
 - Phase 2 ships with US end to end; Canada, Europe and Japan are modelled (MIC, currency, time zone, calendar) but off by flag until a provider is chosen and paid.
 - Real-provider behavior stays unverified until the owner supplies a key; fixtures are marked as recorded from documentation until then.
