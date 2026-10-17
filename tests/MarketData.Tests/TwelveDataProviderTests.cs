@@ -41,12 +41,26 @@ public sealed class TwelveDataProviderTests
     private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-    private static (TwelveDataProvider Provider, StubHandler Handler) Build(Func<HttpRequestMessage, HttpResponseMessage> respond)
+    private sealed class ScriptedBudget(params BudgetDecision[] decisions) : IProviderCallBudget
+    {
+        private readonly Queue<BudgetDecision> _decisions = new(decisions);
+
+        public List<(string Provider, BudgetLimits Limits, int Credits)> Spent { get; } = [];
+
+        public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken)
+        {
+            Spent.Add((provider, limits, credits));
+            return Task.FromResult(_decisions.Count > 0 ? _decisions.Dequeue() : BudgetDecision.Allowed);
+        }
+    }
+
+    private static (TwelveDataProvider Provider, StubHandler Handler) Build(Func<HttpRequestMessage, HttpResponseMessage> respond, IProviderCallBudget? budget = null)
     {
         var handler = new StubHandler(respond);
         var provider = new TwelveDataProvider(
             new SingleClientFactory(handler),
             Options.Create(new TwelveDataOptions { ApiKey = _key }),
+            budget ?? new ScriptedBudget(),
             NullLogger<TwelveDataProvider>.Instance);
         return (provider, handler);
     }
@@ -264,6 +278,33 @@ public sealed class TwelveDataProviderTests
         Func<Task> act = () => provider.GetDailyAsync(Daily(), cancelled.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task EveryCall_SpendsOneCreditOfTheConfiguredBudget_BeforeItIsSent()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily(), CancellationToken.None);
+        await provider.SearchAsync("SPY", CancellationToken.None);
+
+        budget.Spent.Should().HaveCount(2).And.OnlyContain(s => s.Provider == "twelvedata" && s.Credits == 1 && s.Limits == new BudgetLimits(8, 800));
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ADeniedCall_IsNeverSent_AndSaysHowLongToWait()
+    {
+        (TwelveDataProvider provider, StubHandler handler) = Build(
+            _ => Json(Fixture("time_series_spy_etf.json")),
+            new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromSeconds(41))));
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily(), CancellationToken.None);
+
+        handler.Requests.Should().BeEmpty("a call without budget would only earn a 429");
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
+        ProviderErrors.RetryAfter(result.Error!).Should().Be(TimeSpan.FromSeconds(41));
     }
 
     [Fact]

@@ -23,6 +23,14 @@ public sealed class TwelveDataOptions
 
     /// <summary>The API key, sent in the <c>Authorization</c> header and never in a URL.</summary>
     public string? ApiKey { get; set; }
+
+    /// <summary>Credits per minute the plan allows. The free Basic plan allows 8; set a lower number to keep a margin.</summary>
+    [Range(1, 100000)]
+    public int CreditsPerMinute { get; set; } = 8;
+
+    /// <summary>Credits per UTC day the plan allows. The free Basic plan allows 800; paid plans have no daily cap, so set a large number.</summary>
+    [Range(1, 100000000)]
+    public int CreditsPerDay { get; set; } = 800;
 }
 
 /// <summary>Requires the API key when at least one market is routed to Twelve Data, so a host without a key still starts when it does not use it.</summary>

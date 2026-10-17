@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
 using SakerWatch.MarketData.Application.Providers;
+using SakerWatch.MarketData.Infrastructure.Providers;
 using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 
 namespace SakerWatch.MarketData.Infrastructure;
@@ -49,6 +50,8 @@ public static class MarketDataServiceCollectionExtensions
                 http.MaxRetries = 2;
             });
 
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IProviderCallBudget, RedisProviderCallBudget>();
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;

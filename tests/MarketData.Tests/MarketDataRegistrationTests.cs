@@ -11,11 +11,19 @@ namespace SakerWatch.MarketData.Tests;
 
 public sealed class MarketDataRegistrationTests
 {
+    // The hosts register Redis (AddSakerRedis) and with it the real budget; here a budget that always allows stands in for it.
+    private sealed class AllowEverything : IProviderCallBudget
+    {
+        public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken) =>
+            Task.FromResult(BudgetDecision.Allowed);
+    }
+
     private static ServiceProvider Build(Dictionary<string, string?> settings)
     {
         IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IProviderCallBudget>(new AllowEverything());
         services.AddMarketData(configuration);
         return services.BuildServiceProvider();
     }

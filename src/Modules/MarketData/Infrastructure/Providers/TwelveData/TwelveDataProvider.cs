@@ -37,16 +37,19 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
     private readonly IHttpClientFactory _clients;
     private readonly IOptions<TwelveDataOptions> _options;
+    private readonly IProviderCallBudget _budget;
     private readonly ILogger<TwelveDataProvider> _logger;
 
     /// <summary>Creates the provider.</summary>
     /// <param name="clients">Source of the named, allow-listed client.</param>
     /// <param name="options">Connection settings.</param>
+    /// <param name="budget">The shared call budget; a call is made only after its credit is reserved.</param>
     /// <param name="logger">Logger.</param>
-    public TwelveDataProvider(IHttpClientFactory clients, IOptions<TwelveDataOptions> options, ILogger<TwelveDataProvider> logger)
+    public TwelveDataProvider(IHttpClientFactory clients, IOptions<TwelveDataOptions> options, IProviderCallBudget budget, ILogger<TwelveDataProvider> logger)
     {
         _clients = clients;
         _options = options;
+        _budget = budget;
         _logger = logger;
     }
 
@@ -189,6 +192,14 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
     private async Task<Result<JsonDocument>> GetAsync(string relativeUrl, string symbol, CancellationToken cancellationToken)
     {
+        // One credit per symbol requested (verified: time_series and symbol_search each cost 1). A denied call is never sent.
+        TwelveDataOptions settings = _options.Value;
+        BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), 1, cancellationToken);
+        if (!decision.Granted)
+        {
+            return ProviderErrors.RateLimited(Name, decision.RetryAfter);
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("apikey", _options.Value.ApiKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

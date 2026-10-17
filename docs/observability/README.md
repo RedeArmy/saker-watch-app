@@ -73,6 +73,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
 | 2001 | Warning | `Twelve Data returned {Rejected} inconsistent daily rows for {Symbol}; they were dropped` | `TwelveDataProvider` |
 | 2002 | Warning | `Twelve Data call failed in transit ({ExceptionType})` | `TwelveDataProvider` |
+| 2003 | Warning | `The call budget of {Provider} could not be checked ({ExceptionType}); the call goes ahead and the provider enforces its own limit` | `RedisProviderCallBudget` |
 
 ### Logging configuration and redaction
 Every host calls `AddSakerObservability(serviceName)`: Serilog writes **JSON lines to the console** (rendered compact format, picked up by the log collector) through a bounded asynchronous queue of 10 000 events, so a stalled stdout never blocks a request thread; when the queue is full the newest events are dropped rather than waiting with the properties `Service`, `TraceId`/`SpanId` (current activity), `CorrelationId` (request scope) and message-template parameters. Framework namespaces (`Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore`, `System.Net.Http.HttpClient`) log at Warning and above. HTTP requests produce one Serilog request-log line (health probes only at Verbose; status >= 500 or an exception at Error).
