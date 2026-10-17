@@ -334,7 +334,7 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
             """
             SELECT string_agg(n.nspname || '.' || p.proname, ', ')
             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname IN ('platform', 'identity') AND has_function_privilege('public', p.oid, 'EXECUTE')
+            WHERE n.nspname IN ('platform', 'identity', 'marketdata') AND has_function_privilege('public', p.oid, 'EXECUTE')
             """);
 
         exposed.Should().BeNull("every function must be granted explicitly to the roles that need it");
@@ -349,7 +349,7 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
             """
             SELECT string_agg(n.nspname || '.' || p.proname, ', ')
             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname IN ('platform', 'identity') AND p.prosecdef
+            WHERE n.nspname IN ('platform', 'identity', 'marketdata') AND p.prosecdef
               AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%, pg_temp')
             """);
 
