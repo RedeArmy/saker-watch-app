@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
+using SakerWatch.MarketData.Domain.Calendars;
 
 namespace SakerWatch.MarketData.Application;
 
@@ -22,6 +24,8 @@ public static class MarketDataApplicationExtensions
         services.AddOptions<MarketDataProvidersOptions>().ValidateDataAnnotations().ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<MarketDataProvidersOptions>, MarketDataProvidersOptionsValidator>());
         services.TryAddSingleton<IMarketDataProviderRouter, MarketDataProviderRouter>();
+        services.AddOptions<IngestionOptions>().ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddSingleton(ExchangeCalendars.Default());
         return services;
     }
 }

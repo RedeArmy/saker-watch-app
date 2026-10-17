@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
+using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Infrastructure.Persistence;
@@ -30,6 +31,7 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
+        services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
         services.AddMarketDataApplication();
 
         services.AddOptions<TwelveDataOptions>()
@@ -66,6 +68,9 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.TryAddScoped<IPriceStore, PriceStore>();
+        services.TryAddScoped<IStockCatalog, StockCatalog>();
+        services.TryAddScoped<ISymbolAliases, SymbolAliases>();
+        services.TryAddScoped<IIngestionState, IngestionState>();
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;

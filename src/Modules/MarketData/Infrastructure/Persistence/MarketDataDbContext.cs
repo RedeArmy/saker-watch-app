@@ -19,6 +19,9 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
     /// <summary>Splits, dividends, symbol changes and delistings.</summary>
     public DbSet<CorporateActionRow> CorporateActions => Set<CorporateActionRow>();
 
+    /// <summary>Whether ingestion works for each listing.</summary>
+    public DbSet<IngestionStateRow> IngestionStates => Set<IngestionStateRow>();
+
     /// <summary>Daily prices (a hypertable).</summary>
     public DbSet<PriceDailyRow> PricesDaily => Set<PriceDailyRow>();
 
@@ -96,6 +99,19 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             e.Property(x => x.AdjustedClose).HasPrecision(20, 8);
             e.Property(x => x.Source).HasMaxLength(32);
             e.HasOne<StockRow>().WithMany().HasForeignKey(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<IngestionStateRow>(e =>
+        {
+            e.ToTable("ingestion_state", t =>
+            {
+                t.HasCheckConstraint("ck_ingestion_state_status", "status IN ('pending', 'ok', 'failed')");
+                t.HasCheckConstraint("ck_ingestion_state_failure", "(status = 'failed') = (failure_code IS NOT NULL)");
+            });
+            e.HasKey(x => x.StockId);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.FailureCode).HasMaxLength(64);
+            e.HasOne<StockRow>().WithOne().HasForeignKey<IngestionStateRow>(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.UseSnakeCaseNames();

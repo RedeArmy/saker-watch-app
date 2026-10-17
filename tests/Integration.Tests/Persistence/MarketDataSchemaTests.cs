@@ -220,4 +220,24 @@ public sealed class MarketDataSchemaTests(TimescalePostgresFixture postgres) : I
         (await admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1);
         (await admin.ScalarAsync<bool>("SELECT to_regclass('marketdata.price_daily') IS NOT NULL")).Should().BeTrue();
     }
+
+    [Fact]
+    public async Task IngestionState_OneRowPerListing_AFailureNeedsItsCode_AndTheGrantsAreTheCatalogOnes()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Worker.ExecuteAsync(_insertStock, Stock(id));
+
+        await db.Worker.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status) VALUES (@id, 'pending')", ("id", id));
+
+        await ExpectAsync(() => db.Worker.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status) VALUES (@id, 'pending')", ("id", id)), "23505");
+        await ExpectAsync(() => db.Worker.ExecuteAsync("UPDATE marketdata.ingestion_state SET status = 'failed' WHERE stock_id = @id", ("id", id)), "23514");
+        await ExpectAsync(() => db.Worker.ExecuteAsync("UPDATE marketdata.ingestion_state SET status = 'ok', failure_code = 'x' WHERE stock_id = @id", ("id", id)), "23514");
+        await ExpectAsync(() => db.Worker.ExecuteAsync("UPDATE marketdata.ingestion_state SET status = 'stuck' WHERE stock_id = @id", ("id", id)), "23514");
+        (await db.Worker.ExecuteAsync("UPDATE marketdata.ingestion_state SET status = 'failed', failure_code = 'marketdata.provider.plan_restricted' WHERE stock_id = @id", ("id", id))).Should().Be(1);
+        (await db.Api.AsUserScalarAsync<long>(null, "SELECT count(*) FROM marketdata.ingestion_state")).Should().Be(1);
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(null, "UPDATE marketdata.ingestion_state SET status = 'ok', failure_code = NULL"), "42501");
+        await ExpectAsync(() => db.Worker.ExecuteAsync("DELETE FROM marketdata.ingestion_state"), "42501");
+        await ExpectAsync(() => db.Worker.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status) VALUES (@id, 'pending')", ("id", Guid.CreateVersion7())), "23503");
+    }
 }

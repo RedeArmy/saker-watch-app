@@ -89,6 +89,42 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.IngestionStateRow", b =>
+                {
+                    b.Property<Guid>("StockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_id");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_attempt_at");
+
+                    b.Property<DateTimeOffset?>("LastSuccessAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_success_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("StockId")
+                        .HasName("pk_ingestion_state");
+
+                    b.ToTable("ingestion_state", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_ingestion_state_failure", "(status = 'failed') = (failure_code IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_ingestion_state_status", "status IN ('pending', 'ok', 'failed')");
+                        });
+                });
+
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.PriceDailyRow", b =>
                 {
                     b.Property<Guid>("StockId")
@@ -270,6 +306,15 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                     b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
                         .WithMany()
                         .HasForeignKey("StockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.IngestionStateRow", b =>
+                {
+                    b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
+                        .WithOne()
+                        .HasForeignKey("SakerWatch.MarketData.Infrastructure.Persistence.IngestionStateRow", "StockId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
