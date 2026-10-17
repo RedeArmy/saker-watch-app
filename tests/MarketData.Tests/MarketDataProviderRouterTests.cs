@@ -64,6 +64,7 @@ public sealed class MarketDataProviderRouterTests
         validator.Validate(null, new MarketDataProvidersOptions()).Succeeded.Should().BeTrue("no market enabled is a valid, if idle, table");
         validator.Validate(null, new MarketDataProvidersOptions { Markets = new() { ["NASDAQ"] = "twelvedata" } }).Failed.Should().BeTrue();
         validator.Validate(null, new MarketDataProvidersOptions { Markets = new() { ["XNAS"] = "  " } }).Failed.Should().BeTrue();
+        validator.Validate(null, new MarketDataProvidersOptions { Markets = new() { ["XNAS"] = "twelvedata", ["xnas"] = "eodhd" } }).Failed.Should().BeTrue("the same market twice, differing only in case, would crash the router");
     }
 
     [Fact]

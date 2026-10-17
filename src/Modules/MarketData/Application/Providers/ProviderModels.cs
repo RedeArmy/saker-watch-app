@@ -38,4 +38,8 @@ public sealed record DailySeriesRequest(ProviderListingKey Key, DateOnly? From, 
 /// <param name="Bars">The validated bars.</param>
 /// <param name="Adjusted">True when the prices are adjusted for splits and dividends.</param>
 /// <param name="Rejected">How many provider rows were refused because they were inconsistent.</param>
-public sealed record DailySeries(ProviderListingKey Key, IReadOnlyList<DailyBar> Bars, bool Adjusted, int Rejected);
+/// <param name="Truncated">
+/// True when the provider answered with as many rows as one request can hold, so more may exist beyond them: the oldest rows come first, which
+/// means a request without an end date can be missing the newest days. The caller asks again for the rest.
+/// </param>
+public sealed record DailySeries(ProviderListingKey Key, IReadOnlyList<DailyBar> Bars, bool Adjusted, int Rejected, bool Truncated = false);

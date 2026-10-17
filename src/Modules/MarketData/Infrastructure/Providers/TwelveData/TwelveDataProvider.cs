@@ -143,6 +143,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             return Fail<DailySeries>(_dailyOperation, ProviderErrors.InvalidResponse(Name));
         }
 
+        bool truncated = values.GetArrayLength() >= _maxRows;
         var bars = new SortedDictionary<DateOnly, DailyBar>();
         int rejected = 0;
         foreach (JsonElement row in values.EnumerateArray())
@@ -171,7 +172,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             new ProviderPayload(Name, _dailyOperation, request.Key, $"{request.From:yyyy-MM-dd}..{request.To:yyyy-MM-dd}", request.Adjusted, response.Value.Body, _clock.GetUtcNow()),
             cancellationToken);
         _calls.Add(1, Tags(_dailyOperation, "success"));
-        return new DailySeries(request.Key, [.. bars.Values], request.Adjusted, rejected);
+        return new DailySeries(request.Key, [.. bars.Values], request.Adjusted, rejected, truncated);
     }
 
     private static DailyBar? TryReadBar(JsonElement row)
@@ -260,7 +261,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             if (isError)
             {
                 document?.Dispose();
-                return Classify((int)response.StatusCode, code, message, symbol, response.Headers.RetryAfter?.Delta);
+                return message is not null && message.Contains("No data is available", StringComparison.OrdinalIgnoreCase)
+                    ? EmptyRange(body)
+                    : Classify((int)response.StatusCode, code, message, symbol, response.Headers.RetryAfter?.Delta);
             }
 
             return document is null ? ProviderErrors.InvalidResponse(Name) : new ProviderResponse(document, body);
@@ -319,6 +322,10 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             LogPayloadNotKept(payload.Operation, ex.GetType().Name);
         }
     }
+
+    // A range with no session in it (a holiday, a weekend, a day not yet published) is not a failure: it is a series with no bars. The wording
+    // is the provider's real answer, recorded on 2026-10-17 for a holiday, a weekend and a future date: HTTP 400 and this message.
+    private static ProviderResponse EmptyRange(string body) => new(JsonDocument.Parse("{\"values\":[],\"status\":\"ok\"}"), body);
 
     private TimeSpan UntilNextMinute() => TimeSpan.FromSeconds(61 - _clock.GetUtcNow().Second);
 

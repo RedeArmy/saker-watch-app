@@ -61,10 +61,16 @@ public sealed class MongoProviderPayloadStore(IMongoDatabase database) : IProvid
             { "body", payload.Body },
         };
 
-        await database.GetCollection<BsonDocument>(CollectionName).ReplaceOneAsync(
-            new BsonDocument("_id", document["_id"]),
-            document,
-            new ReplaceOptions { IsUpsert = true },
-            cancellationToken);
+        IMongoCollection<BsonDocument> collection = database.GetCollection<BsonDocument>(CollectionName);
+        var filter = new BsonDocument("_id", document["_id"]);
+        try
+        {
+            await collection.ReplaceOneAsync(filter, document, new ReplaceOptions { IsUpsert = true }, cancellationToken);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // Two upserts of the same id raced and the other one created the document first; replacing it now is a plain update.
+            await collection.ReplaceOneAsync(filter, document, new ReplaceOptions { IsUpsert = true }, cancellationToken);
+        }
     }
 }

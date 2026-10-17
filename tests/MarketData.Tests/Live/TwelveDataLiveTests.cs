@@ -123,6 +123,7 @@ public sealed class TwelveDataLiveTests
         await Section("9. What each operation costs", () => CreditCostsAsync(factory, key));
         await Section("10. The real rate limit", () => RateLimitAsync(factory, key));
         await Section("11. Identical requests", () => IdenticalRequestsAsync(factory, key));
+        await Section("12. A range with no sessions", () => NoSessionsAsync(twelve, factory, key));
 
         await Task.Delay(TimeSpan.FromSeconds(65));
         long? usageAfter = await DailyUsageAsync(factory, key);
@@ -329,6 +330,24 @@ public sealed class TwelveDataLiveTests
         {
             long delta = await UsageDeltaAsync(factory, key, async () => _ = await Raw(factory, key, path));
             Line($"{label}: daily delta {delta} (minus the api_usage baseline: {delta - baseline})");
+        }
+    }
+
+    private async Task NoSessionsAsync(TwelveDataProvider twelve, IHttpClientFactory factory, string key)
+    {
+        foreach ((string label, string start, string end) in new[] { ("a holiday (Juneteenth 2024)", "2024-06-19", "2024-06-20"), ("a weekend", "2024-06-15", "2024-06-17"), ("the future", "2030-01-02", "2030-01-03") })
+        {
+            (int status, _, string body) = await Raw(factory, key, $"time_series?symbol=NVDA&mic_code=XNGS&interval=1day&order=asc&adjust=all&start_date={start}&end_date={end}&outputsize=5000");
+            Line($"raw {label}: HTTP {status}, body {Truncate(body)}");
+        }
+
+        foreach ((DateOnly day, string label) in new[] { (new DateOnly(2024, 6, 19), "holiday"), (new DateOnly(2024, 6, 15), "Saturday") })
+        {
+            Result<DailySeries> result = await Retry(() => twelve.GetDailyAsync(
+                new DailySeriesRequest(new ProviderListingKey("XNGS", "NVDA"), day, day, true), CancellationToken.None));
+            Line($"adapter, {label} {day}: {Describe(result)}{(result.IsSuccess ? $", {result.Value.Bars.Count} bars" : string.Empty)}");
+            result.IsSuccess.Should().BeTrue($"a {label} has no session, and an empty range must not be a failure");
+            result.Value.Bars.Should().BeEmpty();
         }
     }
 

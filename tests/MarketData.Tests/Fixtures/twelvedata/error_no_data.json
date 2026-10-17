@@ -1,0 +1,10 @@
+{
+ "code": 400,
+ "message": "No data is available on the specified dates. Try setting different start/end dates.",
+ "status": "error",
+ "meta": {
+  "symbol": "NVDA",
+  "interval": "1day",
+  "exchange": ""
+ }
+}

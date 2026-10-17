@@ -160,6 +160,36 @@ public sealed class TwelveDataProviderTests
     }
 
     [Fact]
+    public async Task GetDaily_ARangeWithNoSessions_IsAnEmptySeries_NotAFailure()
+    {
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_no_data.json"), HttpStatusCode.BadRequest));
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily("XNGS", "NVDA", from: new DateOnly(2024, 6, 19), to: new DateOnly(2024, 6, 19)), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue("a holiday or a weekend has no bars, and that must not park the job as a permanent failure");
+        result.Value.Bars.Should().BeEmpty();
+        result.Value.Rejected.Should().Be(0);
+        result.Value.Truncated.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(5000, true)]
+    [InlineData(4999, false)]
+    [InlineData(1, false)]
+    public async Task GetDaily_AsManyRowsAsOneRequestHolds_IsFlaggedAsPossiblyTruncated(int rows, bool truncated)
+    {
+        var day = new DateOnly(2000, 1, 3);
+        string values = string.Join(",", Enumerable.Range(0, rows).Select(i =>
+            $"{{\"datetime\":\"{day.AddDays(i):yyyy-MM-dd}\",\"open\":\"10\",\"high\":\"11\",\"low\":\"9\",\"close\":\"10\",\"volume\":\"1\"}}"));
+        (TwelveDataProvider provider, _) = Build(_ => Json($"{{\"meta\":{{}},\"values\":[{values}],\"status\":\"ok\"}}"));
+
+        DailySeries series = (await provider.GetDailyAsync(Daily(), CancellationToken.None)).Value;
+
+        series.Bars.Should().HaveCount(rows);
+        series.Truncated.Should().Be(truncated, "a full page means the newest days may be missing");
+    }
+
+    [Fact]
     public async Task GetDaily_DirtyRows_AreDroppedAndCounted_NeverRepaired()
     {
         (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_dirty.synthetic.json")));

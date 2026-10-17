@@ -59,6 +59,17 @@ public sealed class ProviderPayloadStoreTests(MongoFixture mongo) : IClassFixtur
     }
 
     [Fact]
+    public async Task TheSameRequestStoredByManyCallersAtOnce_NeverFails_AndLeavesOneDocument()
+    {
+        IMongoDatabase db = await MigratedAsync(mongo);
+        var store = new MongoProviderPayloadStore(db);
+
+        await Task.WhenAll(Enumerable.Range(0, 40).Select(i => store.StoreAsync(Payload($"{{\"n\":{i}}}"), CancellationToken.None)));
+
+        (await db.GetCollection<BsonDocument>("provider_payloads").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task ADifferentSymbolOrADifferentDay_IsAnotherDocument()
     {
         IMongoDatabase db = await MigratedAsync(mongo);

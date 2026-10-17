@@ -30,6 +30,12 @@ public sealed class MarketDataProvidersOptionsValidator : IValidateOptions<Marke
         [
             .. options.Markets.Keys.Where(market => !Mic.Create(market).IsSuccess).Select(market => $"'{market}' is not a market code (four letters or digits)."),
             .. options.Markets.Where(pair => string.IsNullOrWhiteSpace(pair.Value)).Select(pair => $"The market {pair.Key} has no provider name."),
+            .. options.Markets.Keys
+                .Select(market => Mic.Create(market))
+                .Where(mic => mic.IsSuccess)
+                .GroupBy(mic => mic.Value.Value)
+                .Where(group => group.Count() > 1)
+                .Select(group => $"The market {group.Key} is listed more than once (market codes are compared ignoring case)."),
         ];
         return problems.Length == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(problems);
     }
