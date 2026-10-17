@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
   <PropertyGroup>
     <AssemblyName>SakerWatch.Hosts.Worker</AssemblyName>
+    <UserSecretsId>3f8c1b52-6d0e-4a7b-9c1d-5e2a7f4b6c10</UserSecretsId>
     <RootNamespace>SakerWatch.Hosts.Worker</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

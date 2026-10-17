@@ -36,6 +36,9 @@ public static class ProviderErrors
     /// <summary>Code for <see cref="ProviderFailureKind.SymbolNotFound"/>.</summary>
     public const string SymbolNotFoundCode = "marketdata.provider.symbol_not_found";
 
+    /// <summary>Code for a refused or missing credential (a permanent failure until the key is fixed).</summary>
+    public const string UnauthorizedCode = "marketdata.provider.unauthorized";
+
     /// <summary>Code for a response that cannot be understood (a permanent failure).</summary>
     public const string InvalidResponseCode = "marketdata.provider.invalid_response";
 
@@ -56,6 +59,10 @@ public static class ProviderErrors
     /// <summary>The symbol is unknown to the provider.</summary>
     public static Error SymbolNotFound(string provider, string symbol) =>
         Error.NotFound(SymbolNotFoundCode, $"{provider} does not know the symbol {symbol}.");
+
+    /// <summary>The provider refused the credential; retrying cannot help until the key is fixed.</summary>
+    public static Error Unauthorized(string provider) =>
+        Error.Unauthorized(UnauthorizedCode, $"{provider} refused the API key.");
 
     /// <summary>The response is malformed or not what the contract says.</summary>
     public static Error InvalidResponse(string provider) =>

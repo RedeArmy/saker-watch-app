@@ -1,0 +1,87 @@
+{
+ "meta": {
+  "symbol": "TST",
+  "interval": "1day",
+  "currency": "USD",
+  "exchange_timezone": "America/New_York",
+  "exchange": "NASDAQ",
+  "mic_code": "XNGS",
+  "type": "Common Stock"
+ },
+ "values": [
+  {
+   "datetime": "2024-06-03",
+   "open": "10.0",
+   "high": "11.0",
+   "low": "9.0",
+   "close": "10.5",
+   "volume": "100"
+  },
+  {
+   "datetime": "2024-06-04",
+   "open": "10.0",
+   "high": "9.0",
+   "low": "11.0",
+   "close": "10.5",
+   "volume": "100"
+  },
+  {
+   "datetime": "2024-06-05",
+   "open": "abc",
+   "high": "11.0",
+   "low": "9.0",
+   "close": "10.5",
+   "volume": "100"
+  },
+  {
+   "datetime": "2024-06-06",
+   "open": "10.0",
+   "high": "11.0",
+   "low": "9.0",
+   "close": "10.5"
+  },
+  {
+   "datetime": "2024-06-07 09:30:00",
+   "open": "10.0",
+   "high": "11.0",
+   "low": "9.0",
+   "close": "10.5",
+   "volume": "100"
+  },
+  {
+   "datetime": "2024-06-10",
+   "open": "10.0",
+   "high": "11.0",
+   "low": "9.0",
+   "close": "10.5",
+   "volume": "-5"
+  },
+  {
+   "datetime": "2024-06-12",
+   "open": "12.0",
+   "high": "13.0",
+   "low": "11.0",
+   "close": "12.5",
+   "volume": "300"
+  },
+  {
+   "datetime": "2024-06-11",
+   "open": "11.0",
+   "high": "12.0",
+   "low": "10.0",
+   "close": "11.5",
+   "volume": "200"
+  },
+  {
+   "datetime": "2024-06-12",
+   "open": "12.0",
+   "high": "13.5",
+   "low": "11.0",
+   "close": "13.0",
+   "volume": "350"
+  },
+  "not an object"
+ ],
+ "status": "ok",
+ "note": "synthetic: hand-made rows to exercise the validation"
+}
