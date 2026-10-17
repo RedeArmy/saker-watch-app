@@ -361,7 +361,7 @@ public sealed class TwelveDataLiveTests
         Line($"14 quick time_series calls in {watch.Elapsed.TotalSeconds:F1}s: {string.Join(", ", kinds)}");
 
         // Look at the raw answer first, so the report has it even when an assertion below fails.
-        (int status, HttpResponseHeaders headers, string body) = await Raw(factory, key, "time_series?symbol=MSFT&mic_code=XNGS&interval=1day&outputsize=1");
+        (int status, HttpResponseHeaders headers, string body) = await Raw(factory, key, "time_series?symbol=MSFT&mic_code=XNGS&interval=1day&outputsize=1", paced: false);
         Line($"raw call right after: HTTP {status}, Retry-After {headers.RetryAfter?.ToString() ?? "absent"}, headers {string.Join("; ", headers.Select(h => h.Key + "=" + string.Join(",", h.Value)))}, body {Truncate(body)}");
         await File.WriteAllTextAsync(Path.Combine(_reportDirectory, "raw-after-rate-limit.json"), body);
 
@@ -381,6 +381,13 @@ public sealed class TwelveDataLiveTests
 
     private async Task Section(string title, Func<Task> body)
     {
+        // SAKER_LIVE_SECTIONS=10 (or 4,10) runs only those sections, for a short follow-up run.
+        string? only = Environment.GetEnvironmentVariable("SAKER_LIVE_SECTIONS");
+        if (!string.IsNullOrWhiteSpace(only) && !only.Split(',').Contains(title.Split('.')[0]))
+        {
+            return;
+        }
+
         Line($"\n## {title}");
         try
         {
@@ -408,9 +415,13 @@ public sealed class TwelveDataLiveTests
         return result;
     }
 
-    private async Task<(int Status, HttpResponseHeaders Headers, string Body)> Raw(IHttpClientFactory factory, string key, string path)
+    private async Task<(int Status, HttpResponseHeaders Headers, string Body)> Raw(IHttpClientFactory factory, string key, string path, bool paced = true)
     {
-        await _budget.TryAcquireAsync("twelvedata", new BudgetLimits(8, 800), 1, CancellationToken.None);
+        if (paced)
+        {
+            await _budget.TryAcquireAsync("twelvedata", new BudgetLimits(8, 800), 1, CancellationToken.None);
+        }
+
         _rawCalls++;
         using HttpClient client = factory.CreateClient(TwelveDataProvider.ClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
