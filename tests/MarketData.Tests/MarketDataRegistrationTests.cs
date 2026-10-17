@@ -2,9 +2,11 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Infrastructure;
+using SakerWatch.MarketData.Infrastructure.Providers.Banguat;
 using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 
 namespace SakerWatch.MarketData.Tests;
@@ -44,6 +46,28 @@ public sealed class MarketDataRegistrationTests
         router.For(Mic.Parse("XNAS")).Value.Should().BeOfType<TwelveDataProvider>();
         router.For(Mic.Parse("XNYS")).Value.Name.Should().Be("twelvedata");
         router.For(Mic.Parse("XTSE")).Error!.Code.Should().Be(MarketDataProviderRouter.MarketDisabledCode);
+    }
+
+    [Fact]
+    public void AddMarketData_ServesTheBankRatesWithoutAnyConfiguration()
+    {
+        using ServiceProvider provider = Build(new());
+
+        provider.GetRequiredService<IFxRateProvider>().Should().BeOfType<BanguatFxProvider>().Which.Name.Should().Be("banguat");
+        provider.GetRequiredService<IHttpClientFactory>().CreateClient(BanguatFxProvider.ClientName).BaseAddress
+            .Should().Be(new Uri("https://www.banguat.gob.gt/variables/ws/TipoCambio.asmx"));
+    }
+
+    [Theory]
+    [InlineData("http://www.banguat.gob.gt/variables/ws/TipoCambio.asmx")]
+    [InlineData("not a url")]
+    public void TheBankAddress_ThatIsNotHttps_IsRefused(string baseUrl)
+    {
+        using ServiceProvider provider = Build(new() { ["Banguat:BaseUrl"] = baseUrl });
+
+        Action act = () => _ = provider.GetRequiredService<IOptions<BanguatOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>();
     }
 
     [Fact]

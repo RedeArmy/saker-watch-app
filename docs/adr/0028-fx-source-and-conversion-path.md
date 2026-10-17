@@ -25,7 +25,7 @@ Taken from the service description (`TipoCambio.asmx?WSDL`) and real calls, no k
 - **Other pairs:** a market FX source (the stock provider's forex endpoint, free for the pairs the plan allows) supplies USD to CAD, EUR and JPY when those markets are enabled. A pair that is not stored is converted through USD; a conversion always returns the path, the date and the source of each leg.
 - **Missing days:** weekends and bank holidays have no rate; the latest earlier rate is used and its `as_of_date` is returned, never a fabricated one. A rate older than a configured age is flagged stale.
 - **Disclaimer:** the result states that the rate is a reference and that broker rates, fees and minimum order sizes differ; the Banco de Guatemala home page is the only official source.
-- The adapter uses a named client with the host allow-list, parses defensively and treats the response as untrusted data.
+- The adapter (`BanguatFxProvider`, milestone 2.4b) uses the named client `banguat` (HTTPS only, host allow-list, 4 MB cap, 30 s total timeout), asks `TipoCambioRango` for USD (`moneda` 2) and reads the sale rate. It parses the XML with DTDs prohibited, keeps only USD rows in the requested range with a `dd/MM/yyyy` date and a positive decimal, drops and counts the rest, classifies failures like the market data providers (a SOAP client-side fault is permanent, any other failure is retryable) and keeps the raw answer in Mongo. It serves USD to GTQ only; other pairs are refused until they are decided.
 
 ## Consequences
 - The conversion is as good as the bank's daily reference; intraday FX is out of scope.

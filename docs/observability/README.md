@@ -18,7 +18,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
 | `sakerwatch_auth_attempts_total` (counter) | outcome=success\|<refusal reason> (Malformed, InvalidSignature, UnknownKey, UnsupportedAlgorithm, Expired, NotYetValid, InvalidIssuer, InvalidAudience, MissingSubject, NotAnAccessToken, KeyDiscoveryFailed, Invalid) | access token validation; a spike of refusals or any `KeyDiscoveryFailed` is a symptom |
-| `sakerwatch_provider_calls_total` (counter) | provider, operation=search\|daily, outcome=success\|ratelimited\|transient\|planrestricted\|symbolnotfound\|permanent | calls to external market data providers by outcome; a run of `ratelimited` means the free budget is spent, `planrestricted` means a market is routed to a plan that does not include it |
+| `sakerwatch_provider_calls_total` (counter) | provider, operation=search\|daily\|fx_daily, outcome=success\|ratelimited\|transient\|planrestricted\|symbolnotfound\|permanent | calls to external market data providers by outcome; a run of `ratelimited` means the free budget is spent, `planrestricted` means a market is routed to a plan that does not include it |
 | `sakerwatch_marketdata_backfills_total` (counter) | outcome=completed\|waiting\|retry\|failed | backfills of a listing: `waiting` is a rate limit (a continuation was queued, no attempt used), `retry` is an outage that the queue will retry, `failed` is a permanent failure recorded in `marketdata.ingestion_state` |
 | `sakerwatch_marketdata_listings` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | market, state=fresh\|stale\|pending | ingestable listings by freshness: `stale` have missed a session that has settled, `pending` have no history yet. Per process: aggregate with `max` across worker replicas |
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
@@ -83,6 +83,9 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2101 | Information | `Backfill of {Market} {Ticker} wrote {Rows} daily rows ({Unmatched} days were in only one of the two series)` | `BackfillStockHandler` |
 | 2102 | Warning | `Backfill of listing {StockId} failed for good with {Code}; it is not retried until the cause is fixed` | `BackfillStockHandler` |
 | 2103 | Warning | `Backfill skipped: listing {StockId} is not in the catalog or is no longer active` | `BackfillStockHandler` |
+| 2201 | Warning | `The Banco de Guatemala answer had {Rejected} rows that are not a USD rate in the range; they were dropped` | `BanguatFxProvider` |
+| 2202 | Warning | `The Banco de Guatemala call failed in transit ({ExceptionType})` | `BanguatFxProvider` |
+| 2203 | Warning | `The raw Banco de Guatemala response could not be kept ({ExceptionType}); the data itself was fetched and parsed` | `BanguatFxProvider` |
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |
 | 2112 | Information | `The adjusted history of {Market} {Ticker} was rewritten by the provider; a full reload is queued` | `RefreshStockHandler` |
 | 2113 | Warning | `Refresh of listing {StockId} failed for good with {Code}` | `RefreshStockHandler` |
