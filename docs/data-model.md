@@ -32,7 +32,7 @@
 ## 2. MongoDB (heavy, variable, write-once documents)
 All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) come from versioned migrations.
 - `llm_interactions`: rendered prompt, model id and params, raw response, parsed JSON, token counts, latency. TTL 12 months.
-- `provider_payloads`: raw provider responses for reprocessing. TTL 30–90 days (configurable).
+- `provider_payloads`: raw provider responses for reprocessing. TTL 30–90 days (configurable). Written by `MongoProviderPayloadStore` (milestone 2.2) after every successful provider call: `_id` is `{provider}:{operation}:{yyyyMMdd}:{sha256 of what was asked, 32 hex}` (so the same request on the same day replaces its document), plus `schemaVersion`, `createdAt` (the fetch time, the TTL field), `provider`, `operation`, `request {mic, symbol, query, adjusted}`, `bodySha256`, `bodyBytes` and `body`, the response exactly as received, stored as a string and never as nested BSON. Index `ix_provider_request` (`provider`, `request.mic`, `request.symbol`, `createdAt` descending, migration `V0002`) finds a response by provider and listing. Storing is best effort and never fails a fetch; `MarketData:Payloads:Enabled=false` keeps nothing.
 - `analysis_context`: the exact data package given to the LLM (reproducibility).
 - `eval_runs`: golden-set evaluation results.
 - `job_events`: execution audit trail. TTL 30 days.

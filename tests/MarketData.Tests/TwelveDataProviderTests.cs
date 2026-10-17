@@ -54,13 +54,34 @@ public sealed class TwelveDataProviderTests
         }
     }
 
-    private static (TwelveDataProvider Provider, StubHandler Handler) Build(Func<HttpRequestMessage, HttpResponseMessage> respond, IProviderCallBudget? budget = null)
+    private sealed class RecordingStore(bool fail = false) : IProviderPayloadStore
+    {
+        public List<ProviderPayload> Stored { get; } = [];
+
+        public Task StoreAsync(ProviderPayload payload, CancellationToken cancellationToken)
+        {
+            if (fail)
+            {
+                throw new TimeoutException("mongo is down");
+            }
+
+            Stored.Add(payload);
+            return Task.CompletedTask;
+        }
+    }
+
+    private static readonly DateTimeOffset _now = new(2026, 10, 16, 21, 0, 0, TimeSpan.Zero);
+
+    private static (TwelveDataProvider Provider, StubHandler Handler) Build(
+        Func<HttpRequestMessage, HttpResponseMessage> respond, IProviderCallBudget? budget = null, IProviderPayloadStore? payloads = null)
     {
         var handler = new StubHandler(respond);
         var provider = new TwelveDataProvider(
             new SingleClientFactory(handler),
             Options.Create(new TwelveDataOptions { ApiKey = _key }),
             budget ?? new ScriptedBudget(),
+            payloads ?? new RecordingStore(),
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(_now),
             NullLogger<TwelveDataProvider>.Instance);
         return (provider, handler);
     }
@@ -305,6 +326,58 @@ public sealed class TwelveDataProviderTests
         handler.Requests.Should().BeEmpty("a call without budget would only earn a 429");
         ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
         ProviderErrors.RetryAfter(result.Error!).Should().Be(TimeSpan.FromSeconds(41));
+    }
+
+    [Fact]
+    public async Task ASuccessfulResponse_IsKeptExactlyAsReceived_WithWhatWasAsked()
+    {
+        var store = new RecordingStore();
+        string body = Fixture("time_series_nvda_split.json");
+        (TwelveDataProvider provider, _) = Build(_ => Json(body), payloads: store);
+
+        await provider.GetDailyAsync(Daily("XNGS", "NVDA", from: new DateOnly(2024, 6, 1), to: new DateOnly(2024, 6, 20)), CancellationToken.None);
+
+        ProviderPayload kept = store.Stored.Single();
+        kept.Body.Should().Be(body, "the raw text is stored, not a re-serialization");
+        kept.Provider.Should().Be("twelvedata");
+        kept.Operation.Should().Be("daily");
+        kept.Key.Should().Be(new ProviderListingKey("XNGS", "NVDA"));
+        kept.Query.Should().Be("2024-06-01..2024-06-20");
+        kept.Adjusted.Should().BeTrue();
+        kept.FetchedAt.Should().Be(_now);
+    }
+
+    [Fact]
+    public async Task ASearchResponse_IsKeptToo()
+    {
+        var store = new RecordingStore();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("symbol_search_shop.json")), payloads: store);
+
+        await provider.SearchAsync(" SHOP ", CancellationToken.None);
+
+        store.Stored.Single().Should().Match<ProviderPayload>(p => p.Operation == "search" && p.Query == "SHOP" && p.Key == null && p.Adjusted == null);
+    }
+
+    [Fact]
+    public async Task AFailedCall_KeepsNothing()
+    {
+        var store = new RecordingStore();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("error_plan_restricted.json"), HttpStatusCode.NotFound), payloads: store);
+
+        await provider.GetDailyAsync(Daily("XTSE", "SHOP"), CancellationToken.None);
+
+        store.Stored.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AStoreThatFails_DoesNotFailTheFetch()
+    {
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), payloads: new RecordingStore(fail: true));
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily("ARCX", "SPY"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue("the data was fetched and parsed; only keeping the raw copy failed");
+        result.Value.Bars.Should().NotBeEmpty();
     }
 
     [Fact]

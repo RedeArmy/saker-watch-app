@@ -11,7 +11,7 @@ namespace SakerWatch.MarketData.Tests;
 
 public sealed class MarketDataRegistrationTests
 {
-    // The hosts register Redis (AddSakerRedis) and with it the real budget; here a budget that always allows stands in for it.
+    // The hosts register Redis (AddSakerRedis) and Mongo (AddSakerMongo) and with them the real budget and payload store; stand-ins take their place here.
     private sealed class AllowEverything : IProviderCallBudget
     {
         public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken) =>
@@ -24,6 +24,7 @@ public sealed class MarketDataRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IProviderCallBudget>(new AllowEverything());
+        services.AddSingleton<IProviderPayloadStore>(new NoProviderPayloadStore());
         services.AddMarketData(configuration);
         return services.BuildServiceProvider();
     }

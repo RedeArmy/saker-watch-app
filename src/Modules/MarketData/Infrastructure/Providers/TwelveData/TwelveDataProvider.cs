@@ -30,6 +30,8 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     // One request returns up to 5 000 daily rows, about twenty years: a backfill is one credit (verified on the free plan).
     private const int _maxRows = 5000;
     private const int _maxSearchRows = 30;
+    private const string _searchOperation = "search";
+    private const string _dailyOperation = "daily";
 
     private static readonly Counter<long> _calls = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_provider_calls_total",
@@ -38,18 +40,30 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     private readonly IHttpClientFactory _clients;
     private readonly IOptions<TwelveDataOptions> _options;
     private readonly IProviderCallBudget _budget;
+    private readonly IProviderPayloadStore _payloads;
+    private readonly TimeProvider _clock;
     private readonly ILogger<TwelveDataProvider> _logger;
 
     /// <summary>Creates the provider.</summary>
     /// <param name="clients">Source of the named, allow-listed client.</param>
     /// <param name="options">Connection settings.</param>
     /// <param name="budget">The shared call budget; a call is made only after its credit is reserved.</param>
+    /// <param name="payloads">Keeps the raw body of every successful response.</param>
+    /// <param name="clock">Injected clock, for the time a response was fetched.</param>
     /// <param name="logger">Logger.</param>
-    public TwelveDataProvider(IHttpClientFactory clients, IOptions<TwelveDataOptions> options, IProviderCallBudget budget, ILogger<TwelveDataProvider> logger)
+    public TwelveDataProvider(
+        IHttpClientFactory clients,
+        IOptions<TwelveDataOptions> options,
+        IProviderCallBudget budget,
+        IProviderPayloadStore payloads,
+        TimeProvider clock,
+        ILogger<TwelveDataProvider> logger)
     {
         _clients = clients;
         _options = options;
         _budget = budget;
+        _payloads = payloads;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -62,18 +76,18 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
         using Activity? span = SakerTelemetry.Source.StartActivity("MarketData.Provider.TwelveData.Search");
 
-        Result<JsonDocument> response = await GetAsync(
+        Result<ProviderResponse> response = await GetAsync(
             $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, cancellationToken);
         if (!response.IsSuccess)
         {
-            Record("search", response.Error!);
+            Record(_searchOperation, response.Error!);
             return response.Error!;
         }
 
-        using JsonDocument document = response.Value;
+        using JsonDocument document = response.Value.Document;
         if (!document.RootElement.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Array)
         {
-            return Fail<IReadOnlyList<ProviderListing>>("search", ProviderErrors.InvalidResponse(Name));
+            return Fail<IReadOnlyList<ProviderListing>>(_searchOperation, ProviderErrors.InvalidResponse(Name));
         }
 
         var listings = new List<ProviderListing>();
@@ -94,7 +108,8 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
                 MapType(Text(item, "instrument_type"))));
         }
 
-        _calls.Add(1, Tags("search", "success"));
+        await KeepAsync(new ProviderPayload(Name, _searchOperation, null, symbol.Trim(), null, response.Value.Body, _clock.GetUtcNow()), cancellationToken);
+        _calls.Add(1, Tags(_searchOperation, "success"));
         return listings;
     }
 
@@ -111,17 +126,17 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             // holiday). Asking for the day after is correct either way, and the range is enforced again below on what comes back.
             + (request.To is { } to ? $"&end_date={to.AddDays(1):yyyy-MM-dd}" : string.Empty);
 
-        Result<JsonDocument> response = await GetAsync(query, request.Key.Symbol, cancellationToken);
+        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, cancellationToken);
         if (!response.IsSuccess)
         {
-            Record("daily", response.Error!);
+            Record(_dailyOperation, response.Error!);
             return response.Error!;
         }
 
-        using JsonDocument document = response.Value;
+        using JsonDocument document = response.Value.Document;
         if (!document.RootElement.TryGetProperty("values", out JsonElement values) || values.ValueKind != JsonValueKind.Array)
         {
-            return Fail<DailySeries>("daily", ProviderErrors.InvalidResponse(Name));
+            return Fail<DailySeries>(_dailyOperation, ProviderErrors.InvalidResponse(Name));
         }
 
         var bars = new SortedDictionary<DateOnly, DailyBar>();
@@ -148,7 +163,10 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             LogRowsRejected(request.Key.Symbol, rejected);
         }
 
-        _calls.Add(1, Tags("daily", "success"));
+        await KeepAsync(
+            new ProviderPayload(Name, _dailyOperation, request.Key, $"{request.From:yyyy-MM-dd}..{request.To:yyyy-MM-dd}", request.Adjusted, response.Value.Body, _clock.GetUtcNow()),
+            cancellationToken);
+        _calls.Add(1, Tags(_dailyOperation, "success"));
         return new DailySeries(request.Key, [.. bars.Values], request.Adjusted, rejected);
     }
 
@@ -190,7 +208,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     private static KeyValuePair<string, object?>[] Tags(string operation, string outcome) =>
         [new("provider", TwelveDataOptions.ProviderName), new("operation", operation), new("outcome", outcome)];
 
-    private async Task<Result<JsonDocument>> GetAsync(string relativeUrl, string symbol, CancellationToken cancellationToken)
+    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, CancellationToken cancellationToken)
     {
         // One credit per symbol requested (verified: time_series and symbol_search each cost 1). A denied call is never sent.
         TwelveDataOptions settings = _options.Value;
@@ -238,7 +256,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
                 return Classify((int)response.StatusCode, code, message, symbol, response.Headers.RetryAfter?.Delta);
             }
 
-            return document is null ? ProviderErrors.InvalidResponse(Name) : document;
+            return document is null ? ProviderErrors.InvalidResponse(Name) : new ProviderResponse(document, body);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -280,6 +298,19 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         return status >= 500 || effective >= 500 ? ProviderErrors.Unavailable(Name) : ProviderErrors.InvalidResponse(Name);
     }
 
+    // Best effort: the data was already fetched and parsed, so a store that is down must not turn a good answer into a failure.
+    private async Task KeepAsync(ProviderPayload payload, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _payloads.StoreAsync(payload, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogPayloadNotKept(payload.Operation, ex.GetType().Name);
+        }
+    }
+
     private static JsonDocument? TryParse(string body)
     {
         try
@@ -306,6 +337,11 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
     [LoggerMessage(EventId = 2001, Level = LogLevel.Warning, Message = "Twelve Data returned {Rejected} inconsistent daily rows for {Symbol}; they were dropped")]
     private partial void LogRowsRejected(string symbol, int rejected);
+
+    [LoggerMessage(EventId = 2004, Level = LogLevel.Warning, Message = "The raw Twelve Data response of a {Operation} call could not be kept ({ExceptionType}); the data itself was fetched and parsed")]
+    private partial void LogPayloadNotKept(string operation, string exceptionType);
+
+    private sealed record ProviderResponse(JsonDocument Document, string Body);
 
     [LoggerMessage(EventId = 2002, Level = LogLevel.Warning, Message = "Twelve Data call failed in transit ({ExceptionType})")]
     private partial void LogTransportFailure(string exceptionType);

@@ -37,7 +37,7 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
 
         int applied = await RunnerFor(db).RunAsync(MongoMigrations.All, lockOptions: null, CancellationToken.None);
 
-        applied.Should().Be(1);
+        applied.Should().Be(MongoMigrations.All.Count);
         foreach ((string collection, int? days) in V0001BaseCollections.RetentionDays)
         {
             List<BsonDocument> indexes = await IndexesOf(db, collection);
@@ -61,7 +61,9 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
 
         await RunnerFor(db).RunAsync(MongoMigrations.All, null, CancellationToken.None);
 
-        BsonDocument record = await db.GetCollection<BsonDocument>("_migrations").Find(new BsonDocument()).SingleAsync();
+        List<BsonDocument> records = await db.GetCollection<BsonDocument>("_migrations").Find(new BsonDocument()).SortBy(d => d["_id"]).ToListAsync();
+        records.Select(r => r["_id"].AsInt32).Should().Equal(MongoMigrations.All.Select(m => m.Version));
+        BsonDocument record = records[0];
         record["_id"].AsInt32.Should().Be(1);
         record["name"].AsString.Should().Be("base-collections");
         record["checksum"].AsString.Should().Be(MongoMigrations.All[0].Checksum);
@@ -145,7 +147,7 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
         await RunnerFor(db).RunAsync(MongoMigrations.All, null, CancellationToken.None);
         await db.GetCollection<BsonDocument>("provider_payloads")
             .InsertOneAsync(new BsonDocument { { "schemaVersion", 1 }, { "createdAt", DateTime.UtcNow }, { "source", "polygon" } });
-        var next = new TestMigration(2, "payload-source-index", new CollectionSpec("provider_payloads", [new IndexSpec("ix_source", [("source", 1)])]));
+        var next = new TestMigration(MongoMigrations.All.Max(m => m.Version) + 1, "payload-source-index", new CollectionSpec("provider_payloads", [new IndexSpec("ix_source", [("source", 1)])]));
 
         int applied = await RunnerFor(db).RunAsync([.. MongoMigrations.All, next], null, CancellationToken.None);
 
@@ -161,8 +163,8 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
 
         int[] results = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => RunnerFor(db).RunAsync(MongoMigrations.All, null, CancellationToken.None)));
 
-        results.Sum().Should().Be(1);
-        (await db.GetCollection<BsonDocument>("_migrations").CountDocumentsAsync(new BsonDocument())).Should().Be(1);
+        results.Sum().Should().Be(MongoMigrations.All.Count);
+        (await db.GetCollection<BsonDocument>("_migrations").CountDocumentsAsync(new BsonDocument())).Should().Be(MongoMigrations.All.Count);
         (await db.GetCollection<BsonDocument>("_migration_lock").CountDocumentsAsync(new BsonDocument())).Should().Be(0, "the lock is released");
     }
 
@@ -189,7 +191,7 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
 
         int applied = await RunnerFor(db).RunAsync(MongoMigrations.All, null, CancellationToken.None);
 
-        applied.Should().Be(1);
+        applied.Should().Be(MongoMigrations.All.Count);
     }
 
     private sealed class SlowMigration(TimeSpan duration) : IMongoMigration

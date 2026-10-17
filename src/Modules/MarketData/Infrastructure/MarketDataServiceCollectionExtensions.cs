@@ -52,6 +52,15 @@ public static class MarketDataServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IProviderCallBudget, RedisProviderCallBudget>();
+        if (configuration.GetValue("MarketData:Payloads:Enabled", true))
+        {
+            services.TryAddSingleton<IProviderPayloadStore, MongoProviderPayloadStore>();
+        }
+        else
+        {
+            services.TryAddSingleton<IProviderPayloadStore, NoProviderPayloadStore>();
+        }
+
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;
