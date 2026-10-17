@@ -98,7 +98,7 @@ public sealed class MarketValueObjectTests
     {
         var guid = Guid.CreateVersion7();
 
-        StockId id = StockId.Create(guid);
+        var id = StockId.Create(guid);
 
         id.Value.Should().Be(guid);
         id.ToString().Should().Be(guid.ToString("D"));
