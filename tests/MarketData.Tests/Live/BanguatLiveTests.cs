@@ -29,7 +29,7 @@ public sealed class BanguatLiveTests
         services.AddMarketData(new ConfigurationBuilder().Build());
         await using ServiceProvider provider = services.BuildServiceProvider();
         var fx = provider.GetRequiredService<IFxRateProvider>();
-        DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var usd = CurrencyCode.Parse("USD");
         var gtq = CurrencyCode.Parse("GTQ");
 
