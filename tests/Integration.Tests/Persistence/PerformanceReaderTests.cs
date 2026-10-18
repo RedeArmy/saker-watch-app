@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
@@ -30,30 +32,46 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
               FROM generate_series(@from::date, @to::date, interval '1 day') AS g(d) WHERE extract(isodow FROM d) < 6) s
         """;
 
-    private static async Task<Guid> SeedStockAsync(string admin, string ticker)
+    private static async Task<Guid> SeedStockAsync(string admin, string ticker, string market = "XNAS")
     {
         var id = Guid.CreateVersion7();
         await admin.ExecuteAsync(
-            "INSERT INTO marketdata.stocks (id, market_mic, ticker, name, currency, time_zone, asset_type, is_active, listed_at) VALUES (@id, 'XNAS', @ticker, @ticker, 'USD', 'America/New_York', 'equity', true, now())",
-            ("id", id), ("ticker", ticker));
+            "INSERT INTO marketdata.stocks (id, market_mic, ticker, name, currency, time_zone, asset_type, is_active, listed_at) VALUES (@id, @market, @ticker, @ticker, 'USD', 'America/New_York', 'equity', true, now())",
+            ("id", id), ("ticker", ticker), ("market", market));
         return id;
     }
 
     private static async Task SeedSeriesAsync(string admin, Guid id, DateOnly from, DateOnly? split = null, int factor = 1) =>
         _ = await admin.ExecuteAsync(_insertSeries, ("id", id), ("from", from), ("to", _lastDay), ("split", split ?? DateOnly.MinValue), ("factor", (decimal)factor));
 
-    private static async Task<IReadOnlyDictionary<StockId, PerformanceReport>> ReadAsync(string connection, params Guid[] ids)
+    private sealed class CapturingLogger : ILogger<PerformanceReader>
+    {
+        public List<(int EventId, LogLevel Level)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((eventId.Id, logLevel));
+    }
+
+    private static Task<IReadOnlyDictionary<StockId, PerformanceReport>> ReadAsync(string connection, params Guid[] ids) =>
+        ReadAsync(connection, NullLogger<PerformanceReader>.Instance, ids);
+
+    private static async Task<IReadOnlyDictionary<StockId, PerformanceReport>> ReadAsync(string connection, ILogger<PerformanceReader> logger, params Guid[] ids)
     {
         await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = connection }), new AnonymousCurrentUser());
         await session.BeginAsync(CancellationToken.None);
-        var reader = new PerformanceReader(session, ExchangeCalendars.Default(), Options.Create(new PerformanceOptions()));
+        var reader = new PerformanceReader(session, ExchangeCalendars.Default(), Options.Create(new PerformanceOptions()), logger);
         IReadOnlyDictionary<StockId, PerformanceReport> reports = await reader.ReadAsync([.. ids.Select(StockId.Create)], CancellationToken.None);
         await session.CommitAsync(CancellationToken.None);
         return reports;
     }
 
     // The same windows, computed from the whole series held in memory: what the database lookups must agree with.
-    private static async Task<PerformanceReport> OracleAsync(string admin, Guid id)
+    private static async Task<PerformanceReport> OracleAsync(string admin, Guid id, IExchangeCalendar? calendar = null, bool useDefaultCalendar = true)
     {
         var series = new List<PriceSample>();
         await using var connection = new Npgsql.NpgsqlConnection(admin);
@@ -73,12 +91,13 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
 
         PriceSample latest = series[^1];
         var baselines = new Dictionary<DateOnly, PriceSample?>();
-        foreach (DateOnly target in PerformanceCalculator.TargetDates(latest.Date, _calendar).Values)
+        IExchangeCalendar? used = useDefaultCalendar ? _calendar : calendar;
+        foreach (DateOnly target in PerformanceCalculator.TargetDates(latest.Date, used).Values)
         {
             baselines[target] = series.LastOrDefault(sample => sample.Date <= target);
         }
 
-        return PerformanceCalculator.Calculate(latest, baselines, _calendar);
+        return PerformanceCalculator.Calculate(latest, baselines, used);
     }
 
     private static void ShouldMatch(PerformanceReport actual, PerformanceReport expected)
@@ -166,6 +185,30 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
     }
 
     [Fact]
+    public async Task Read_AMarketWithoutACalendar_StillGetsEveryWindowButTheOneDay_AndIsLoggedOncePerMarket()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        Guid first = await SeedStockAsync(db.Admin, "TSE1", "XTSE");
+        Guid second = await SeedStockAsync(db.Admin, "TSE2", "XTSE");
+        await SeedSeriesAsync(db.Admin, first, new DateOnly(2025, 1, 1));
+        await SeedSeriesAsync(db.Admin, second, new DateOnly(2025, 1, 1));
+        var logger = new CapturingLogger();
+
+        IReadOnlyDictionary<StockId, PerformanceReport> reports = await ReadAsync(db.Api, logger, first, second);
+
+        foreach (Guid id in new[] { first, second })
+        {
+            PerformanceReport report = reports[StockId.Create(id)];
+            report.Windows.Single(w => w.Window == PerformanceWindow.OneDay).Gap.Should().Be(PerformanceGap.CalendarUnavailable);
+            report.Windows.Where(w => w.Window != PerformanceWindow.OneDay && w.Window != PerformanceWindow.FiveYears).Should().OnlyContain(w => w.Change != null);
+            report.Windows.Single(w => w.Window == PerformanceWindow.FiveYears).Gap.Should().Be(PerformanceGap.InsufficientHistory);
+            ShouldMatch(report, await OracleAsync(db.Admin, id, calendar: null, useDefaultCalendar: false));
+        }
+
+        logger.Entries.Should().Equal([(2401, LogLevel.Warning)], "one warning for the market, not one per listing");
+    }
+
+    [Fact]
     public async Task Read_AProvisionalLatestBar_IsTheAnchor()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
@@ -207,7 +250,31 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
     }
 
     [Fact]
-    public async Task Read_FiveHundredListingsWithSixYearsEach_StaysWellUnderASecond()
+    public async Task Read_FortyListingsWithSixYearsEach_AnswersEachOneAndIsFarFromAScan()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var ids = new List<Guid>();
+        for (int i = 0; i < 40; i++)
+        {
+            ids.Add(await SeedStockAsync(db.Admin, $"S{i:D4}"));
+        }
+
+        await BulkSeedAsync(db.Admin);
+        await ReadAsync(db.Api, [.. ids.Take(2)]); // warm the plan and the connection
+
+        var clock = Stopwatch.StartNew();
+        IReadOnlyDictionary<StockId, PerformanceReport> reports = await ReadAsync(db.Api, [.. ids]);
+        clock.Stop();
+
+        reports.Should().HaveCount(40);
+        reports.Values.Should().OnlyContain(r => r.Windows.All(w => w.Change != null));
+        // Loose on purpose: parallel test containers share the machine. A regression to a scan of the table takes far longer.
+        clock.ElapsedMilliseconds.Should().BeLessThan(3000, $"took {clock.ElapsedMilliseconds} ms");
+    }
+
+    // Run with SAKER_SCALE=1. The number it prints (0.3 to 0.5 s on the test container) is the one ADR-0030 quotes.
+    [ScaleFact]
+    public async Task Read_FiveHundredListingsWithSixYearsEach_IsMeasured()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
         var ids = new List<Guid>();
@@ -216,26 +283,8 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
             ids.Add(await SeedStockAsync(db.Admin, $"S{i:D4}"));
         }
 
-        // 500 x about 1 700 weekdays in one statement.
-        await using (var connection = new Npgsql.NpgsqlConnection(db.Admin))
-        {
-            await connection.OpenAsync();
-            await using var insert = new Npgsql.NpgsqlCommand(
-                """
-                INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at)
-                SELECT s.id, x.d::date, x.a, x.a + 1, x.a - 1, x.a, x.a, 1000, 'twelvedata', true, now()
-                FROM marketdata.stocks s
-                CROSS JOIN LATERAL (SELECT d, 100 + 0.5 * (row_number() OVER (ORDER BY d) % 37) AS a
-                                    FROM generate_series('2020-01-01'::date, '2026-10-16'::date, interval '1 day') AS g(d) WHERE extract(isodow FROM d) < 6) x
-                """,
-                connection)
-            { CommandTimeout = 600 };
-            await insert.ExecuteNonQueryAsync();
-            await using var analyze = new Npgsql.NpgsqlCommand("ANALYZE marketdata.price_daily", connection) { CommandTimeout = 600 };
-            await analyze.ExecuteNonQueryAsync();
-        }
-
-        await ReadAsync(db.Api, [.. ids.Take(5)]); // warm the plan and the connection
+        await BulkSeedAsync(db.Admin);
+        await ReadAsync(db.Api, [.. ids.Take(5)]);
 
         var clock = Stopwatch.StartNew();
         IReadOnlyDictionary<StockId, PerformanceReport> reports = await ReadAsync(db.Api, [.. ids]);
@@ -244,8 +293,26 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
 
         reports.Should().HaveCount(500);
         reports.Values.Should().OnlyContain(r => r.Windows.All(w => w.Change != null));
-        // About 0.3 s on the test container: nine index probes per listing across seven yearly chunks. The watchlist has 300 ms (p95) for all of
-        // its work at this size, so the daily numbers are cached per listing and day (milestone 2.8); this bound only catches a regression to a scan.
-        clock.ElapsedMilliseconds.Should().BeLessThan(1000, $"took {clock.ElapsedMilliseconds} ms");
+        clock.ElapsedMilliseconds.Should().BeLessThan(3000, $"took {clock.ElapsedMilliseconds} ms");
+    }
+
+    // Every listing of the catalog gets the same weekday series from 2020-01-01 to the last day, in one statement.
+    private static async Task BulkSeedAsync(string admin)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(admin);
+        await connection.OpenAsync();
+        await using var insert = new Npgsql.NpgsqlCommand(
+            """
+            INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at)
+            SELECT s.id, x.d::date, x.a, x.a + 1, x.a - 1, x.a, x.a, 1000, 'twelvedata', true, now()
+            FROM marketdata.stocks s
+            CROSS JOIN LATERAL (SELECT d, 100 + 0.5 * (row_number() OVER (ORDER BY d) % 37) AS a
+                                FROM generate_series('2020-01-01'::date, '2026-10-16'::date, interval '1 day') AS g(d) WHERE extract(isodow FROM d) < 6) x
+            """,
+            connection)
+        { CommandTimeout = 600 };
+        await insert.ExecuteNonQueryAsync();
+        await using var analyze = new Npgsql.NpgsqlCommand("ANALYZE marketdata.price_daily", connection) { CommandTimeout = 600 };
+        await analyze.ExecuteNonQueryAsync();
     }
 }

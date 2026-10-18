@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Domain.Calendars;
@@ -18,7 +18,12 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence;
 /// <param name="session">The scope's database connection and transaction.</param>
 /// <param name="calendars">The exchange calendars, for the previous trading day of the one-day window.</param>
 /// <param name="options">How far before a window's start a baseline may lie.</param>
-public sealed class PerformanceReader(DbSession session, ExchangeCalendars calendars, IOptions<PerformanceOptions> options) : IPerformanceReader
+/// <param name="logger">Logger.</param>
+public sealed partial class PerformanceReader(
+    DbSession session,
+    ExchangeCalendars calendars,
+    IOptions<PerformanceOptions> options,
+    ILogger<PerformanceReader> logger) : IPerformanceReader
 {
     // 500 listings are about 4 000 target dates, a statement of a size the planner handles in a few milliseconds.
     private const int _batchSize = 500;
@@ -57,19 +62,21 @@ public sealed class PerformanceReader(DbSession session, ExchangeCalendars calen
     private async Task ReadBatchAsync(StockId[] batch, Dictionary<StockId, PerformanceReport> reports, CancellationToken cancellationToken)
     {
         Dictionary<StockId, (Mic Market, PriceSample Latest)> latest = await LatestAsync(batch, cancellationToken);
-        var calendarOf = new Dictionary<StockId, IExchangeCalendar>();
+        var calendarOf = new Dictionary<StockId, IExchangeCalendar?>();
+        var withoutCalendar = new HashSet<string>();
         var targets = new List<(StockId Stock, DateOnly Target)>();
         foreach ((StockId stock, (Mic market, PriceSample sample)) in latest)
         {
-            // A listing with prices always has a calendar: ingestion only runs for markets that have one. Anything else is a broken deployment.
-            Result<IExchangeCalendar> calendar = calendars.TryGet(market);
-            if (!calendar.IsSuccess)
+            // Prices exist only for markets that had a calendar when they were ingested, so a missing one means it was removed or misspelled. The
+            // listing is still served: only the one-day window needs the calendar, and it says so.
+            IExchangeCalendar? calendar = calendars.TryGet(market) is { IsSuccess: true } found ? found.Value : null;
+            if (calendar is null && withoutCalendar.Add(market.Value))
             {
-                throw new InvalidOperationException($"The market {market} has stored prices but no exchange calendar.");
+                LogNoCalendar(market.Value);
             }
 
-            calendarOf[stock] = calendar.Value;
-            targets.AddRange(PerformanceCalculator.TargetDates(sample.Date, calendar.Value).Values.Distinct().Select(target => (stock, target)));
+            calendarOf[stock] = calendar;
+            targets.AddRange(PerformanceCalculator.TargetDates(sample.Date, calendar).Values.Distinct().Select(target => (stock, target)));
         }
 
         Dictionary<StockId, Dictionary<DateOnly, PriceSample?>> baselines = await BaselinesAsync(targets, cancellationToken);
@@ -123,4 +130,7 @@ public sealed class PerformanceReader(DbSession session, ExchangeCalendars calen
 
         return found;
     }
+
+    [LoggerMessage(EventId = 2401, Level = LogLevel.Warning, Message = "The market {Market} has stored prices but no exchange calendar; the one-day window of its listings is unavailable")]
+    private partial void LogNoCalendar(string market);
 }

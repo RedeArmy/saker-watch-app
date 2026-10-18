@@ -89,6 +89,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2201 | Warning | `The Banco de Guatemala answer had {Rejected} rows that are not a USD rate in the range; they were dropped` | `BanguatFxProvider` |
 | 2202 | Warning | `The Banco de Guatemala call failed in transit ({ExceptionType})` | `BanguatFxProvider` |
 | 2203 | Warning | `The raw Banco de Guatemala response could not be kept ({ExceptionType}); the data itself was fetched and parsed` | `BanguatFxProvider` |
+| 2401 | Warning | `The market {Market} has stored prices but no exchange calendar; the one-day window of its listings is unavailable` | `PerformanceReader` |
 | 2301 | Information | `Exchange rates {Base}/{Quote} refreshed: {Rows} rows written` | `FxRefreshHandler` |
 | 2302 | Warning | `Refresh of the exchange rates {Base}/{Quote} failed for good with {Code}; the next day asks again` | `FxRefreshHandler` |
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |

@@ -5,7 +5,7 @@ namespace SakerWatch.MarketData.Domain.Performance;
 /// <summary>
 /// The one implementation of the performance windows (ADR-0006, ADR-0030). It works on adjusted closes and does no I/O: the dates it needs are
 /// asked for with <see cref="TargetDates"/>, whoever holds the prices looks up the last close on or before each, and <see cref="Calculate"/> turns
-/// them into the windows. A window is a change or the reason it has none.
+/// them into the windows. A window is a change or the reason it has none. A market with no calendar still gets every window but the first.
 /// </summary>
 public static class PerformanceCalculator
 {
@@ -15,13 +15,14 @@ public static class PerformanceCalculator
     /// <summary>Every window, in report order.</summary>
     public static IReadOnlyList<PerformanceWindow> Windows { get; } = Enum.GetValues<PerformanceWindow>();
 
-    /// <summary>The date each window starts from, given the day of the newest price.</summary>
-    public static IReadOnlyDictionary<PerformanceWindow, DateOnly> TargetDates(DateOnly latest, IExchangeCalendar calendar)
+    /// <summary>
+    /// The date each window starts from, given the day of the newest price. Without a calendar the one-day window has no start (the previous
+    /// trading day cannot be told) and is left out; the others are plain calendar offsets and do not need one.
+    /// </summary>
+    public static IReadOnlyDictionary<PerformanceWindow, DateOnly> TargetDates(DateOnly latest, IExchangeCalendar? calendar)
     {
-        ArgumentNullException.ThrowIfNull(calendar);
-        return new Dictionary<PerformanceWindow, DateOnly>
+        var targets = new Dictionary<PerformanceWindow, DateOnly>
         {
-            [PerformanceWindow.OneDay] = calendar.PreviousTradingDay(latest),
             [PerformanceWindow.OneWeek] = latest.AddDays(-7),
             [PerformanceWindow.OneMonth] = latest.AddMonths(-1),
             [PerformanceWindow.ThreeMonths] = latest.AddMonths(-3),
@@ -30,6 +31,12 @@ public static class PerformanceCalculator
             [PerformanceWindow.OneYear] = latest.AddYears(-1),
             [PerformanceWindow.FiveYears] = latest.AddYears(-5),
         };
+        if (calendar is not null)
+        {
+            targets[PerformanceWindow.OneDay] = calendar.PreviousTradingDay(latest);
+        }
+
+        return targets;
     }
 
     /// <summary>The report of a listing with no price: <see cref="PerformanceGap.NoData"/> in every window.</summary>
@@ -43,11 +50,10 @@ public static class PerformanceCalculator
     public static PerformanceReport Calculate(
         PriceSample? latest,
         IReadOnlyDictionary<DateOnly, PriceSample?> baselines,
-        IExchangeCalendar calendar,
+        IExchangeCalendar? calendar,
         int maxGapDays = DefaultMaxGapDays)
     {
         ArgumentNullException.ThrowIfNull(baselines);
-        ArgumentNullException.ThrowIfNull(calendar);
         ArgumentOutOfRangeException.ThrowIfNegative(maxGapDays);
 
         if (latest is null)
@@ -59,7 +65,12 @@ public static class PerformanceCalculator
         var windows = new List<WindowPerformance>(Windows.Count);
         foreach (PerformanceWindow window in Windows)
         {
-            DateOnly target = targets[window];
+            if (!targets.TryGetValue(window, out DateOnly target))
+            {
+                windows.Add(WindowPerformance.Missing(window, PerformanceGap.CalendarUnavailable));
+                continue;
+            }
+
             baselines.TryGetValue(target, out PriceSample? baseline);
             windows.Add(Measure(window, latest, baseline, target, window == PerformanceWindow.OneDay ? 0 : maxGapDays));
         }

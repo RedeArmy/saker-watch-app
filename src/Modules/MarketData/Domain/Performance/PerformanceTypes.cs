@@ -41,6 +41,9 @@ public enum PerformanceGap
 
     /// <summary>The nearest earlier price is further before the window's start than allowed: a hole in the history, not a short history.</summary>
     HistoryGap,
+
+    /// <summary>The one-day window needs the market's calendar to know the previous trading day, and the market has none (yet).</summary>
+    CalendarUnavailable,
 }
 
 /// <summary>An adjusted close on a day.</summary>

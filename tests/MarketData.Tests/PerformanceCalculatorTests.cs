@@ -95,6 +95,25 @@ public sealed class PerformanceCalculatorTests
     }
 
     [Fact]
+    public void Calculate_WithoutACalendar_GivesEveryWindowButTheOneDay()
+    {
+        PriceSample latest = Sample(2026, 10, 16, 110m);
+        Dictionary<DateOnly, PriceSample?> baselines = Baselines(_calendar, latest.Date, (PerformanceWindow.OneWeek, Sample(2026, 10, 9, 100m)));
+
+        PerformanceReport report = PerformanceCalculator.Calculate(latest, baselines, calendar: null);
+
+        Window(report, PerformanceWindow.OneDay).Gap.Should().Be(PerformanceGap.CalendarUnavailable);
+        Window(report, PerformanceWindow.OneWeek).Change.Should().Be(0.1m);
+        report.Windows.Where(w => w.Window is not (PerformanceWindow.OneDay or PerformanceWindow.OneWeek)).Should().OnlyContain(w => w.Gap == PerformanceGap.InsufficientHistory);
+        report.Windows.Should().HaveCount(8);
+    }
+
+    [Fact]
+    public void TargetDates_WithoutACalendar_LeavesOutTheOneDay() =>
+        PerformanceCalculator.TargetDates(new DateOnly(2026, 10, 16), calendar: null).Keys.Should().BeEquivalentTo(
+            PerformanceCalculator.Windows.Where(w => w != PerformanceWindow.OneDay));
+
+    [Fact]
     public void Calculate_AListingWithNoPrice_HasNoDataInEveryWindow()
     {
         PerformanceReport report = PerformanceCalculator.Calculate(null, new Dictionary<DateOnly, PriceSample?>(), _calendar);
