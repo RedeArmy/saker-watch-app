@@ -3,4 +3,7 @@
     <AssemblyName>SakerWatch.MarketData.Contracts</AssemblyName>
     <RootNamespace>SakerWatch.MarketData.Contracts</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+  </ItemGroup>
 </Project>

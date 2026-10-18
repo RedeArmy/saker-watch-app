@@ -24,6 +24,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
 | `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed | daily refreshes of a listing: `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
+| `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog |
 | `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
 | `sakerwatch_marketdata_fx_rows_total` (counter) | none | exchange rates written by the daily refresh |
 | `sakerwatch_marketdata_fx_age_days` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | pair, source | days since the date of the newest exchange rate (Guatemalan calendar); the bank fills weekends, so a value above `MarketData:Ingestion:FxMaxAgeDays` (3) means the ingestion stopped. Per process: aggregate with `max` |
@@ -90,6 +91,9 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2202 | Warning | `The Banco de Guatemala call failed in transit ({ExceptionType})` | `BanguatFxProvider` |
 | 2203 | Warning | `The raw Banco de Guatemala response could not be kept ({ExceptionType}); the data itself was fetched and parsed` | `BanguatFxProvider` |
 | 2401 | Warning | `The market {Market} has stored prices but no exchange calendar; the one-day window of its listings is unavailable` | `PerformanceReader` |
+| 2501 | Information | `A stock of {Market} was registered in the catalog and its history queued` | `StockDirectory` |
+| 2502 | Warning | `The search at {Provider} failed with {Code}` | `StockDirectory` |
+| 2503 | Warning | `The search cache could not be used ({ExceptionType}); the search goes to the provider` | `RedisSearchCache` |
 | 2301 | Information | `Exchange rates {Base}/{Quote} refreshed: {Rows} rows written` | `FxRefreshHandler` |
 | 2302 | Warning | `Refresh of the exchange rates {Base}/{Quote} failed for good with {Code}; the next day asks again` | `FxRefreshHandler` |
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |

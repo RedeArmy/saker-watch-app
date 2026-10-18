@@ -82,6 +82,8 @@ internal static class WebTestServer
                             (type == ErrorType.Validation
                                 ? Error.Validation("demo.invalid", "Bad input", new Dictionary<string, string[]> { ["name"] = ["required"] })
                                 : new Error("demo.error", "Something", type)).ToProblem());
+                        endpoints.MapGet("/retry/{type}/{seconds:int}", (ErrorType type, int seconds) =>
+                            (type == ErrorType.TooManyRequests ? Error.TooManyRequests("demo.busy", "Slow down", seconds) : Error.Unavailable("demo.down", "Down", seconds)).ToProblem());
                         endpoints.MapPost("/idem", (HttpContext http) => IdempotencyKeyReader.Require(http).ToHttpResult(key => Results.Ok(key)));
                         endpoints.MapPost("/idem/{id}", (HttpContext http, string id) => IdempotencyKeyReader.Require(http).ToHttpResult(key => Results.Ok(key)));
                         endpoints.MapGet("/busy", () => Error.Conflict(IdempotencyErrors.InProgress, "still running").ToProblem());

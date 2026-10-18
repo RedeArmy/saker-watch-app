@@ -68,7 +68,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
         int first = await step.RunAsync(CancellationToken.None);
         int second = await step.RunAsync(CancellationToken.None);
 
-        first.Should().Be(2);
+        first.Should().Be(3);
         second.Should().Be(0);
     }
 

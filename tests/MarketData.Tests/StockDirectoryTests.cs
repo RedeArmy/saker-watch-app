@@ -1,0 +1,430 @@
+using System.Diagnostics.Metrics;
+using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
+using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Lookup;
+using SakerWatch.MarketData.Application.Providers;
+using SakerWatch.MarketData.Contracts;
+using SakerWatch.MarketData.Domain.Calendars;
+using SakerWatch.MarketData.Domain.Markets;
+using SakerWatch.MarketData.Domain.Stocks;
+
+namespace SakerWatch.MarketData.Tests;
+
+public sealed class StockDirectoryTests
+{
+    private static readonly DateTimeOffset _now = new(2026, 10, 18, 12, 0, 0, TimeSpan.Zero);
+
+    private sealed class Provider(Func<string, Result<IReadOnlyList<ProviderListing>>> answer) : IMarketDataProvider
+    {
+        public List<string> Searched { get; } = [];
+
+        public string Name => "fake";
+
+        public Task<Result<IReadOnlyList<ProviderListing>>> SearchAsync(string symbol, CancellationToken cancellationToken)
+        {
+            Searched.Add(symbol);
+            return Task.FromResult(answer(symbol));
+        }
+
+        public Task<Result<DailySeries>> GetDailyAsync(DailySeriesRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class Catalog : IStockCatalog
+    {
+        public List<CatalogListing> Listings { get; } = [];
+
+        public Task<CatalogStock?> FindAsync(StockId id, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<CatalogListing?> FindByKeyAsync(Mic market, Ticker ticker, CancellationToken cancellationToken) =>
+            Task.FromResult(Listings.FirstOrDefault(l => l.Market == market && l.Ticker == ticker));
+
+        public Task<IReadOnlyList<StockId>> ListIngestableAsync(Mic market, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class Registry(Guid? existing = null) : IStockRegistry
+    {
+        public List<(Stock Stock, string Provider, ProviderListingKey Key)> Registered { get; } = [];
+
+        public Task<StockId> RegisterAsync(Stock stock, string provider, ProviderListingKey providerKey, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            Registered.Add((stock, provider, providerKey));
+            return Task.FromResult(existing is { } id ? StockId.Create(id) : stock.Id);
+        }
+    }
+
+    private sealed class Budget(bool grant = true) : IProviderCallBudget
+    {
+        public List<(string Provider, BudgetLimits Limits, int Credits)> Spent { get; } = [];
+
+        public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken)
+        {
+            Spent.Add((provider, limits, credits));
+            return Task.FromResult(grant ? BudgetDecision.Allowed : new BudgetDecision(false, TimeSpan.FromSeconds(41.2)));
+        }
+    }
+
+    private sealed class Cache : ISearchCache
+    {
+        public Dictionary<string, IReadOnlyList<CachedListing>> Stored { get; } = [];
+
+        public List<TimeSpan> Ttls { get; } = [];
+
+        public Task<IReadOnlyList<CachedListing>?> GetAsync(string provider, string query, CancellationToken cancellationToken) =>
+            Task.FromResult(Stored.TryGetValue(query.ToLowerInvariant(), out IReadOnlyList<CachedListing>? found) ? found : null);
+
+        public Task SetAsync(string provider, string query, IReadOnlyList<CachedListing> listings, TimeSpan ttl, CancellationToken cancellationToken)
+        {
+            Stored[query.ToLowerInvariant()] = listings;
+            Ttls.Add(ttl);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class Enqueuer : IJobEnqueuer
+    {
+        public List<(string Key, object Payload, JobEnqueueOptions? Options)> Queued { get; } = [];
+
+        public Task<bool> EnqueueAsync<TPayload>(string jobKey, TPayload payload, JobEnqueueOptions? options, CancellationToken cancellationToken)
+            where TPayload : notnull
+        {
+            Queued.Add((jobKey, payload, options));
+            return Task.FromResult(true);
+        }
+    }
+
+    private sealed record Rig(StockDirectory Directory, Provider Provider, Catalog Catalog, Registry Registry, Budget Budget, Cache Cache, Enqueuer Jobs);
+
+    private static ProviderListing Listing(string mic, string symbol, string? name = "Apple Inc.", string? currency = "USD", AssetType type = AssetType.Equity) =>
+        new(new ProviderListingKey(mic, symbol), name, currency, "Asia/Tokyo", type);
+
+    private static Result<IReadOnlyList<ProviderListing>> Found(params ProviderListing[] listings) => listings;
+
+    private static Rig Build(
+        Func<string, Result<IReadOnlyList<ProviderListing>>> answer,
+        bool grant = true,
+        Guid? existingId = null,
+        StockLookupOptions? lookup = null,
+        string[]? markets = null)
+    {
+        var provider = new Provider(answer);
+        var catalog = new Catalog();
+        var registry = new Registry(existingId);
+        var budget = new Budget(grant);
+        var cache = new Cache();
+        var jobs = new Enqueuer();
+        var clock = new FakeTimeProvider(_now);
+        var router = new MarketDataProviderRouter(
+            [provider],
+            Options.Create(new MarketDataProvidersOptions { Markets = (markets ?? ["XNAS", "XNYS"]).ToDictionary(m => m, _ => "fake") }));
+        var directory = new StockDirectory(
+            catalog, registry, router, ExchangeCalendars.Default(), budget, cache, jobs, new TimeProviderIdGenerator(clock),
+            Options.Create(lookup ?? new StockLookupOptions()), Options.Create(new IngestionOptions()), clock, NullLogger<StockDirectory>.Instance);
+        return new Rig(directory, provider, catalog, registry, budget, cache, jobs);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("AAPL; DROP TABLE stocks")]
+    [InlineData("<script>")]
+    [InlineData("AA\nPL")]
+    [InlineData("a/b")]
+    [InlineData("a?x=1&apikey=2")]
+    [InlineData("12345678901234567890123456789012345678901")]
+    public async Task Search_AQueryThatIsNotPlainText_IsRefusedWithoutSpendingASearch(string query)
+    {
+        Rig rig = Build(_ => Found());
+
+        Result<IReadOnlyList<StockCandidate>> result = await rig.Directory.SearchAsync(query, CancellationToken.None);
+
+        result.Error!.Code.Should().Be(StockDirectory.QueryInvalidCode);
+        rig.Budget.Spent.Should().BeEmpty();
+        rig.Provider.Searched.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Search_PutsTheExactTickerFirst_ThenTheTickersThatStartWithTheText_AndMapsNasdaqSegmentsToTheMarket()
+    {
+        Rig rig = Build(_ => Found(
+            Listing("XNAS", "AAPLDXX", "Structured note"),
+            Listing("XNGS", "AAPL"),
+            Listing("XNYS", "AAP", "Advance Auto Parts"),
+            Listing("XNMS", "AAPB", "Leveraged ETF", type: AssetType.Etf)));
+
+        IReadOnlyList<StockCandidate> candidates = (await rig.Directory.SearchAsync(" aapl ", CancellationToken.None)).Value;
+
+        candidates.Select(c => (c.Market, c.Ticker)).Should().Equal(("XNAS", "AAPL"), ("XNAS", "AAPLDXX"), ("XNYS", "AAP"), ("XNAS", "AAPB"));
+        candidates[0].Should().Be(new StockCandidate("XNAS", "AAPL", "Apple Inc.", "USD", "equity"));
+        candidates[3].AssetType.Should().Be("etf");
+    }
+
+    [Fact]
+    public async Task Search_LeavesOutWhatTheCatalogWouldNotAccept()
+    {
+        Rig rig = Build(_ => Found(
+            Listing("XNGS", "AAPL"),
+            Listing("XTSE", "AAPL", currency: "CAD"), // a market that is not enabled here
+            Listing("XNAS", "AAPL.TO", currency: "CAD"), // not the currency of the market
+            Listing("XNAS", "AAPX", name: "  "), // no name
+            Listing("XNAS", "AAPY", name: new string('n', 300)), // a name over the limit
+            Listing("XNAS", "AA PL"), // not a ticker
+            Listing("XNAS", "AAPZ", currency: null),
+            Listing("XNAS", "AAPQ", currency: "usd"))); // case is normalized, so this one is fine
+
+        IReadOnlyList<StockCandidate> candidates = (await rig.Directory.SearchAsync("AAP", CancellationToken.None)).Value;
+
+        candidates.Select(c => c.Ticker).Should().Equal("AAPL", "AAPQ");
+    }
+
+    [Fact]
+    public async Task Search_ListsEachStockOnce_AndNoMoreThanTheMaximum()
+    {
+        Rig rig = Build(
+            _ => Found([Listing("XNGS", "AAPL"), Listing("XNMS", "AAPL"), .. Enumerable.Range(0, 40).Select(i => Listing("XNYS", $"T{i:D2}"))]),
+            lookup: new StockLookupOptions { MaxResults = 5 });
+
+        IReadOnlyList<StockCandidate> candidates = (await rig.Directory.SearchAsync("T", CancellationToken.None)).Value;
+
+        candidates.Should().HaveCount(5);
+        candidates.Count(c => c.Ticker == "AAPL").Should().BeLessThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public async Task Search_SpendsOneSearchOfTheSharedBudget_AndKeepsTheAnswerForTheConfiguredTime()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: new StockLookupOptions { SearchesPerMinute = 7, SearchesPerDay = 70, CacheMinutes = 3 });
+
+        await rig.Directory.SearchAsync("AAPL", CancellationToken.None);
+
+        rig.Budget.Spent.Should().ContainSingle().Which.Should().Be(("fake_search", new BudgetLimits(7, 70), 1));
+        rig.Cache.Ttls.Should().Equal(TimeSpan.FromMinutes(3));
+    }
+
+    [Fact]
+    public async Task Search_RepeatedWithinTheCacheTime_DoesNotCallTheProviderOrSpendASearch()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+        await rig.Directory.SearchAsync("AAPL", CancellationToken.None);
+
+        Result<IReadOnlyList<StockCandidate>> again = await rig.Directory.SearchAsync("aapl", CancellationToken.None);
+
+        again.Value.Should().ContainSingle();
+        rig.Provider.Searched.Should().ContainSingle();
+        rig.Budget.Spent.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Search_WithTheCacheOff_StoresNothing()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: new StockLookupOptions { CacheMinutes = 0 });
+
+        await rig.Directory.SearchAsync("AAPL", CancellationToken.None);
+        await rig.Directory.SearchAsync("AAPL", CancellationToken.None);
+
+        rig.Cache.Stored.Should().BeEmpty();
+        rig.Provider.Searched.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Search_WhenTheSharedBudgetIsSpent_AsksTheCallerToWait_AndNeverCallsTheProvider()
+    {
+        Rig rig = Build(_ => Found(), grant: false);
+
+        Error error = (await rig.Directory.SearchAsync("AAPL", CancellationToken.None)).Error!;
+
+        error.Type.Should().Be(ErrorType.TooManyRequests);
+        error.Code.Should().Be(StockDirectory.SearchBusyCode);
+        error.Details![Error.RetryAfterSecondsKey].Should().Equal("42");
+        rig.Provider.Searched.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Search_WhenTheProviderRefusesForRate_IsBusy_AndForAnythingElse_Unavailable_WithoutItsMessage()
+    {
+        Rig limited = Build(_ => ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(12)));
+        Rig down = Build(_ => ProviderErrors.Unavailable("fake"));
+        Rig refused = Build(_ => ProviderErrors.Unauthorized("fake"));
+        Rig strange = Build(_ => ProviderErrors.InvalidResponse("fake"));
+
+        Error busy = (await limited.Directory.SearchAsync("AAPL", CancellationToken.None)).Error!;
+        Error[] others = [.. await Task.WhenAll(new[] { down, refused, strange }.Select(async r => (await r.Directory.SearchAsync("AAPL", CancellationToken.None)).Error!))];
+
+        busy.Type.Should().Be(ErrorType.TooManyRequests);
+        busy.Details![Error.RetryAfterSecondsKey].Should().Equal("12");
+        others.Should().OnlyContain(e => e.Type == ErrorType.Unavailable && e.Code == StockDirectory.ProviderUnavailableCode);
+        others.Should().OnlyContain(e => !e.Message.Contains("fake", StringComparison.OrdinalIgnoreCase) && !e.Message.Contains("key", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Search_WithNoEnabledMarket_ReturnsNothing()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), markets: []);
+
+        (await rig.Directory.SearchAsync("AAPL", CancellationToken.None)).Value.Should().BeEmpty();
+        rig.Provider.Searched.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("", "AAPL", "marketdata.mic.invalid")]
+    [InlineData("XN", "AAPL", "marketdata.mic.invalid")]
+    [InlineData("XNAS", "", "marketdata.ticker.invalid")]
+    [InlineData("XNAS", "A B", "marketdata.ticker.invalid")]
+    public async Task Ensure_AMarketOrTickerThatIsNotValid_IsRefusedBeforeAnythingElse(string market, string ticker, string code)
+    {
+        Rig rig = Build(_ => Found());
+
+        Result<StockSummary> result = await rig.Directory.EnsureAsync(market, ticker, CancellationToken.None);
+
+        result.Error!.Code.Should().Be(code);
+        rig.Provider.Searched.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_ACataloguedStock_IsReturnedWithoutCallingTheProvider()
+    {
+        Rig rig = Build(_ => Found());
+        var id = StockId.Create(Guid.CreateVersion7());
+        rig.Catalog.Listings.Add(new CatalogListing(id, Mic.Parse("XNAS"), Ticker.Parse("AAPL"), "Apple Inc.", CurrencyCode.Parse("USD"), AssetType.Equity, true));
+
+        StockSummary summary = (await rig.Directory.EnsureAsync("xnas", " aapl ", CancellationToken.None)).Value;
+
+        summary.Should().Be(new StockSummary(id.Value, "XNAS", "AAPL", "Apple Inc.", "USD", "equity"));
+        rig.Provider.Searched.Should().BeEmpty();
+        rig.Registry.Registered.Should().BeEmpty();
+        rig.Jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_AStockNotInTheCatalog_IsRegisteredFromTheProvidersAnswer_AndItsHistoryIsQueued()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPLDXX", "Note"), Listing("XNGS", "AAPL", "  Apple Inc.  "), Listing("XNYS", "AAPL", "Other")));
+
+        StockSummary summary = (await rig.Directory.EnsureAsync("XNAS", "aapl", CancellationToken.None)).Value;
+
+        (Stock stock, string provider, ProviderListingKey key) = rig.Registry.Registered.Should().ContainSingle().Subject;
+        (stock.Market.Value, stock.Ticker.Value, stock.Name, stock.Currency.Value, stock.TimeZoneId, stock.AssetType, stock.ListedAt)
+            .Should().Be(("XNAS", "AAPL", "Apple Inc.", "USD", "America/New_York", AssetType.Equity, _now), "the time zone is ours, not the provider's Asia/Tokyo");
+        (provider, key).Should().Be(("fake", new ProviderListingKey("XNGS", "AAPL")));
+        summary.Should().Be(new StockSummary(stock.Id.Value, "XNAS", "AAPL", "Apple Inc.", "USD", "equity"));
+        (string jobKey, object payload, JobEnqueueOptions? options) = rig.Jobs.Queued.Should().ContainSingle().Subject;
+        jobKey.Should().Be(BackfillStockJob.KeyFor(stock.Id));
+        payload.Should().Be(new BackfillStockJob(stock.Id.Value));
+        options!.MaxAttempts.Should().Be(8);
+    }
+
+    [Fact]
+    public async Task Ensure_WhenAnotherRequestRegisteredItFirst_UsesTheIdThatWon()
+    {
+        var winner = Guid.CreateVersion7();
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), existingId: winner);
+
+        StockSummary summary = (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Value;
+
+        summary.Id.Should().Be(winner);
+        rig.Jobs.Queued.Single().Key.Should().Be(BackfillStockJob.KeyFor(StockId.Create(winner)));
+    }
+
+    [Fact]
+    public async Task Ensure_AMarketThatIsNotEnabledOrHasNoCalendar_IsNotAvailable_WithoutCallingTheProvider()
+    {
+        Rig rig = Build(_ => Found(Listing("XTSE", "SHOP", currency: "CAD")), markets: ["XNAS", "XTSE"]);
+
+        Error notRouted = (await rig.Directory.EnsureAsync("XNYS", "KO", CancellationToken.None)).Error!;
+        Error noCalendar = (await rig.Directory.EnsureAsync("XTSE", "SHOP", CancellationToken.None)).Error!;
+
+        notRouted.Code.Should().Be(StockDirectory.MarketNotAvailableCode);
+        noCalendar.Code.Should().Be(StockDirectory.MarketNotAvailableCode);
+        rig.Provider.Searched.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheProviderDoesNotListTheExactMarketAndTicker_IsNotFound_AndNothingIsRegistered()
+    {
+        Rig rig = Build(_ => Found(Listing("XNYS", "AAPL"), Listing("XNGS", "AAPLX"), Listing("XNGS", "AAPL", currency: "EUR")));
+
+        Result<StockSummary> result = await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        result.Error!.Code.Should().Be(StockDirectory.StockNotFoundCode);
+        rig.Registry.Registered.Should().BeEmpty();
+        rig.Jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheProviderCannotAnswer_RegistersNothing()
+    {
+        Rig down = Build(_ => ProviderErrors.Unavailable("fake"));
+        Rig busy = Build(_ => Found(), grant: false);
+
+        Error unavailable = (await down.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+        Error wait = (await busy.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+
+        (unavailable.Type, wait.Type).Should().Be((ErrorType.Unavailable, ErrorType.TooManyRequests));
+        down.Registry.Registered.Should().BeEmpty();
+        busy.Registry.Registered.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_UsesTheSameCachedAnswerAsASearch()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+        await rig.Directory.SearchAsync("AAPL", CancellationToken.None);
+
+        await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        rig.Provider.Searched.Should().ContainSingle("the search the user just made already answered it");
+    }
+
+    [Fact]
+    public async Task Lookups_AreCountedByOperationAndOutcome()
+    {
+        var seen = new List<(string Operation, string Outcome)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "sakerwatch_marketdata_stock_lookups_total")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            string operation = "", outcome = "";
+            foreach (KeyValuePair<string, object?> tag in tags)
+            {
+                if (tag.Key == "operation")
+                {
+                    operation = (string)tag.Value!;
+                }
+                else
+                {
+                    outcome = (string)tag.Value!;
+                }
+            }
+
+            lock (seen)
+            {
+                seen.Add((operation, outcome));
+            }
+        });
+        listener.Start();
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+
+        await rig.Directory.SearchAsync("AAPL", CancellationToken.None);
+        await rig.Directory.SearchAsync("bad;", CancellationToken.None);
+        await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+        await rig.Directory.EnsureAsync("XNYS", "ZZZ", CancellationToken.None);
+        rig.Catalog.Listings.Add(new CatalogListing(StockId.Create(Guid.CreateVersion7()), Mic.Parse("XNAS"), Ticker.Parse("MSFT"), "Microsoft", CurrencyCode.Parse("USD"), AssetType.Equity, true));
+        await rig.Directory.EnsureAsync("XNAS", "MSFT", CancellationToken.None);
+
+        lock (seen)
+        {
+            seen.Should().Contain([("search", "success"), ("search", "invalid"), ("ensure", "registered"), ("ensure", "not_found"), ("ensure", "catalogued")]);
+        }
+    }
+}

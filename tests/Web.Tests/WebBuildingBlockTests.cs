@@ -91,6 +91,8 @@ public sealed class WebBuildingBlockTests
     [InlineData(ErrorType.NotFound, 404)]
     [InlineData(ErrorType.Conflict, 409)]
     [InlineData(ErrorType.Unprocessable, 422)]
+    [InlineData(ErrorType.TooManyRequests, 429)]
+    [InlineData(ErrorType.Unavailable, 503)]
     [InlineData(ErrorType.Failure, 500)]
     public async Task ErrorTypes_MapToExpectedStatusAndProblemShape(ErrorType type, int expectedStatus)
     {
@@ -105,6 +107,21 @@ public sealed class WebBuildingBlockTests
         json.GetProperty("correlationId").GetString().Should().NotBeNullOrEmpty();
         json.TryGetProperty("traceId", out _).Should().BeTrue();
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+    }
+
+    [Fact]
+    public async Task ARetryableError_CarriesTheWaitInTheHeader_AndNotInTheFieldErrors()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage busy = await host.GetTestClient().GetAsync("/retry/TooManyRequests/45");
+        HttpResponseMessage down = await host.GetTestClient().GetAsync("/retry/Unavailable/30");
+        HttpResponseMessage unknown = await host.GetTestClient().GetAsync("/retry/Unavailable/0");
+
+        ((int)busy.StatusCode, busy.Headers.RetryAfter!.Delta).Should().Be((429, TimeSpan.FromSeconds(45)));
+        ((int)down.StatusCode, down.Headers.RetryAfter!.Delta).Should().Be((503, TimeSpan.FromSeconds(30)));
+        unknown.Headers.RetryAfter.Should().BeNull("no wait was given");
+        (await ReadJson(busy)).TryGetProperty("errors", out _).Should().BeFalse();
     }
 
     [Fact]

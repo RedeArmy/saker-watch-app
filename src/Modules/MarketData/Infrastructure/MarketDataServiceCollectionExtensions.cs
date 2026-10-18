@@ -6,8 +6,10 @@ using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
 using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
+using SakerWatch.MarketData.Contracts;
 using SakerWatch.MarketData.Infrastructure.Persistence;
 using SakerWatch.MarketData.Infrastructure.Providers;
 using SakerWatch.MarketData.Infrastructure.Providers.Banguat;
@@ -19,22 +21,22 @@ namespace SakerWatch.MarketData.Infrastructure;
 public static class MarketDataServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the routing table (<c>MarketData:Providers</c>), the router and the Twelve Data provider behind its allow-listed client.
-    /// A market is served only if the table routes it to a registered provider.
+    /// Registers what the API needs to find and register stocks (ADR-0032): the routing table, the router, the Twelve Data provider behind its
+    /// allow-listed client (used for searches only), the shared search budget and cache, and the stock directory. It starts no background work.
     /// </summary>
-    public static IServiceCollection AddMarketData(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddMarketDataLookup(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(TwelveDataProvider)))
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(IStockDirectory)))
         {
             return services;
         }
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
         services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
-        services.AddOptions<PerformanceOptions>().Bind(configuration.GetSection(PerformanceOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<StockLookupOptions>().Bind(configuration.GetSection(StockLookupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddMarketDataApplication();
 
         services.AddOptions<TwelveDataOptions>()
@@ -59,6 +61,43 @@ public static class MarketDataServiceCollectionExtensions
                 http.RateLimitIsTransient = false;
             });
 
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IProviderCallBudget, RedisProviderCallBudget>();
+        if (configuration.GetValue("MarketData:Payloads:Enabled", true))
+        {
+            services.TryAddSingleton<IProviderPayloadStore, MongoProviderPayloadStore>();
+        }
+        else
+        {
+            services.TryAddSingleton<IProviderPayloadStore, NoProviderPayloadStore>();
+        }
+
+        services.TryAddSingleton<ISearchCache, RedisSearchCache>();
+        services.TryAddScoped<IStockCatalog, StockCatalog>();
+        services.TryAddScoped<IStockRegistry, StockRegistry>();
+        services.TryAddScoped<IStockDirectory, StockDirectory>();
+        services.AddSingleton<TwelveDataProvider>();
+        services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
+        return services;
+    }
+
+    /// <summary>
+    /// Registers everything the worker runs: the lookup, the exchange rate and performance settings, the stores and readers, the scheduler and
+    /// the freshness sampler.
+    /// </summary>
+    public static IServiceCollection AddMarketData(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(BanguatFxProvider)))
+        {
+            return services;
+        }
+
+        services.AddMarketDataLookup(configuration);
+        services.AddOptions<PerformanceOptions>().Bind(configuration.GetSection(PerformanceOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+
         services.AddOptions<BanguatOptions>().Bind(configuration.GetSection(BanguatOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BanguatOptions>, BanguatOptionsValidator>());
         var banguat = new BanguatOptions();
@@ -76,21 +115,12 @@ public static class MarketDataServiceCollectionExtensions
                 http.TotalTimeout = TimeSpan.FromSeconds(30);
             });
 
-        services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IProviderCallBudget, RedisProviderCallBudget>();
-        if (configuration.GetValue("MarketData:Payloads:Enabled", true))
-        {
-            services.TryAddSingleton<IProviderPayloadStore, MongoProviderPayloadStore>();
-        }
-        else
-        {
-            services.TryAddSingleton<IProviderPayloadStore, NoProviderPayloadStore>();
-        }
-
+        services.TryAddScoped<ListingIngestion>();
+        services.TryAddScoped<FollowUpJobs>();
+        services.TryAddScoped<IFxConverter, FxConverter>();
         services.TryAddScoped<IPriceStore, PriceStore>();
         services.TryAddScoped<IFxRateStore, FxRateStore>();
         services.TryAddScoped<IPerformanceReader, PerformanceReader>();
-        services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
         services.TryAddScoped<IFreshnessReader, FreshnessReader>();
@@ -99,8 +129,6 @@ public static class MarketDataServiceCollectionExtensions
         services.AddHostedService(provider => provider.GetRequiredService<MarketDataFreshnessSampler>());
         services.AddSingleton<BanguatFxProvider>();
         services.AddSingleton<IFxRateProvider>(provider => provider.GetRequiredService<BanguatFxProvider>());
-        services.AddSingleton<TwelveDataProvider>();
-        services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;
     }
 }

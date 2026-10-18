@@ -10,9 +10,12 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Modules/Watchlist/Domain/SakerWatch.Watchlist.Domain.csproj" />
     <ProjectReference Include="../../src/Modules/Watchlist/Application/SakerWatch.Watchlist.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
   </ItemGroup>
 </Project>

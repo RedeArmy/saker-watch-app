@@ -26,4 +26,21 @@ public static class JobServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers only the names of the job payloads of <paramref name="assemblies"/>, for a host that queues jobs it never runs (the API queues the
+    /// first load of a stock the worker performs). No handler is registered, so nothing the handlers need has to exist in the host.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="assemblies">Assemblies that define job payloads.</param>
+    public static IServiceCollection AddJobPayloads(this IServiceCollection services, params Assembly[] assemblies)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(assemblies);
+
+        ServiceScanning.AddToRegistry(services, assemblies, JobRegistry.FromAssemblies);
+        services.TryAddScoped<CorrelationContext>();
+        services.TryAddScoped<ICorrelationContext>(provider => provider.GetRequiredService<CorrelationContext>());
+        return services;
+    }
 }

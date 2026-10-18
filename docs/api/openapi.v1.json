@@ -211,6 +211,344 @@
           }
         ]
       }
+    },
+    "/v1/stocks/search": {
+      "get": {
+        "tags": [
+          "Stocks"
+        ],
+        "summary": "Search stocks to add to the watchlist",
+        "description": "Finds stocks in the enabled markets by ticker or name, an exact ticker first. The market in each match is the canonical one to use in the watchlist routes. Searches are limited per user and, together, per minute and per day; a busy answer carries Retry-After. This is a research aid, not a recommendation.",
+        "operationId": "SearchStocks",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/watchlist/items/{market}/{ticker}": {
+      "put": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Put a stock on the watchlist",
+        "description": "Adds the stock to the caller\u0027s watchlist with these notes and target price, or replaces the notes and target of the item already there: the same request twice leaves the same state, so it needs no Idempotency-Key. A stock the catalog does not have yet is registered from the provider\u0027s answer for that exact market and ticker and its history is queued; if the provider cannot confirm it the answer is 503 and nothing is stored. Returns 201 when the stock was added and 200 when an item was updated.",
+        "operationId": "PutWatchlistItem",
+        "parameters": [
+          {
+            "name": "market",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticker",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PutWatchlistItemRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistItemResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistItemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Take a stock off the watchlist",
+        "description": "Removes the stock from the caller\u0027s watchlist and from every portfolio it was in. Removing a stock that is not there is not an error: the answer is 204 either way.",
+        "operationId": "RemoveWatchlistItem",
+        "parameters": [
+          {
+            "name": "market",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticker",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -294,6 +632,82 @@
           }
         }
       },
+      "PutWatchlistItemRequest": {
+        "required": [
+          "notes",
+          "targetPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Notes, up to 2000 characters, or null."
+          },
+          "targetPrice": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Target price greater than zero with at most eight decimals, or null.",
+            "format": "double"
+          }
+        },
+        "description": "Body of \u0060PUT /v1/watchlist/items/{market}/{ticker}\u0060. Both fields replace what is stored; leaving one out clears it."
+      },
+      "StockCandidateResponse": {
+        "required": [
+          "market",
+          "ticker",
+          "name",
+          "currency",
+          "assetType"
+        ],
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "description": "Canonical market code (MIC), for example \u0060XNAS\u0060."
+          },
+          "ticker": {
+            "type": "string",
+            "description": "Ticker on that market."
+          },
+          "name": {
+            "type": "string",
+            "description": "Instrument name as the provider reports it."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Trading currency (ISO 4217)."
+          },
+          "assetType": {
+            "type": "string",
+            "description": "Kind of instrument: \u0060equity\u0060, \u0060etf\u0060 or \u0060other\u0060."
+          }
+        },
+        "description": "A stock found by a search."
+      },
+      "StockSearchResponse": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockCandidateResponse"
+            },
+            "description": "The matches, an exact ticker first."
+          }
+        },
+        "description": "Result of \u0060GET /v1/stocks/search\u0060."
+      },
       "UpdatePreferencesRequest": {
         "required": [
           "locale"
@@ -306,6 +720,95 @@
           }
         },
         "description": "Body of \u0060PUT /v1/me/preferences\u0060."
+      },
+      "WatchlistItemResponse": {
+        "required": [
+          "id",
+          "stock",
+          "notes",
+          "targetPrice",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Item id.",
+            "format": "uuid"
+          },
+          "stock": {
+            "description": "The stock.",
+            "$ref": "#/components/schemas/WatchlistStockResponse"
+          },
+          "notes": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The caller\u0027s notes, or null."
+          },
+          "targetPrice": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "The caller\u0027s target price in the stock\u0027s currency, or null. A note, never an order.",
+            "format": "double"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the stock was added (ISO-8601 UTC).",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "When the item last changed (ISO-8601 UTC).",
+            "format": "date-time"
+          }
+        },
+        "description": "A stock on the caller\u0027s watchlist."
+      },
+      "WatchlistStockResponse": {
+        "required": [
+          "id",
+          "market",
+          "ticker",
+          "name",
+          "currency",
+          "assetType"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Catalog id of the stock.",
+            "format": "uuid"
+          },
+          "market": {
+            "type": "string",
+            "description": "Canonical market code (MIC)."
+          },
+          "ticker": {
+            "type": "string",
+            "description": "Ticker on that market."
+          },
+          "name": {
+            "type": "string",
+            "description": "Instrument name."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Trading currency (ISO 4217)."
+          },
+          "assetType": {
+            "type": "string",
+            "description": "Kind of instrument: \u0060equity\u0060, \u0060etf\u0060 or \u0060other\u0060."
+          }
+        },
+        "description": "The stock a watchlist item points to."
       }
     },
     "securitySchemes": {
@@ -320,6 +823,12 @@
   "tags": [
     {
       "name": "Me"
+    },
+    {
+      "name": "Stocks"
+    },
+    {
+      "name": "Watchlist"
     }
   ]
 }

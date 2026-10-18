@@ -19,6 +19,8 @@ using SakerWatch.BuildingBlocks.Web.Security;
 using SakerWatch.Hosts.Api.Api;
 using SakerWatch.Identity.Infrastructure.Clavaris;
 using SakerWatch.Identity.Infrastructure.Persistence;
+using SakerWatch.MarketData.Infrastructure;
+using SakerWatch.Watchlist.Infrastructure;
 using Serilog;
 using Serilog.Events;
 
@@ -33,11 +35,19 @@ builder.Services.AddSakerWeb(builder.Configuration);
 
 // The modules this host runs. One list feeds the handler scan, the integration-event registry and the job registry, so a module added
 // here is known to all three (an empty list for jobs or events would only fail later, when something is first enqueued).
-Assembly[] moduleAssemblies = [typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly];
+Assembly[] moduleAssemblies =
+[
+    typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly,
+    typeof(SakerWatch.Watchlist.Application.IAssemblyMarker).Assembly,
+    typeof(SakerWatch.MarketData.Application.IAssemblyMarker).Assembly,
+];
 builder.Services.AddApplicationPipeline(moduleAssemblies);
 builder.Services.AddIdempotency(builder.Configuration);
 builder.Services.AddIntegrationEvents(moduleAssemblies);
-builder.Services.AddJobs(moduleAssemblies);
+
+// The API queues the first load of a stock that the worker performs: it knows the payload names but runs none of the MarketData job handlers.
+builder.Services.AddJobs(typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly, typeof(SakerWatch.Watchlist.Application.IAssemblyMarker).Assembly);
+builder.Services.AddJobPayloads(typeof(SakerWatch.MarketData.Application.IAssemblyMarker).Assembly);
 
 // Datastores: fail fast at startup when a connection string is missing; readiness reports each one.
 builder.Services.AddSakerPostgres(builder.Configuration);
@@ -45,6 +55,10 @@ builder.Services.AddSakerDbContext<PlatformDbContext>(PlatformDbContext.Schema);
 builder.Services.AddSakerDbContext<IdentityDbContext>(IdentityDbContext.Schema);
 builder.Services.AddSakerMongo(builder.Configuration);
 builder.Services.AddSakerRedis(builder.Configuration);
+
+// Finding and registering stocks (ADR-0032) and the watchlist.
+builder.Services.AddMarketDataLookup(builder.Configuration);
+builder.Services.AddWatchlist(builder.Configuration);
 
 // Authentication (Clavaris bearer tokens), the resolved internal user, and default-deny authorization.
 builder.Services.AddClavarisAuth(builder.Configuration);
@@ -73,7 +87,10 @@ app.UseSakerRateLimiting();
 app.MapSakerHealth();
 
 ApiVersionSet versions = app.NewApiVersionSet().HasApiVersion(ApiSetup.V1).ReportApiVersions().Build();
-app.MapV1(versions).MapMe();
+RouteGroupBuilder v1 = app.MapV1(versions);
+v1.MapMe();
+v1.MapStocks();
+v1.MapWatchlist();
 
 // The OpenAPI document and Swagger UI describe the surface only. Outside development the document needs a valid token unless
 // OpenApi:Anonymous is set (ADR-0014).
