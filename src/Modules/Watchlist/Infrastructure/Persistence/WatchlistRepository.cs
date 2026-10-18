@@ -42,6 +42,32 @@ public sealed class WatchlistRepository(DbSession session) : IWatchlistRepositor
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<WatchlistItem>> ListAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = Command(
+            "SELECT id, stock_id, notes, target_price, created_at, updated_at FROM watchlist.watchlist_items WHERE user_id = @user");
+        command.Parameters.AddWithValue("user", userId);
+
+        var items = new List<WatchlistItem>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            string? notes = reader.IsDBNull(2) ? null : reader.GetString(2);
+            decimal? target = reader.IsDBNull(3) ? null : reader.GetDecimal(3);
+            items.Add(WatchlistItem.Restore(
+                WatchlistItemId.Create(reader.GetGuid(0)),
+                userId,
+                reader.GetGuid(1),
+                notes,
+                target,
+                reader.GetFieldValue<DateTimeOffset>(4),
+                reader.GetFieldValue<DateTimeOffset>(5)));
+        }
+
+        return items;
+    }
+
+    /// <inheritdoc />
     public async Task<int> CountAsync(Guid userId, CancellationToken cancellationToken)
     {
         await using NpgsqlCommand command = Command("SELECT count(*) FROM watchlist.watchlist_items WHERE user_id = @user");

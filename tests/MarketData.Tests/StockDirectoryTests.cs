@@ -44,6 +44,8 @@ public sealed class StockDirectoryTests
         public Task<CatalogListing?> FindByKeyAsync(Mic market, Ticker ticker, CancellationToken cancellationToken) =>
             Task.FromResult(Listings.FirstOrDefault(l => l.Market == market && l.Ticker == ticker));
 
+        public Task<IReadOnlyList<CatalogListing>> FindManyAsync(IReadOnlyCollection<StockId> ids, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<IReadOnlyList<StockId>> ListIngestableAsync(Mic market, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 

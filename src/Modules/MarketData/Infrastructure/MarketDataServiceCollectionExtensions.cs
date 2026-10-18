@@ -76,6 +76,13 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<IStockRegistry, StockRegistry>();
         services.TryAddScoped<IStockDirectory, StockDirectory>();
+
+        // What a list of stocks shows: the newest price, how current it is and the performance windows.
+        services.AddOptions<PerformanceOptions>().Bind(configuration.GetSection(PerformanceOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddScoped<IPerformanceReader, PerformanceReader>();
+        services.TryAddScoped<ILatestBars, LatestBars>();
+        services.TryAddScoped<IIngestionStatuses, FailedIngestions>();
+        services.TryAddScoped<IMarketSnapshots, MarketSnapshots>();
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;
@@ -96,7 +103,6 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.AddMarketDataLookup(configuration);
-        services.AddOptions<PerformanceOptions>().Bind(configuration.GetSection(PerformanceOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
 
         services.AddOptions<BanguatOptions>().Bind(configuration.GetSection(BanguatOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BanguatOptions>, BanguatOptionsValidator>());
@@ -120,7 +126,6 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<IFxConverter, FxConverter>();
         services.TryAddScoped<IPriceStore, PriceStore>();
         services.TryAddScoped<IFxRateStore, FxRateStore>();
-        services.TryAddScoped<IPerformanceReader, PerformanceReader>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
         services.TryAddScoped<IFreshnessReader, FreshnessReader>();

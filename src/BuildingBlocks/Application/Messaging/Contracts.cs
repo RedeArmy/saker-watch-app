@@ -10,6 +10,13 @@ public interface IRequest<TResponse>
 /// <summary>Marks requests that change state: the pipeline runs them in one unit of work (a database transaction).</summary>
 public interface ITransactionalRequest;
 
+/// <summary>
+/// Marks a query that reads the database with raw SQL through the scope's connection. The pipeline runs it in a unit of work too, because a query
+/// otherwise has no open connection, no user set for row-level security and no snapshot shared by its statements. A query that does not touch the
+/// database (a search of an external provider) does not carry the marker and never holds a connection.
+/// </summary>
+public interface IReadsDatabase;
+
 /// <summary>A state-changing request without a value (CQRS command).</summary>
 public interface ICommand : IRequest<Result>, ITransactionalRequest;
 

@@ -65,3 +65,23 @@ public interface IStockRegistry
     /// <summary>Registers <paramref name="stock"/>, the provider's name for it and its pending ingestion state; returns the catalog id.</summary>
     Task<StockId> RegisterAsync(Stock stock, string provider, ProviderListingKey providerKey, DateTimeOffset now, CancellationToken cancellationToken);
 }
+
+/// <summary>The newest stored bar of a listing, as traded.</summary>
+/// <param name="Date">The trading day.</param>
+/// <param name="Close">The close as traded.</param>
+/// <param name="IsFinal">False while the day may still change.</param>
+public sealed record LatestBar(DateOnly Date, decimal Close, bool IsFinal);
+
+/// <summary>Reads the newest raw bar of many listings at once.</summary>
+public interface ILatestBars
+{
+    /// <summary>The newest bar of each listing that has one; the others are left out.</summary>
+    Task<IReadOnlyDictionary<StockId, LatestBar>> ReadAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken);
+}
+
+/// <summary>Where ingestion stands for many listings at once.</summary>
+public interface IIngestionStatuses
+{
+    /// <summary>The ids, among <paramref name="stocks"/>, whose ingestion failed for good (a permanent failure is recorded for them).</summary>
+    Task<IReadOnlySet<StockId>> FailedAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken);
+}

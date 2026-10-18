@@ -21,6 +21,9 @@ public interface IWatchlistRepository
     /// <summary>The user's item for a catalog stock, or <see langword="null"/>.</summary>
     Task<WatchlistItem?> FindByStockAsync(Guid userId, Guid stockId, CancellationToken cancellationToken);
 
+    /// <summary>Every item of the user (at most the ceiling of the watchlist), in no particular order.</summary>
+    Task<IReadOnlyList<WatchlistItem>> ListAsync(Guid userId, CancellationToken cancellationToken);
+
     /// <summary>How many stocks the user has on the watchlist.</summary>
     Task<int> CountAsync(Guid userId, CancellationToken cancellationToken);
 

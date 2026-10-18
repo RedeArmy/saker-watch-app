@@ -1,6 +1,8 @@
 using SakerWatch.BuildingBlocks.Application.Messaging;
+using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
+using SakerWatch.Watchlist.Application.Features.GetWatchlist;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
 using SakerWatch.Watchlist.Application.Features.RemoveWatchlistItem;
 
@@ -24,6 +26,49 @@ public sealed record WatchlistStockResponse(Guid Id, string Market, string Ticke
 /// <param name="UpdatedAt">When the item last changed (ISO-8601 UTC).</param>
 public sealed record WatchlistItemResponse(Guid Id, WatchlistStockResponse Stock, string? Notes, decimal? TargetPrice, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
+/// <summary>The newest stored bar of a stock.</summary>
+/// <param name="Value">The close as traded, in the stock's currency (a decimal string).</param>
+/// <param name="Date">The trading day (ISO-8601 date).</param>
+/// <param name="IsFinal">False while the day may still change.</param>
+public sealed record PriceResponse(decimal Value, DateOnly Date, bool IsFinal);
+
+/// <summary>One performance window of a stock, from adjusted closes (ADR-0006, ADR-0030).</summary>
+/// <param name="Window">One of <c>1D</c>, <c>1W</c>, <c>1M</c>, <c>3M</c>, <c>6M</c>, <c>YTD</c>, <c>1Y</c>, <c>5Y</c>.</param>
+/// <param name="Change">The change as a fraction (a decimal string; <c>0.0123</c> is 1.23 %), or null when there is a reason.</param>
+/// <param name="BaselineDate">The day of the close the change is measured from, or null.</param>
+/// <param name="Reason">Why there is no change: <c>no_data</c>, <c>insufficient_history</c>, <c>history_gap</c> or <c>calendar_unavailable</c>; null when there is one.</param>
+public sealed record WindowResponse(string Window, decimal? Change, DateOnly? BaselineDate, string? Reason);
+
+/// <summary>A stock on the caller's watchlist as the list shows it.</summary>
+/// <param name="Id">Item id.</param>
+/// <param name="Stock">The stock.</param>
+/// <param name="Notes">The caller's notes, or null.</param>
+/// <param name="TargetPrice">The caller's target price, or null. A note, never an order.</param>
+/// <param name="CreatedAt">When the stock was added (ISO-8601 UTC).</param>
+/// <param name="UpdatedAt">When the item last changed (ISO-8601 UTC).</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is shown), <c>pending</c> (no history yet) or <c>unavailable</c> (loading failed for good).</param>
+/// <param name="Price">The newest stored bar, or null when there is none.</param>
+/// <param name="StaleSince">When the price went stale (ISO-8601 UTC), only for <c>stale</c>.</param>
+/// <param name="Windows">The eight performance windows, in order.</param>
+public sealed record WatchlistEntryResponse(
+    Guid Id,
+    WatchlistStockResponse Stock,
+    string? Notes,
+    decimal? TargetPrice,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    string PriceStatus,
+    PriceResponse? Price,
+    DateTimeOffset? StaleSince,
+    IReadOnlyList<WindowResponse> Windows);
+
+/// <summary>A page of the caller's watchlist.</summary>
+/// <param name="Items">The entries of the page.</param>
+/// <param name="Total">How many stocks match the filters, in all pages.</param>
+/// <param name="Limit">Items per page asked for.</param>
+/// <param name="Offset">Items skipped.</param>
+public sealed record WatchlistPageResponse(IReadOnlyList<WatchlistEntryResponse> Items, int Total, int Limit, int Offset);
+
 /// <summary>Body of <c>PUT /v1/watchlist/items/{market}/{ticker}</c>. Both fields replace what is stored; leaving one out clears it.</summary>
 /// <param name="Notes">Notes, up to 2000 characters, or null.</param>
 /// <param name="TargetPrice">Target price greater than zero with at most eight decimals, or null.</param>
@@ -37,6 +82,19 @@ internal static class WatchlistEndpoints
     /// <summary>Maps the endpoints on the version group.</summary>
     public static void MapWatchlist(this RouteGroupBuilder v1)
     {
+        v1.MapGet("/watchlist", ListAsync)
+            .WithName("GetWatchlist")
+            .WithSummary("List the watchlist")
+            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name) and priceStatus; sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
+            .WithTags(_tag)
+            .Produces<WatchlistPageResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status304NotModified)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
         v1.MapPut("/watchlist/items/{market}/{ticker}", PutAsync)
             .WithName("PutWatchlistItem")
             .WithSummary("Put a stock on the watchlist")
@@ -68,6 +126,36 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
+
+    private static async Task<IResult> ListAsync(
+        ISender sender,
+        CancellationToken cancellationToken,
+        string? sort = null,
+        string? order = null,
+        string? market = null,
+        string? assetType = null,
+        string? q = null,
+        string? priceStatus = null,
+        int limit = 50,
+        int offset = 0)
+    {
+        var result = await sender.Send(new GetWatchlistQuery(sort, order, market, assetType, q, priceStatus, limit, offset), cancellationToken);
+        return result.ToHttpResult(page => ConditionalResults.Json(new WatchlistPageResponse(
+            [.. page.Items.Select(ToResponse)], page.Total, page.Limit, page.Offset)));
+    }
+
+    private static WatchlistEntryResponse ToResponse(WatchlistEntry entry) =>
+        new(
+            entry.Id,
+            new WatchlistStockResponse(entry.Stock.Id, entry.Stock.Market, entry.Stock.Ticker, entry.Stock.Name, entry.Stock.Currency, entry.Stock.AssetType),
+            entry.Notes,
+            entry.TargetPrice,
+            entry.CreatedAt,
+            entry.UpdatedAt,
+            entry.PriceStatus,
+            entry.Price is null ? null : new PriceResponse(entry.Price.Value, entry.Price.Date, entry.Price.IsFinal),
+            entry.StaleSince,
+            [.. entry.Windows.Select(w => new WindowResponse(w.Window, w.Change, w.BaselineDate, w.Reason))]);
 
     private static async Task<IResult> PutAsync(string market, string ticker, PutWatchlistItemRequest? body, ISender sender, CancellationToken cancellationToken)
     {

@@ -21,6 +21,9 @@ public interface IStockCatalog
     /// <summary>The listing of <paramref name="market"/> and <paramref name="ticker"/> with everything a caller shows, or <see langword="null"/> when the catalog does not have it.</summary>
     Task<CatalogListing?> FindByKeyAsync(Mic market, Ticker ticker, CancellationToken cancellationToken);
 
+    /// <summary>The listings with these ids that the catalog has.</summary>
+    Task<IReadOnlyList<CatalogListing>> FindManyAsync(IReadOnlyCollection<StockId> ids, CancellationToken cancellationToken);
+
     /// <summary>The active listings of a market that ingestion has not given up on (those whose ingestion did not fail for good).</summary>
     Task<IReadOnlyList<StockId>> ListIngestableAsync(Mic market, CancellationToken cancellationToken);
 }

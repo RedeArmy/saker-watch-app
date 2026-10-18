@@ -28,75 +28,16 @@ namespace SakerWatch.Integration.Tests.Api;
 [Trait("Category", "Integration")]
 public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
 {
-    private sealed class AllowAll : IProviderCallBudget
-    {
-        public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken) =>
-            Task.FromResult(BudgetDecision.Allowed);
-    }
+    private Task<WatchlistRig.Rig> StartAsync(bool budgetSpent = false) => WatchlistRig.StartAsync(postgres, budgetSpent);
 
-    private sealed class DenyAll : IProviderCallBudget
-    {
-        public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken) =>
-            Task.FromResult(new BudgetDecision(false, TimeSpan.FromSeconds(37)));
-    }
+    private static HttpRequestMessage Send(HttpMethod method, string path, string? token, object? body = null) => WatchlistRig.Send(method, path, token, body);
 
-    private sealed class MemoryCache : ISearchCache
-    {
-        public Task<IReadOnlyList<CachedListing>?> GetAsync(string provider, string query, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<CachedListing>?>(null);
-
-        public Task SetAsync(string provider, string query, IReadOnlyList<CachedListing> listings, TimeSpan ttl, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    private sealed record Rig(RealApiHost Api, WebApplicationFactory<HostApi::Program> Host, FakeMarketDataProvider Provider, HttpClient Client);
-
-    private static ProviderListing Listing(string mic, string symbol, string name) =>
-        new(new ProviderListingKey(mic, symbol), name, "USD", "Asia/Tokyo", AssetType.Equity);
-
-    private async Task<Rig> StartAsync(bool budgetSpent = false)
-    {
-        RealApiHost api = await RealApiHost.StartAsync(postgres);
-        var provider = new FakeMarketDataProvider(ExchangeCalendars.Default(), TimeProvider.System)
-            .WithListing(Listing("XNGS", "AAPL", "Apple Inc."), 150m)
-            .WithListing(Listing("XNYS", "KO", "Coca-Cola Co."), 60m)
-            .WithListing(new ProviderListing(new ProviderListingKey("XTSE", "SHOP"), "Shopify", "CAD", "America/Toronto", AssetType.Equity), 90m);
-        WebApplicationFactory<HostApi::Program> host = api.WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("MarketData:Providers:Markets:XNAS", FakeMarketDataProvider.ProviderName);
-            builder.UseSetting("MarketData:Providers:Markets:XNYS", FakeMarketDataProvider.ProviderName);
-            builder.UseSetting("MarketData:Payloads:Enabled", "false");
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<IMarketDataProvider>();
-                services.AddSingleton<IMarketDataProvider>(provider);
-                services.RemoveAll<IProviderCallBudget>();
-                services.AddSingleton<IProviderCallBudget>(budgetSpent ? new DenyAll() : new AllowAll());
-                services.RemoveAll<ISearchCache>();
-                services.AddSingleton<ISearchCache, MemoryCache>();
-            });
-        });
-        return new Rig(api, host, provider, host.CreateClient());
-    }
-
-    private static HttpRequestMessage Send(HttpMethod method, string path, string? token, object? body = null)
-    {
-        HttpRequestMessage request = ApiTestHost.Get(path, token);
-        request.Method = method;
-        if (body is not null)
-        {
-            request.Content = JsonContent.Create(body);
-        }
-
-        return request;
-    }
-
-    private static async Task<JsonElement> BodyAsync(HttpResponseMessage response) =>
-        JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+    private static Task<JsonElement> BodyAsync(HttpResponseMessage response) => WatchlistRig.BodyAsync(response);
 
     [Fact]
     public async Task Search_ReturnsTheMatchesOfTheEnabledMarkets_WithTheCanonicalMarket()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-search" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Get, "/v1/stocks/search?q=aapl", token));
@@ -117,7 +58,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [InlineData("%3Cscript%3E")]
     public async Task Search_ForTextThatIsNotAQuery_IsA400_AndNothingReachesTheProvider(string query)
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-search" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Get, $"/v1/stocks/search?q={query}", token));
@@ -130,7 +71,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Search_WhenTheSharedBudgetIsSpent_Is429_WithRetryAfter()
     {
-        Rig rig = await StartAsync(budgetSpent: true);
+        WatchlistRig.Rig rig = await StartAsync(budgetSpent: true);
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-search" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Get, "/v1/stocks/search?q=AAPL", token));
@@ -144,7 +85,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Search_WhenTheProviderIsDown_Is503_WithRetryAfter_AndNeverItsMessage()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         rig.Provider.FailNext(ProviderErrors.Unavailable("twelvedata"));
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-search" });
 
@@ -158,7 +99,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Search_IsLimitedPerUser_LikeTheOtherCostlyEndpoints()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-spammer" });
 
         var statuses = new List<HttpStatusCode>();
@@ -174,7 +115,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task TheEndpoints_NeedAToken()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
 
         HttpResponseMessage search = await rig.Client.SendAsync(Send(HttpMethod.Get, "/v1/stocks/search?q=AAPL", null));
         HttpResponseMessage put = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", null, new { }));
@@ -187,15 +128,15 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Put_ANewStock_RegistersItFromTheProvider_QueuesItsHistory_AndAnswers201()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-put" });
 
-        HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/xnas/aapl", token, new { notes = "  Esperar resultados  ", targetPrice = 180.5 }));
+        HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/xnas/aapl", token, new { notes = "  Esperar resultados  ", targetPrice = "180.5" }));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         JsonElement item = await BodyAsync(response);
         item.GetProperty("notes").GetString().Should().Be("Esperar resultados");
-        item.GetProperty("targetPrice").GetDecimal().Should().Be(180.5m);
+        item.GetProperty("targetPrice").GetString().Should().Be("180.5", "decimals travel as strings");
         JsonElement stock = item.GetProperty("stock");
         (stock.GetProperty("market").GetString(), stock.GetProperty("ticker").GetString(), stock.GetProperty("name").GetString(), stock.GetProperty("currency").GetString())
             .Should().Be(("XNAS", "AAPL", "Apple Inc.", "USD"));
@@ -213,9 +154,9 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Put_TheSameStockAgain_Is200_ReplacesTheValues_AndStoresNothingNew()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-put-twice" });
-        HttpResponseMessage first = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { notes = "antes", targetPrice = 100 }));
+        HttpResponseMessage first = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { notes = "antes", targetPrice = "100.50" }));
         int providerCalls = rig.Provider.Calls;
 
         HttpResponseMessage second = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { notes = "después" }));
@@ -235,9 +176,23 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task Decimals_AreAStringWithoutTrailingZeros()
+    {
+        WatchlistRig.Rig rig = await StartAsync();
+        string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-decimal" });
+        await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { targetPrice = "100.50" }));
+
+        HttpResponseMessage again = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { targetPrice = "100.50" }));
+
+        JsonElement target = (await BodyAsync(again)).GetProperty("targetPrice");
+        target.ValueKind.Should().Be(JsonValueKind.String);
+        target.GetString().Should().Be("100.5", "the column keeps eight decimals, the API does not show the zeros");
+    }
+
+    [Fact]
     public async Task Put_WithAnEmptyBody_IsFine_AndClearsNotesAndTarget()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-put-empty" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNYS/KO", token));
@@ -249,7 +204,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Put_ForAStockTheProviderDoesNotList_Is404_AndRegistersNothing()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-unknown" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/ZZZZ", token, new { }));
@@ -263,7 +218,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Put_ForAStockOnAMarketThatIsNotEnabled_IsA400()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-market" });
 
         HttpResponseMessage notRouted = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/ARCX/SPY", token, new { }));
@@ -277,15 +232,17 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Theory]
     [InlineData("/v1/watchlist/items/XN/AAPL", "{}")]
     [InlineData("/v1/watchlist/items/XNAS/A%20B", "{}")]
-    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": 0}")]
-    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": -4}")]
-    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": 1.123456789}")]
+    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": \"0\"}")]
+    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": \"-4\"}")]
+    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": \"1.123456789\"}")]
     [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": \"abc\"}")]
+    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": \"1e3\"}")]
+    [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"targetPrice\": 12.5}")]
     [InlineData("/v1/watchlist/items/XNAS/AAPL", "{\"notes\": 12}")]
     [InlineData("/v1/watchlist/items/XNAS/AAPL", "not json")]
     public async Task Put_WithAnInvalidRequest_IsA4xxProblem_AndStoresNothing(string path, string body)
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-invalid" });
         HttpRequestMessage request = Send(HttpMethod.Put, path, token);
         request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
@@ -301,7 +258,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Put_NotesOverTheLimit_AreA400WithTheFieldNamed()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-notes" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { notes = new string('x', 2001) }));
@@ -314,7 +271,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Put_WhenTheProviderCannotConfirmAnewStock_Is503_AndNothingIsStored()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         rig.Provider.FailNext(ProviderErrors.Unavailable("twelvedata"));
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-503" });
 
@@ -330,7 +287,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task TwoUsers_AddingTheSameNewStockAtOnce_EndWithOneStockAndTwoItems()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string alice = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-alice" });
         string bob = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-bob" });
 
@@ -349,7 +306,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Delete_TakesTheStockOffOnlyForTheCaller_AndRepeatingItIsStill204()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string alice = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-alice" });
         string bob = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-bob" });
         await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", alice, new { }));
@@ -366,7 +323,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task Delete_OfAStockNobodyEverAdded_Is204_WithoutCallingTheProviderOrRegisteringAnything()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-delete" });
 
         HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Delete, "/v1/watchlist/items/XNAS/AAPL", token));
@@ -381,7 +338,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task AFullWatchlist_RefusesAnotherStock_With409_ButStillAllowsEditingOne()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-full" });
         HttpResponseMessage first = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { }));
         Guid user = Guid.Parse((await BodyAsync(await rig.Client.SendAsync(ApiTestHost.Get("/v1/me", token)))).GetProperty("id").GetString()!);
@@ -402,7 +359,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     [Fact]
     public async Task TheApiRole_CanNeverWriteTheCatalogDirectly_OnlyThroughTheFunction()
     {
-        Rig rig = await StartAsync();
+        WatchlistRig.Rig rig = await StartAsync();
 
         Func<Task> act = () => rig.Api.Db.Api.AsUserExecuteAsync(
             Guid.CreateVersion7(),

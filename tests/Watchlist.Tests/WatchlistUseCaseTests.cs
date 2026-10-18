@@ -59,6 +59,9 @@ public sealed class WatchlistUseCaseTests
         public Task<WatchlistItem?> FindByStockAsync(Guid userId, Guid stockId, CancellationToken cancellationToken) =>
             Task.FromResult(Items.GetValueOrDefault((userId, stockId)));
 
+        public Task<IReadOnlyList<WatchlistItem>> ListAsync(Guid userId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<WatchlistItem>>([.. Items.Where(pair => pair.Key.User == userId).Select(pair => pair.Value)]);
+
         public Task<int> CountAsync(Guid userId, CancellationToken cancellationToken) => Task.FromResult(Items.Keys.Count(key => key.User == userId));
 
         public Task<AddOutcome> AddAsync(WatchlistItem item, CancellationToken cancellationToken)

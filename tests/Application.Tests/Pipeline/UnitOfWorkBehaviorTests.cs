@@ -92,6 +92,26 @@ public sealed class UnitOfWorkBehaviorTests : IDisposable
     }
 
     [Fact]
+    public async Task AQueryThatReadsTheDatabase_RunsInAUnitOfWork_CommittedWhenItSucceeds()
+    {
+        Result<int> result = await Send(new DatabaseReadQuery());
+
+        result.Value.Should().Be(7);
+        _uow.Calls.Should().Equal("begin", "commit");
+    }
+
+    [Fact]
+    public async Task AQueryThatReadsTheDatabase_IsRolledBackOnAFailureOrAnException()
+    {
+        Result<int> failed = await Send(new DatabaseReadQuery(Fail: true));
+        Func<Task> act = async () => await Send(new DatabaseReadQuery(Throw: true));
+
+        failed.Error!.Type.Should().Be(ErrorType.NotFound);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _uow.Calls.Should().Equal("begin", "rollback", "begin", "rollback");
+    }
+
+    [Fact]
     public async Task InvalidCommand_IsRejectedBeforeAnyTransactionOpens()
     {
         Result<string> result = await Send(new PingCommand(""));

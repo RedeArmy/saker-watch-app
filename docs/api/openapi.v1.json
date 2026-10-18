@@ -309,6 +309,164 @@
         ]
       }
     },
+    "/v1/watchlist": {
+      "get": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "List the watchlist",
+        "description": "The caller\u0027s stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock\u0027s own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name) and priceStatus; sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.",
+        "operationId": "GetWatchlist",
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "assetType",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priceStatus",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistPageResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/watchlist/items/{market}/{ticker}": {
       "put": {
         "tags": [
@@ -594,6 +752,32 @@
         },
         "description": "The caller\u0027s own profile."
       },
+      "PriceResponse": {
+        "required": [
+          "value",
+          "date",
+          "isFinal"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The close as traded, in the stock\u0027s currency (a decimal string).",
+            "format": "decimal"
+          },
+          "date": {
+            "type": "string",
+            "description": "The trading day (ISO-8601 date).",
+            "format": "date"
+          },
+          "isFinal": {
+            "type": "boolean",
+            "description": "False while the day may still change."
+          }
+        },
+        "description": "The newest stored bar of a stock."
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -650,11 +834,10 @@
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": [
               "null",
-              "number",
               "string"
             ],
             "description": "Target price greater than zero with at most eight decimals, or null.",
-            "format": "double"
+            "format": "decimal"
           }
         },
         "description": "Body of \u0060PUT /v1/watchlist/items/{market}/{ticker}\u0060. Both fields replace what is stored; leaving one out clears it."
@@ -721,6 +904,89 @@
         },
         "description": "Body of \u0060PUT /v1/me/preferences\u0060."
       },
+      "WatchlistEntryResponse": {
+        "required": [
+          "id",
+          "stock",
+          "notes",
+          "targetPrice",
+          "createdAt",
+          "updatedAt",
+          "priceStatus",
+          "price",
+          "staleSince",
+          "windows"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Item id.",
+            "format": "uuid"
+          },
+          "stock": {
+            "description": "The stock.",
+            "$ref": "#/components/schemas/WatchlistStockResponse"
+          },
+          "notes": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The caller\u0027s notes, or null."
+          },
+          "targetPrice": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The caller\u0027s target price, or null. A note, never an order.",
+            "format": "decimal"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the stock was added (ISO-8601 UTC).",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "When the item last changed (ISO-8601 UTC).",
+            "format": "date-time"
+          },
+          "priceStatus": {
+            "type": "string",
+            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known price is shown), \u0060pending\u0060 (no history yet) or \u0060unavailable\u0060 (loading failed for good)."
+          },
+          "price": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PriceResponse"
+              }
+            ],
+            "description": "The newest stored bar, or null when there is none."
+          },
+          "staleSince": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the price went stale (ISO-8601 UTC), only for \u0060stale\u0060.",
+            "format": "date-time"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WindowResponse"
+            },
+            "description": "The eight performance windows, in order."
+          }
+        },
+        "description": "A stock on the caller\u0027s watchlist as the list shows it."
+      },
       "WatchlistItemResponse": {
         "required": [
           "id",
@@ -752,11 +1018,10 @@
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": [
               "null",
-              "number",
               "string"
             ],
             "description": "The caller\u0027s target price in the stock\u0027s currency, or null. A note, never an order.",
-            "format": "double"
+            "format": "decimal"
           },
           "createdAt": {
             "type": "string",
@@ -770,6 +1035,52 @@
           }
         },
         "description": "A stock on the caller\u0027s watchlist."
+      },
+      "WatchlistPageResponse": {
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistEntryResponse"
+            },
+            "description": "The entries of the page."
+          },
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "How many stocks match the filters, in all pages.",
+            "format": "int32"
+          },
+          "limit": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Items per page asked for.",
+            "format": "int32"
+          },
+          "offset": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Items skipped.",
+            "format": "int32"
+          }
+        },
+        "description": "A page of the caller\u0027s watchlist."
       },
       "WatchlistStockResponse": {
         "required": [
@@ -809,6 +1120,46 @@
           }
         },
         "description": "The stock a watchlist item points to."
+      },
+      "WindowResponse": {
+        "required": [
+          "window",
+          "change",
+          "baselineDate",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "One of \u00601D\u0060, \u00601W\u0060, \u00601M\u0060, \u00603M\u0060, \u00606M\u0060, \u0060YTD\u0060, \u00601Y\u0060, \u00605Y\u0060."
+          },
+          "change": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The change as a fraction (a decimal string; \u00600.0123\u0060 is 1.23 %), or null when there is a reason.",
+            "format": "decimal"
+          },
+          "baselineDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The day of the close the change is measured from, or null.",
+            "format": "date"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Why there is no change: \u0060no_data\u0060, \u0060insufficient_history\u0060, \u0060history_gap\u0060 or \u0060calendar_unavailable\u0060; null when there is one."
+          }
+        },
+        "description": "One performance window of a stock, from adjusted closes (ADR-0006, ADR-0030)."
       }
     },
     "securitySchemes": {
