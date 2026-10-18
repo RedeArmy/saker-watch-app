@@ -26,9 +26,29 @@ namespace SakerWatch.Integration.Tests.Api;
 /// registration of a stock from the provider's answer (a fake provider stands in for Twelve Data) and the first load queued for the worker.
 /// </summary>
 [Trait("Category", "Integration")]
-public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
+public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>, IAsyncLifetime
 {
-    private Task<WatchlistRig.Rig> StartAsync(bool budgetSpent = false) => WatchlistRig.StartAsync(postgres, budgetSpent);
+    private readonly List<WatchlistRig.Rig> _rigs = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    // Every host is stopped when its test ends: a host left running keeps file watchers open, and the machine allows a small number of them.
+    public async Task DisposeAsync()
+    {
+        foreach (WatchlistRig.Rig rig in _rigs)
+        {
+            await rig.DisposeAsync();
+        }
+    }
+
+    private async Task<WatchlistRig.Rig> StartRigAsync(bool budgetSpent = false)
+    {
+        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres, budgetSpent);
+        _rigs.Add(rig);
+        return rig;
+    }
+
+    private Task<WatchlistRig.Rig> StartAsync(bool budgetSpent = false) => StartRigAsync(budgetSpent);
 
     private static HttpRequestMessage Send(HttpMethod method, string path, string? token, object? body = null) => WatchlistRig.Send(method, path, token, body);
 

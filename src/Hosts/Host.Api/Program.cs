@@ -91,6 +91,7 @@ RouteGroupBuilder v1 = app.MapV1(versions);
 v1.MapMe();
 v1.MapStocks();
 v1.MapWatchlist();
+v1.MapPortfolios();
 
 // The OpenAPI document and Swagger UI describe the surface only. Outside development the document needs a valid token unless
 // OpenApi:Anonymous is set (ADR-0014).

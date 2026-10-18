@@ -44,7 +44,16 @@ internal static class WatchlistRig
         public Task SetAsync(string provider, string query, IReadOnlyList<CachedListing> listings, TimeSpan ttl, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    internal sealed record Rig(RealApiHost Api, WebApplicationFactory<HostApi::Program> Host, FakeMarketDataProvider Provider, HttpClient Client);
+    internal sealed record Rig(RealApiHost Api, WebApplicationFactory<HostApi::Program> Host, FakeMarketDataProvider Provider, HttpClient Client) : IAsyncDisposable
+    {
+        /// <summary>Stops both hosts. A host that is left running keeps its file watchers, and the machine has a small number of them.</summary>
+        public async ValueTask DisposeAsync()
+        {
+            Client.Dispose();
+            await Host.DisposeAsync();
+            await Api.DisposeAsync();
+        }
+    }
 
     internal static ProviderListing Listing(string mic, string symbol, string name) =>
         new(new ProviderListingKey(mic, symbol), name, "USD", "Asia/Tokyo", AssetType.Equity);

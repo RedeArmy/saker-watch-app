@@ -17,8 +17,29 @@ namespace SakerWatch.Integration.Tests.Api;
 /// the sorts, the filters, the paging and the ETag. Prices are seeded relative to the real clock, because the staleness rule runs on it.
 /// </summary>
 [Trait("Category", "Integration")]
-public sealed class WatchlistListEndpointTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
+public sealed class WatchlistListEndpointTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>, IAsyncLifetime
 {
+
+    private readonly List<WatchlistRig.Rig> _rigs = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    // Every host is stopped when its test ends: a host left running keeps file watchers open, and the machine allows a small number of them.
+    public async Task DisposeAsync()
+    {
+        foreach (WatchlistRig.Rig rig in _rigs)
+        {
+            await rig.DisposeAsync();
+        }
+    }
+
+    private async Task<WatchlistRig.Rig> StartRigAsync(bool budgetSpent = false)
+    {
+        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres, budgetSpent);
+        _rigs.Add(rig);
+        return rig;
+    }
+
     private static readonly UsEquityCalendar _calendar = new(Mic.Parse("XNYS"));
 
     private sealed record Seeded(DateOnly LastSettled, DateOnly KoLast);
@@ -27,7 +48,7 @@ public sealed class WatchlistListEndpointTests(TimescalePostgresFixture postgres
     // Two years of weekdays are enough for every window but the five-year one. The raw close is twice the adjusted one, to show which is which.
     private async Task<(WatchlistRig.Rig Rig, string Token, Seeded Seeded)> StartWithFourStocksAsync()
     {
-        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres);
+        WatchlistRig.Rig rig = await StartRigAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-list" });
         foreach (string ticker in new[] { "AAPL", "KO", "MSFT", "NVDA" })
         {
@@ -245,7 +266,7 @@ public sealed class WatchlistListEndpointTests(TimescalePostgresFixture postgres
     [Fact]
     public async Task WithoutAToken_TheListIs401()
     {
-        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres);
+        WatchlistRig.Rig rig = await StartRigAsync();
 
         HttpResponseMessage response = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Get, "/v1/watchlist", null));
 

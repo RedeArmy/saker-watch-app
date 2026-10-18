@@ -20,6 +20,7 @@ public static class WatchlistServiceCollectionExtensions
 
         services.AddOptions<WatchlistOptions>().Bind(configuration.GetSection(WatchlistOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.TryAddScoped<IWatchlistRepository, WatchlistRepository>();
+        services.TryAddScoped<IPortfolioRepository, PortfolioRepository>();
         return services;
     }
 }
