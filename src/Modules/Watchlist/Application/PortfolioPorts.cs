@@ -65,6 +65,12 @@ public interface IPortfolioRepository
     /// <summary>One portfolio of the user, or <see langword="null"/>.</summary>
     Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Takes the lock that orders the writers of the user's portfolio positions, held until the transaction ends. A use case that reads the
+    /// positions to choose the next one calls this first, so two parallel creations cannot both read the same last position.
+    /// </summary>
+    Task LockOrderAsync(Guid userId, CancellationToken cancellationToken);
+
     /// <summary>Stores a new portfolio.</summary>
     Task<PortfolioWrite> AddAsync(Portfolio portfolio, CancellationToken cancellationToken);
 

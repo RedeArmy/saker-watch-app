@@ -41,6 +41,8 @@ public sealed class GetWatchlistTests
     {
         public Task<IReadOnlyList<PortfolioSummary>> ListAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task LockOrderAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult(held is not null && held.TryGetValue(id.Value, out Guid[]? stocks)
                 ? new PortfolioSummary(Portfolio.Create(id, userId, "P", null, 0, _now).Value, stocks.Length)

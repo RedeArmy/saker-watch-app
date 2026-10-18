@@ -74,6 +74,8 @@ public sealed class CreatePortfolioHandler(ICurrentUser currentUser, IPortfolioR
             return Error.Unauthorized(WatchlistErrors.NotAuthenticated, "Authentication is required.");
         }
 
+        // The next position is read from the list, so parallel creations of one user are queued before they read it.
+        await portfolios.LockOrderAsync(userId, cancellationToken);
         IReadOnlyList<PortfolioSummary> existing = await portfolios.ListAsync(userId, cancellationToken);
         if (existing.Count >= options.Value.MaxPortfolios)
         {

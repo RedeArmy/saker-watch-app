@@ -67,6 +67,14 @@ public sealed class PortfolioUseCaseTests
         public Task<IReadOnlyList<PortfolioSummary>> ListAsync(Guid userId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PortfolioSummary>>([.. Portfolios.Values.Where(p => p.UserId == userId).OrderBy(p => p.Position).Select(p => new PortfolioSummary(p, Members.GetValueOrDefault(p.Id)?.Count ?? 0))]);
 
+        public int OrderLocks { get; private set; }
+
+        public Task LockOrderAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            OrderLocks++;
+            return Task.CompletedTask;
+        }
+
         public Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult(Portfolios.TryGetValue(id, out Portfolio? p) && p.UserId == userId ? new PortfolioSummary(p, Members.GetValueOrDefault(id)?.Count ?? 0) : null);
 
@@ -165,6 +173,7 @@ public sealed class PortfolioUseCaseTests
         (first.Name, first.Description, first.Position, first.ItemCount, first.CreatedAt).Should().Be(("Petróleo", "Energía", 0, 0, _now));
         second.Position.Should().Be(1);
         first.Id.Should().NotBeEmpty();
+        repo.OrderLocks.Should().Be(2, "each creation queues behind the others of the user before it reads the last position");
     }
 
     [Fact]

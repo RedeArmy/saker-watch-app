@@ -18,6 +18,11 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     private const string _memberLimit = "ck_portfolio_items_max_per_portfolio";
     private const string _nameIndex = "ux_portfolios_user_id_lower_name";
 
+    // The keys of the advisory locks the ceiling triggers already take (WatchlistSecurity). Taking the same lock first, in a statement of its own,
+    // makes the statements that follow see every position committed by the writer that held it before; the trigger then takes it again at no cost.
+    private const string _portfoliosLockKey = "watchlist.portfolios:";
+    private const string _membersLockKey = "watchlist.portfolio_items:";
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<PortfolioSummary>> ListAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -50,6 +55,9 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
         IReadOnlyList<PortfolioSummary> found = await ReadSummariesAsync(command, userId, cancellationToken);
         return found.Count == 0 ? null : found[0];
     }
+
+    /// <inheritdoc />
+    public Task LockOrderAsync(Guid userId, CancellationToken cancellationToken) => LockAsync(_portfoliosLockKey + userId, cancellationToken);
 
     /// <inheritdoc />
     public async Task<PortfolioWrite> AddAsync(Portfolio portfolio, CancellationToken cancellationToken)
@@ -108,6 +116,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     {
         ArgumentNullException.ThrowIfNull(ordered);
 
+        await LockAsync(_portfoliosLockKey + userId, cancellationToken);
         IReadOnlyList<PortfolioSummary> current = await ListAsync(userId, cancellationToken);
         Guid[] wanted = [.. ordered.Select(id => id.Value)];
         if (!SameSet(current.Select(summary => summary.Portfolio.Id.Value), wanted))
@@ -158,6 +167,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     /// <inheritdoc />
     public async Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        await LockAsync(_membersLockKey + id.Value, cancellationToken);
         Guid? item = await ItemOfAsync(userId, stockId, cancellationToken);
         if (item is null)
         {
@@ -218,6 +228,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     {
         ArgumentNullException.ThrowIfNull(orderedStocks);
 
+        await LockAsync(_membersLockKey + id.Value, cancellationToken);
         IReadOnlyList<PortfolioMember> current = await MembersAsync(userId, id, cancellationToken);
         if (!SameSet(current.Select(member => member.StockId), orderedStocks))
         {
@@ -316,6 +327,13 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
         delete.Parameters.AddWithValue("id", id.Value);
         delete.Parameters.AddWithValue("user", userId);
         return await delete.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    private async Task LockAsync(string key, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = Command("SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))");
+        command.Parameters.AddWithValue("key", key);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static bool SameSet(IEnumerable<Guid> current, IReadOnlyCollection<Guid> wanted)

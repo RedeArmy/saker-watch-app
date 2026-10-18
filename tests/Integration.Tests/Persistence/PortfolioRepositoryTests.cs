@@ -347,4 +347,59 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         (await adding.WaitAsync(TimeSpan.FromSeconds(30))).Should().Be(MemberAdd.ItemNotOnWatchlist);
         (await CountAsync(db, "portfolio_items", $"portfolio_id = '{other.Id.Value}'")).Should().Be(1, "only the shared stock, never a membership of a deleted item");
     }
+
+    [Fact]
+    public async Task MembersAddedInParallel_GetDistinctPositionsWithoutGaps()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        Guid user = Guid.CreateVersion7();
+        Portfolio portfolio = await AddAsync(db, user, "Carrera");
+        Guid[] stocks = await FollowAsync(db, user, 12);
+
+        MemberAdd[] results = await Task.WhenAll(stocks.Select(stock => PutAsync(db, user, portfolio, stock)));
+
+        results.Should().OnlyContain(result => result == MemberAdd.Added);
+        (await db.Admin.ScalarAsync<long>($"SELECT count(DISTINCT position) FROM watchlist.portfolio_items WHERE portfolio_id = '{portfolio.Id.Value}'")).Should().Be(12);
+        (await db.Admin.ScalarAsync<int>($"SELECT max(position) FROM watchlist.portfolio_items WHERE portfolio_id = '{portfolio.Id.Value}'")).Should().Be(11);
+    }
+
+    [Fact]
+    public async Task PortfoliosCreatedInParallel_GetDistinctPositionsWithoutGaps()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        Guid user = Guid.CreateVersion7();
+
+        // The way the use case creates one: lock the order, read the next position, insert.
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(n => AsAsync(db, user, async repository =>
+        {
+            await repository.LockOrderAsync(user, CancellationToken.None);
+            int next = (await repository.ListAsync(user, CancellationToken.None)).Count;
+            return await repository.AddAsync(NewPortfolio(user, $"P{n}", next), CancellationToken.None);
+        })));
+
+        (await db.Admin.ScalarAsync<long>($"SELECT count(DISTINCT position) FROM watchlist.portfolios WHERE user_id = '{user}'")).Should().Be(8);
+        (await db.Admin.ScalarAsync<int>($"SELECT max(position) FROM watchlist.portfolios WHERE user_id = '{user}'")).Should().Be(7);
+    }
+
+    [Fact]
+    public async Task AMemberAddedWhileTheStocksAreBeingReordered_WaitsForTheOrder_AndLandsAfterIt()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        Guid user = Guid.CreateVersion7();
+        Portfolio portfolio = await AddAsync(db, user, "Orden");
+        Guid[] stocks = await FollowAsync(db, user, 3);
+        await PutAsync(db, user, portfolio, stocks[0]);
+        await PutAsync(db, user, portfolio, stocks[1]);
+        await using DbSession reordering = Session(db, user);
+        await reordering.BeginAsync(CancellationToken.None);
+        (await new PortfolioRepository(reordering).ReorderMembersAsync(user, portfolio.Id, [stocks[1], stocks[0]], CancellationToken.None)).Should().BeTrue();
+
+        Task<MemberAdd> adding = PutAsync(db, user, portfolio, stocks[2]);
+        await Task.Delay(500);
+        adding.IsCompleted.Should().BeFalse("it queues behind the reorder instead of reading positions that are about to change");
+        await reordering.CommitAsync(CancellationToken.None);
+        (await adding.WaitAsync(TimeSpan.FromSeconds(30))).Should().Be(MemberAdd.Added);
+
+        (await AsAsync(db, user, r => r.MembersAsync(user, portfolio.Id, CancellationToken.None))).Select(m => m.StockId).Should().Equal(stocks[1], stocks[0], stocks[2]);
+    }
 }
