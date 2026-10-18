@@ -1,6 +1,7 @@
 using SakerWatch.BuildingBlocks.Persistence.Platform;
 using SakerWatch.Identity.Infrastructure.Persistence;
 using SakerWatch.MarketData.Infrastructure.Persistence;
+using SakerWatch.Watchlist.Infrastructure.Persistence;
 
 namespace SakerWatch.Hosts.Migrator;
 
@@ -13,6 +14,7 @@ public static class MigrationSteps
         PlatformStep(postgresAdminConnectionString),
         IdentityStep(postgresAdminConnectionString),
         MarketDataStep(postgresAdminConnectionString),
+        WatchlistStep(postgresAdminConnectionString),
     ];
 
     /// <summary>The platform step on its own (tests migrate it to a specific version).</summary>
@@ -26,4 +28,8 @@ public static class MigrationSteps
     /// <summary>The market data step on its own (tests migrate it to a specific version).</summary>
     public static EfMigrationStep<MarketDataDbContext> MarketDataStep(string postgresAdminConnectionString) =>
         new("marketdata", postgresAdminConnectionString, MarketDataDbContext.Schema, options => new MarketDataDbContext(options));
+
+    /// <summary>The watchlist step on its own (tests migrate it to a specific version).</summary>
+    public static EfMigrationStep<WatchlistDbContext> WatchlistStep(string postgresAdminConnectionString) =>
+        new("watchlist", postgresAdminConnectionString, WatchlistDbContext.Schema, options => new WatchlistDbContext(options));
 }

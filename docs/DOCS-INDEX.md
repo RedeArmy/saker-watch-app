@@ -78,6 +78,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0028-fx-source-and-conversion-path.md | ADR 0028 | Eder | draft | 2 | 2026-10-16 |
 | docs/adr/0029-ingestion-design.md | ADR 0029 | Eder | draft | 2 | 2026-10-16 |
 | docs/adr/0030-performance-windows-edge-rules.md | ADR 0030 | Eder | draft | 2 | 2026-10-17 |
+| docs/adr/0031-watchlist-and-portfolios-storage.md | ADR 0031 | Eder | draft | 2 | 2026-10-18 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
