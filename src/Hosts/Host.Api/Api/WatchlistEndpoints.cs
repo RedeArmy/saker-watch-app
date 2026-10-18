@@ -2,6 +2,7 @@ using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
+using SakerWatch.BuildingBlocks.Web.RateLimiting;
 using SakerWatch.Watchlist.Application.Features.GetWatchlist;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
 using SakerWatch.Watchlist.Application.Features.RemoveWatchlistItem;
@@ -99,9 +100,10 @@ internal static class WatchlistEndpoints
         v1.MapPut("/watchlist/items/{market}/{ticker}", PutAsync)
             .WithName("PutWatchlistItem")
             .WithSummary("Put a stock on the watchlist")
-            .WithDescription("Adds the stock to the caller's watchlist with these notes and target price, or replaces the notes and target of the item already there: the same request twice leaves the same state, so it needs no Idempotency-Key. A stock the catalog does not have yet is registered from the provider's answer for that exact market and ticker and its history is queued; if the provider cannot confirm it the answer is 503 and nothing is stored. Returns 201 when the stock was added and 200 when an item was updated.")
+            .WithDescription("Adds the stock to the caller's watchlist with these notes and target price, or replaces the notes and target of the item already there: the same request twice leaves the same state, so it needs no Idempotency-Key. A stock the catalog does not have yet is registered from the provider's answer for that exact market and ticker and its history is queued; if the provider cannot confirm it the answer is 503 and nothing is stored. Returns 201 when the stock was added and 200 when an item was updated. Because a new stock can spend a provider search, the route shares the stricter per-user limit of the search; a busy answer carries Retry-After.")
             .WithTags(_tag)
             .ExemptFromIdempotencyKey("A PUT is idempotent by nature: the same market, ticker and body always end in the same state.")
+            .RequireRateLimiting(RateLimitPolicies.Expensive)
             .Accepts<PutWatchlistItemRequest>("application/json")
             .Produces<WatchlistItemResponse>(StatusCodes.Status200OK)
             .Produces<WatchlistItemResponse>(StatusCodes.Status201Created)

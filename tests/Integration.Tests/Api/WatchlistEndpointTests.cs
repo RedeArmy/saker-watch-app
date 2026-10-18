@@ -55,6 +55,25 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     private static Task<JsonElement> BodyAsync(HttpResponseMessage response) => WatchlistRig.BodyAsync(response);
 
     [Fact]
+    public async Task PuttingStocks_ShareTheStricterPerUserLimitOfTheSearch_AndTheWaitIsSaid()
+    {
+        WatchlistRig.Rig rig = await StartAsync();
+        string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-put-limit" });
+        string other = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-put-limit-other" });
+
+        var statuses = new List<HttpStatusCode>();
+        for (int i = 0; i < 11; i++)
+        {
+            statuses.Add((await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { notes = $"nota {i}" }))).StatusCode);
+        }
+
+        HttpResponseMessage otherUser = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", other));
+        statuses.Take(10).Should().OnlyContain(status => status == HttpStatusCode.OK || status == HttpStatusCode.Created);
+        statuses[10].Should().Be(HttpStatusCode.TooManyRequests, "one user cannot spend the shared search budget with endless new tickers");
+        otherUser.StatusCode.Should().Be(HttpStatusCode.Created, "the limit is per user");
+    }
+
+    [Fact]
     public async Task Search_ReturnsTheMatchesOfTheEnabledMarkets_WithTheCanonicalMarket()
     {
         WatchlistRig.Rig rig = await StartAsync();

@@ -53,7 +53,7 @@ public static class ConditionalResults
 
             httpContext.Response.Headers.ETag = etag;
             httpContext.Response.Headers.CacheControl = "private, no-cache";
-            httpContext.Response.Headers.Vary = HeaderNames.Authorization;
+            httpContext.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Authorization);
 
             if (HttpMethods.IsGet(httpContext.Request.Method) && Matches(httpContext.Request.Headers.IfNoneMatch.ToString(), etag))
             {

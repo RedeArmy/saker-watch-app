@@ -492,7 +492,7 @@
           "Watchlist"
         ],
         "summary": "Put a stock on the watchlist",
-        "description": "Adds the stock to the caller\u0027s watchlist with these notes and target price, or replaces the notes and target of the item already there: the same request twice leaves the same state, so it needs no Idempotency-Key. A stock the catalog does not have yet is registered from the provider\u0027s answer for that exact market and ticker and its history is queued; if the provider cannot confirm it the answer is 503 and nothing is stored. Returns 201 when the stock was added and 200 when an item was updated.",
+        "description": "Adds the stock to the caller\u0027s watchlist with these notes and target price, or replaces the notes and target of the item already there: the same request twice leaves the same state, so it needs no Idempotency-Key. A stock the catalog does not have yet is registered from the provider\u0027s answer for that exact market and ticker and its history is queued; if the provider cannot confirm it the answer is 503 and nothing is stored. Returns 201 when the stock was added and 200 when an item was updated. Because a new stock can spend a provider search, the route shares the stricter per-user limit of the search; a busy answer carries Retry-After.",
         "operationId": "PutWatchlistItem",
         "parameters": [
           {
