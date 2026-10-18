@@ -176,7 +176,7 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
         Guid empty = await SeedStockAsync(db.Admin, "NONE");
-        Guid unknown = Guid.CreateVersion7();
+        var unknown = Guid.CreateVersion7();
 
         IReadOnlyDictionary<StockId, PerformanceReport> reports = await ReadAsync(db.Api, empty, unknown);
 

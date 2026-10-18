@@ -222,8 +222,8 @@ public sealed class PerformanceCalculatorTests
     {
         PriceSample baseline = Sample(2026, 10, 15, 100m);
 
-        WindowPerformance change = WindowPerformance.Of(PerformanceWindow.OneDay, 0.1m, baseline);
-        WindowPerformance missing = WindowPerformance.Missing(PerformanceWindow.OneDay, PerformanceGap.HistoryGap);
+        var change = WindowPerformance.Of(PerformanceWindow.OneDay, 0.1m, baseline);
+        var missing = WindowPerformance.Missing(PerformanceWindow.OneDay, PerformanceGap.HistoryGap);
 
         (change.Change, change.Gap).Should().Be((0.1m, (PerformanceGap?)null));
         (missing.Change, missing.Baseline, missing.Gap).Should().Be(((decimal?)null, (PriceSample?)null, (PerformanceGap?)PerformanceGap.HistoryGap));
