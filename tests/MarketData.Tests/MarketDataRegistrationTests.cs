@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SakerWatch.MarketData.Application.Fx;
+using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Infrastructure;
@@ -68,6 +69,35 @@ public sealed class MarketDataRegistrationTests
         Action act = () => _ = provider.GetRequiredService<IOptions<BanguatOptions>>().Value;
 
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
+    [InlineData("-1", false)]
+    [InlineData("61", false)]
+    [InlineData("0", true)]
+    [InlineData("10", true)]
+    public void ThePerformanceGapTolerance_MustBeBetweenZeroAndSixtyDays(string days, bool valid)
+    {
+        using ServiceProvider provider = Build(new() { ["MarketData:Performance:MaxGapDays"] = days });
+
+        Action act = () => _ = provider.GetRequiredService<IOptions<PerformanceOptions>>().Value;
+
+        if (valid)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should().Throw<OptionsValidationException>();
+        }
+    }
+
+    [Fact]
+    public void ThePerformanceGapTolerance_DefaultsToTenDays()
+    {
+        using ServiceProvider provider = Build(new());
+
+        provider.GetRequiredService<IOptions<PerformanceOptions>>().Value.MaxGapDays.Should().Be(10);
     }
 
     [Fact]

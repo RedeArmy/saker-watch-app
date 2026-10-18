@@ -34,6 +34,7 @@ public static class MarketDataServiceCollectionExtensions
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
         services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
+        services.AddOptions<PerformanceOptions>().Bind(configuration.GetSection(PerformanceOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddMarketDataApplication();
 
         services.AddOptions<TwelveDataOptions>()
@@ -88,6 +89,7 @@ public static class MarketDataServiceCollectionExtensions
 
         services.TryAddScoped<IPriceStore, PriceStore>();
         services.TryAddScoped<IFxRateStore, FxRateStore>();
+        services.TryAddScoped<IPerformanceReader, PerformanceReader>();
         services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
