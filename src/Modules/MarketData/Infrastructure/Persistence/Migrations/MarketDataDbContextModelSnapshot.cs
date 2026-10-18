@@ -89,6 +89,51 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.FxRateRow", b =>
+                {
+                    b.Property<string>("Base")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("base")
+                        .IsFixedLength();
+
+                    b.Property<string>("Quote")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("quote")
+                        .IsFixedLength();
+
+                    b.Property<DateOnly>("AsOfDate")
+                        .HasColumnType("date")
+                        .HasColumnName("as_of_date");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.Property<DateTimeOffset>("IngestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ingested_at");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(20, 10)
+                        .HasColumnType("numeric(20,10)")
+                        .HasColumnName("rate");
+
+                    b.HasKey("Base", "Quote", "AsOfDate", "Source")
+                        .HasName("pk_fx_rates");
+
+                    b.ToTable("fx_rates", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_fx_rates_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+
+                            t.HasCheckConstraint("ck_fx_rates_rate", "rate > 0");
+
+                            t.HasCheckConstraint("ck_fx_rates_source", "source ~ '^[a-z0-9_]{1,32}$'");
+                        });
+                });
+
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.IngestionStateRow", b =>
                 {
                     b.Property<Guid>("StockId")

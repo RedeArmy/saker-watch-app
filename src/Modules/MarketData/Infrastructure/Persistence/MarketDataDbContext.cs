@@ -25,6 +25,9 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
     /// <summary>Daily prices (a hypertable).</summary>
     public DbSet<PriceDailyRow> PricesDaily => Set<PriceDailyRow>();
 
+    /// <summary>Daily exchange rates.</summary>
+    public DbSet<FxRateRow> FxRates => Set<FxRateRow>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -112,6 +115,21 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             e.Property(x => x.Status).HasMaxLength(16);
             e.Property(x => x.FailureCode).HasMaxLength(64);
             e.HasOne<StockRow>().WithOne().HasForeignKey<IngestionStateRow>(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FxRateRow>(e =>
+        {
+            e.ToTable("fx_rates", t =>
+            {
+                t.HasCheckConstraint("ck_fx_rates_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+                t.HasCheckConstraint("ck_fx_rates_rate", "rate > 0");
+                t.HasCheckConstraint("ck_fx_rates_source", "source ~ '^[a-z0-9_]{1,32}$'");
+            });
+            e.HasKey(x => new { x.Base, x.Quote, x.AsOfDate, x.Source });
+            e.Property(x => x.Base).HasMaxLength(3).IsFixedLength();
+            e.Property(x => x.Quote).HasMaxLength(3).IsFixedLength();
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.Rate).HasPrecision(20, 10);
         });
 
         modelBuilder.UseSnakeCaseNames();

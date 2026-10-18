@@ -4,11 +4,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Infrastructure.Persistence;
 using SakerWatch.MarketData.Infrastructure.Providers;
+using SakerWatch.MarketData.Infrastructure.Providers.Banguat;
 using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 
 namespace SakerWatch.MarketData.Infrastructure;
@@ -56,6 +58,23 @@ public static class MarketDataServiceCollectionExtensions
                 http.RateLimitIsTransient = false;
             });
 
+        services.AddOptions<BanguatOptions>().Bind(configuration.GetSection(BanguatOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BanguatOptions>, BanguatOptionsValidator>());
+        var banguat = new BanguatOptions();
+        configuration.GetSection(BanguatOptions.SectionName).Bind(banguat);
+        Uri banguatAddress = Uri.TryCreate(banguat.BaseUrl, UriKind.Absolute, out Uri? bank) ? bank : new Uri(new BanguatOptions().BaseUrl);
+        services.AddSakerHttpClient(
+            BanguatFxProvider.ClientName,
+            banguatAddress,
+            http =>
+            {
+                http.AllowedHosts = [banguatAddress.IsDefaultPort ? banguatAddress.Host : $"{banguatAddress.Host}:{banguatAddress.Port}"];
+                // Ten years of one currency are about 400 KB.
+                http.MaxResponseBytes = 4 * 1024 * 1024;
+                http.AttemptTimeout = TimeSpan.FromSeconds(20);
+                http.TotalTimeout = TimeSpan.FromSeconds(30);
+            });
+
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IProviderCallBudget, RedisProviderCallBudget>();
         if (configuration.GetValue("MarketData:Payloads:Enabled", true))
@@ -68,6 +87,7 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.TryAddScoped<IPriceStore, PriceStore>();
+        services.TryAddScoped<IFxRateStore, FxRateStore>();
         services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
@@ -75,6 +95,8 @@ public static class MarketDataServiceCollectionExtensions
         services.AddHostedService<MarketDataScheduler>();
         services.AddSingleton<MarketDataFreshnessSampler>();
         services.AddHostedService(provider => provider.GetRequiredService<MarketDataFreshnessSampler>());
+        services.AddSingleton<BanguatFxProvider>();
+        services.AddSingleton<IFxRateProvider>(provider => provider.GetRequiredService<BanguatFxProvider>());
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;

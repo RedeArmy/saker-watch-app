@@ -29,7 +29,7 @@ public sealed record BackfillStockJob(Guid StockId, int Waits = 0)
 
 /// <summary>A failure that retrying later may fix (a rate limit, an outage): the queue retries the job with backoff.</summary>
 /// <param name="code">The stable code of the provider failure.</param>
-public sealed class IngestionRetryException(string code) : Exception($"The provider answered '{code}'; the backfill will be retried.")
+public sealed class IngestionRetryException(string code) : Exception($"The provider answered '{code}'; the job will be retried.")
 {
     /// <summary>The stable code of the provider failure.</summary>
     public string Code { get; } = code;

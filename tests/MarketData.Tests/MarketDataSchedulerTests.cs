@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Calendars;
@@ -16,7 +17,7 @@ public sealed class MarketDataSchedulerTests
 {
     private sealed class RecordingEnqueuer(bool fail = false) : IJobEnqueuer
     {
-        public List<(string Key, object Payload)> Queued { get; } = [];
+        public List<(string Key, object Payload, JobEnqueueOptions? Options)> Queued { get; } = [];
 
         public Task<bool> EnqueueAsync<TPayload>(string jobKey, TPayload payload, JobEnqueueOptions? options, CancellationToken cancellationToken)
             where TPayload : notnull
@@ -29,7 +30,7 @@ public sealed class MarketDataSchedulerTests
             bool created = Queued.TrueForAll(q => q.Key != jobKey);
             if (created)
             {
-                Queued.Add((jobKey, payload));
+                Queued.Add((jobKey, payload, options));
             }
 
             return Task.FromResult(created);
@@ -63,7 +64,7 @@ public sealed class MarketDataSchedulerTests
     }
 
     private static (MarketDataScheduler Scheduler, RecordingEnqueuer Jobs, FakeTimeProvider Clock) Build(
-        DateTimeOffset now, string[] markets, bool failQueue = false, bool enabled = true, ExchangeCalendars? calendars = null)
+        DateTimeOffset now, string[] markets, bool failQueue = false, bool enabled = true, ExchangeCalendars? calendars = null, bool fx = false)
     {
         var jobs = new RecordingEnqueuer(failQueue);
         ServiceProvider provider = new ServiceCollection().AddSingleton<IJobEnqueuer>(jobs).BuildServiceProvider();
@@ -75,7 +76,7 @@ public sealed class MarketDataSchedulerTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             router,
             calendars ?? ExchangeCalendars.Default(),
-            Options.Create(new IngestionOptions { Enabled = enabled }),
+            Options.Create(new IngestionOptions { Enabled = enabled, FxEnabled = fx }),
             clock,
             NullLogger<MarketDataScheduler>.Instance);
         return (scheduler, jobs, clock);
@@ -153,6 +154,40 @@ public sealed class MarketDataSchedulerTests
     }
 
     [Fact]
+    public async Task EnsureJobs_QueuesTheExchangeRateRefreshOfTheDayInGuatemala_EvenWithNoMarket()
+    {
+        // 2026-10-17 04:00 UTC is still Friday the 16th in Guatemala (UTC-6).
+        (MarketDataScheduler scheduler, RecordingEnqueuer jobs, FakeTimeProvider clock) = Build(new DateTimeOffset(2026, 10, 17, 4, 0, 0, TimeSpan.Zero), markets: [], fx: true);
+
+        (await scheduler.EnsureJobsAsync(CancellationToken.None)).Should().Be(0);
+        clock.Advance(TimeSpan.FromHours(3));
+        await scheduler.EnsureJobsAsync(CancellationToken.None);
+        await scheduler.EnsureJobsAsync(CancellationToken.None);
+
+        jobs.Queued.Select(q => q.Key).Should().Equal("marketdata.fx-refresh:USD:GTQ:20261016", "marketdata.fx-refresh:USD:GTQ:20261017");
+        jobs.Queued[1].Payload.Should().Be(new FxRefreshJob("USD", "GTQ", new DateOnly(2026, 10, 17)));
+        jobs.Queued[1].Options!.MaxAttempts.Should().Be(12, "a day has one job, so it must outlast an outage of the bank");
+    }
+
+    [Fact]
+    public async Task EnsureJobs_WhenTheExchangeRateRefreshIsOff_QueuesNone()
+    {
+        (MarketDataScheduler scheduler, RecordingEnqueuer jobs, _) = Build(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), markets: [], fx: false);
+
+        await scheduler.EnsureJobsAsync(CancellationToken.None);
+
+        jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EnsureJobs_WhenTheQueueFailsForTheExchangeRate_CountsItAsOneFailure()
+    {
+        (MarketDataScheduler scheduler, _, _) = Build(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), markets: ["XNAS"], failQueue: true, fx: true);
+
+        (await scheduler.EnsureJobsAsync(CancellationToken.None)).Should().Be(2, "one market and the exchange rate");
+    }
+
+    [Fact]
     public async Task EnsureJobs_WithNoEnabledMarket_DoesNothing()
     {
         (MarketDataScheduler scheduler, RecordingEnqueuer jobs, _) = Build(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), markets: []);
@@ -168,8 +203,13 @@ public sealed class MarketDataSchedulerTests
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitForAsync(() => jobs.Queued.Count >= 1);
-        clock.Advance(TimeSpan.FromHours(2));
-        await WaitForAsync(() => jobs.Queued.Count >= 2);
+        // The loop may not have armed its timer yet when the first queueing is seen, and a timer armed after an Advance would wait for the
+        // next one: keep moving the clock, one check interval at a time, until the later session has been queued.
+        await WaitForAsync(() =>
+        {
+            clock.Advance(TimeSpan.FromMinutes(10));
+            return jobs.Queued.Count >= 2;
+        });
         await scheduler.StopAsync(CancellationToken.None);
 
         jobs.Queued.Select(q => q.Key).Should().Equal("marketdata.ingest-daily:XNAS:20261015", "marketdata.ingest-daily:XNAS:20261016");

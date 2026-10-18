@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Calendars;
@@ -65,9 +66,27 @@ public sealed class FreshnessTests
             throw new NotSupportedException();
     }
 
-    private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, DateTimeOffset now, params string[] markets)
+    private sealed class FakeRates(DateOnly? latest, bool fail = false) : IFxRateStore
     {
-        ServiceProvider provider = new ServiceCollection().AddSingleton(reader).BuildServiceProvider();
+        public Task<int> UpsertAsync(IReadOnlyList<SakerWatch.MarketData.Domain.Fx.FxRate> rates, DateTimeOffset ingestedAt, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<SakerWatch.MarketData.Domain.Fx.FxRate?> OnOrBeforeAsync(CurrencyCode baseCurrency, CurrencyCode quote, DateOnly date, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<DateOnly?> LatestDateAsync(CurrencyCode baseCurrency, CurrencyCode quote, string source, CancellationToken cancellationToken) =>
+            fail ? throw new InvalidOperationException("database not ready") : Task.FromResult(latest);
+    }
+
+    private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, DateTimeOffset now, params string[] markets) => Sampler(reader, null, now, markets);
+
+    private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, IFxRateStore? rates, DateTimeOffset now, params string[] markets)
+    {
+        var services = new ServiceCollection().AddSingleton(reader);
+        if (rates is not null)
+        {
+            services.AddSingleton(rates);
+        }
+
+        ServiceProvider provider = services.BuildServiceProvider();
         var router = new MarketDataProviderRouter(
             [new NoProvider()],
             Options.Create(new MarketDataProvidersOptions { Markets = markets.ToDictionary(m => m, _ => "fake") }));
@@ -128,6 +147,45 @@ public sealed class FreshnessTests
         await broken.SampleAsync(CancellationToken.None);
 
         broken.GetSnapshot().Should().BeEmpty("nothing was ever measured, and the failure did not throw");
+    }
+
+    [Fact]
+    public async Task Sample_MeasuresTheAgeOfTheNewestExchangeRate_InGuatemalanDays()
+    {
+        // 2026-10-17 04:00 UTC is still the 16th in Guatemala; the newest rate is the 14th: two days old.
+        MarketDataFreshnessSampler sampler = Sampler(new FakeReader([]), new FakeRates(new DateOnly(2026, 10, 14)), new DateTimeOffset(2026, 10, 17, 4, 0, 0, TimeSpan.Zero));
+
+        await sampler.SampleAsync(CancellationToken.None);
+
+        sampler.FxAgeDays.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Sample_WithoutARateStoreOrWithoutRates_HasNoExchangeRateAge()
+    {
+        var now = new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+        MarketDataFreshnessSampler noStore = Sampler(new FakeReader([]), now);
+        MarketDataFreshnessSampler empty = Sampler(new FakeReader([]), new FakeRates(null), now);
+
+        await noStore.SampleAsync(CancellationToken.None);
+        await empty.SampleAsync(CancellationToken.None);
+
+        noStore.FxAgeDays.Should().BeNull();
+        empty.FxAgeDays.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Sample_WhenTheExchangeRateCannotBeRead_KeepsTheLastAge_AndDoesNotThrow()
+    {
+        var now = new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+        MarketDataFreshnessSampler good = Sampler(new FakeReader([]), new FakeRates(new DateOnly(2026, 10, 16)), now);
+        await good.SampleAsync(CancellationToken.None);
+        MarketDataFreshnessSampler broken = Sampler(new FakeReader([]), new FakeRates(null, fail: true), now);
+
+        await broken.SampleAsync(CancellationToken.None);
+
+        good.FxAgeDays.Should().Be(1);
+        broken.FxAgeDays.Should().BeNull("nothing was ever measured, and the failure did not throw");
     }
 
     [Fact]

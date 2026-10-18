@@ -56,4 +56,25 @@ public sealed class IngestionOptions
     /// <summary>Seconds, at most, added to a wait so the jobs that ran out of budget together do not all return at the same instant.</summary>
     [Range(0, 600)]
     public int RateLimitJitterSeconds { get; set; } = 30;
+
+    /// <summary>Whether the worker schedules the daily refresh of the USD to GTQ exchange rate.</summary>
+    public bool FxEnabled { get; set; } = true;
+
+    /// <summary>Days before the newest stored rate that the daily exchange rate refresh asks for again, to pick up a correction.</summary>
+    [Range(1, 30)]
+    public int FxOverlapDays { get; set; } = 5;
+
+    /// <summary>
+    /// Days after which the newest exchange rate counts as stale. The bank fills weekends and holidays with the previous rate, so a rate older
+    /// than a long weekend means the ingestion stopped.
+    /// </summary>
+    [Range(1, 30)]
+    public int FxMaxAgeDays { get; set; } = 3;
+
+    /// <summary>
+    /// Attempts the queue gives the daily exchange rate refresh before it is parked as dead. A day has one job, so it must outlast an outage of the
+    /// bank's service: with the queue's backoff (5 s doubling, capped at 30 minutes) twelve attempts span about an hour and a half.
+    /// </summary>
+    [Range(1, 20)]
+    public int FxMaxAttempts { get; set; } = 12;
 }

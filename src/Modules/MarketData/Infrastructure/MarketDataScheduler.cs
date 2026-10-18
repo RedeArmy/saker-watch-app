@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Calendars;
@@ -86,7 +87,37 @@ public sealed partial class MarketDataScheduler(
             }
         }
 
-        return failures;
+        return failures + (options.Value.FxEnabled ? await EnsureFxJobAsync(now, cancellationToken) : 0);
+    }
+
+    // The exchange rate is not tied to a market session: the bank publishes every calendar day, ahead of time, so the job of the day in
+    // Guatemala asks for the rates up to today. Returns 1 when it could not be queued.
+    private async Task<int> EnsureFxJobAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        (CurrencyCode baseCurrency, CurrencyCode quote) = FxFreshness.Anchor;
+        DateOnly day = FxFreshness.TodayInGuatemala(now);
+        try
+        {
+            await using AsyncServiceScope scope = scopes.CreateAsyncScope();
+            var jobs = scope.ServiceProvider.GetRequiredService<IJobEnqueuer>();
+            bool created = await jobs.EnqueueAsync(
+                FxRefreshJob.KeyFor(baseCurrency, quote, day),
+                new FxRefreshJob(baseCurrency.Value, quote.Value, day),
+                new JobEnqueueOptions(MaxAttempts: options.Value.FxMaxAttempts),
+                cancellationToken);
+            if (created)
+            {
+                string text = day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                LogFxQueued(baseCurrency.Value, quote.Value, text);
+            }
+
+            return 0;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogFxQueueFailed(baseCurrency.Value, quote.Value, ex);
+            return 1;
+        }
     }
 
     [LoggerMessage(EventId = 2121, Level = LogLevel.Information, Message = "The daily market data refresh is disabled; no session will be scheduled")]
@@ -100,4 +131,10 @@ public sealed partial class MarketDataScheduler(
 
     [LoggerMessage(EventId = 2124, Level = LogLevel.Warning, Message = "The market {Market} has a provider but no calendar, so its daily refresh cannot be scheduled")]
     private partial void LogNoCalendar(string market);
+
+    [LoggerMessage(EventId = 2125, Level = LogLevel.Information, Message = "Daily refresh of the exchange rates {Base}/{Quote} for {Day} queued")]
+    private partial void LogFxQueued(string @base, string quote, string day);
+
+    [LoggerMessage(EventId = 2126, Level = LogLevel.Warning, Message = "Could not queue the daily refresh of the exchange rates {Base}/{Quote}; it will be tried again shortly")]
+    private partial void LogFxQueueFailed(string @base, string quote, Exception exception);
 }
