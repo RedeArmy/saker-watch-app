@@ -430,6 +430,72 @@ public sealed class PortfolioUseCaseTests
         repo.Portfolios.Should().ContainSingle();
     }
 
+    private sealed class SnapshotMarket(params StockSnapshot[] snapshots) : IMarketSnapshots
+    {
+        public List<int> Calls { get; } = [];
+
+        public Task<IReadOnlyDictionary<Guid, StockSummary>> FindManyAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken)
+        {
+            Calls.Add(stockIds.Count);
+            return Task.FromResult<IReadOnlyDictionary<Guid, StockSnapshot>>(snapshots.Where(s => stockIds.Contains(s.Stock.Id)).ToDictionary(s => s.Stock.Id));
+        }
+    }
+
+    private static StockSnapshot Snap(StockSummary stock, string status, DateTimeOffset? staleSince, params (string Window, decimal? Change)[] changes)
+    {
+        string[] codes = ["1D", "1W", "1M", "3M", "6M", "YTD", "1Y", "5Y"];
+        WindowSnapshot[] windows = [.. codes.Select(code => new WindowSnapshot(code, changes.FirstOrDefault(c => c.Window == code).Change, null, changes.Any(c => c.Window == code && c.Change.HasValue) ? null : "insufficient_history"))];
+        return new StockSnapshot(stock, status, status is PriceStatuses.Pending or PriceStatuses.Unavailable ? null : new PriceSnapshot(10m, new DateOnly(2026, 10, 16), true), staleSince, windows);
+    }
+
+    [Fact]
+    public async Task Metrics_AggregateTheStocksOfThePortfolio_NameTheBestAndTheWorst_AndCountThePriceStates()
+    {
+        (Repository repo, _) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        var msft = new StockSummary(Guid.CreateVersion7(), "XNAS", "MSFT", "Microsoft", "USD", "equity");
+        var nvda = new StockSummary(Guid.CreateVersion7(), "XNAS", "NVDA", "Nvidia", "USD", "equity");
+        repo.Members[PortfolioId.Create(portfolio.Id)] = [new PortfolioMember(_apple.Id, 0, _now), new PortfolioMember(_cola.Id, 1, _now), new PortfolioMember(msft.Id, 2, _now), new PortfolioMember(nvda.Id, 3, _now)];
+        DateTimeOffset since = _now.AddDays(-2);
+        var market = new SnapshotMarket(
+            Snap(_apple, PriceStatuses.Current, null, ("1D", 0.10m), ("YTD", 0.30m)),
+            Snap(_cola, PriceStatuses.Stale, since, ("1D", -0.05m)),
+            Snap(msft, PriceStatuses.Pending, null),
+            Snap(nvda, PriceStatuses.Unavailable, null));
+
+        PortfolioMetrics metrics = (await new GetPortfolioMetricsHandler(new User(_user), repo, market).Handle(new GetPortfolioMetricsQuery(portfolio.Id), CancellationToken.None)).Value;
+
+        metrics.StockCount.Should().Be(4);
+        metrics.PriceStatuses.Should().Be(new PriceStatusCounts(1, 1, 1, 1));
+        metrics.StaleSince.Should().Be(since);
+        metrics.Windows.Select(w => w.Window).Should().Equal("1D", "1W", "1M", "3M", "6M", "YTD", "1Y", "5Y");
+        WindowMetrics day = metrics.Windows[0];
+        (day.Count, day.Average, day.Median).Should().Be((2, 0.025m, 0.025m));
+        (day.Best!.Stock, day.Best.Change, day.Worst!.Stock, day.Worst.Change).Should().Be((_apple, 0.10m, _cola, -0.05m));
+        metrics.Windows[5].Should().Match<WindowMetrics>(w => w.Count == 1 && w.Average == 0.30m && w.Best!.Stock == _apple && w.Worst!.Stock == _apple);
+        metrics.Windows[7].Should().Be(new WindowMetrics("5Y", 0, null, null, null, null));
+        market.Calls.Should().Equal(4);
+    }
+
+    [Fact]
+    public async Task Metrics_OfAnEmptyPortfolio_HaveNoNumbersAndNoStaleMoment_AndOfAnotherUsersAreNotFound()
+    {
+        (Repository repo, _) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        var handler = new GetPortfolioMetricsHandler(new User(_user), repo, new SnapshotMarket());
+
+        PortfolioMetrics empty = (await handler.Handle(new GetPortfolioMetricsQuery(portfolio.Id), CancellationToken.None)).Value;
+        Result<PortfolioMetrics> theirs = await new GetPortfolioMetricsHandler(new User(Guid.CreateVersion7()), repo, new SnapshotMarket()).Handle(new GetPortfolioMetricsQuery(portfolio.Id), CancellationToken.None);
+        Result<PortfolioMetrics> anonymous = await new GetPortfolioMetricsHandler(new User(null), repo, new SnapshotMarket()).Handle(new GetPortfolioMetricsQuery(portfolio.Id), CancellationToken.None);
+
+        (empty.StockCount, empty.StaleSince, empty.PriceStatuses).Should().Be((0, (DateTimeOffset?)null, new PriceStatusCounts(0, 0, 0, 0)));
+        empty.Windows.Should().HaveCount(8).And.OnlyContain(w => w.Count == 0 && w.Average == null);
+        theirs.Error!.Code.Should().Be(PortfolioErrors.NotFound);
+        anonymous.Error!.Type.Should().Be(ErrorType.Unauthorized);
+    }
+
     [Fact]
     public async Task EveryUseCase_RefusesAnAnonymousCaller()
     {

@@ -4,7 +4,9 @@ using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.MarketData.Contracts;
 using SakerWatch.Watchlist.Application;
 using SakerWatch.Watchlist.Application.Features.GetWatchlist;
+using SakerWatch.Watchlist.Application.Features.Portfolios;
 using SakerWatch.Watchlist.Domain.Items;
+using SakerWatch.Watchlist.Domain.Portfolios;
 
 namespace SakerWatch.Watchlist.Tests;
 
@@ -32,6 +34,36 @@ public sealed class GetWatchlistTests
         public Task UpdateAsync(WatchlistItem item, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> RemoveByStockAsync(Guid userId, Guid stockId, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    // The portfolios the list may be filtered by: id to the stocks it holds. Everything else is outside what the list reads.
+    private sealed class Portfolios(Dictionary<Guid, Guid[]>? held = null) : IPortfolioRepository
+    {
+        public Task<IReadOnlyList<PortfolioSummary>> ListAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
+            Task.FromResult(held is not null && held.TryGetValue(id.Value, out Guid[]? stocks)
+                ? new PortfolioSummary(Portfolio.Create(id, userId, "P", null, 0, _now).Value, stocks.Length)
+                : null);
+
+        public Task<PortfolioWrite> AddAsync(Portfolio portfolio, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<PortfolioWrite> UpdateAsync(Portfolio portfolio, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> ReorderAsync(Guid userId, IReadOnlyList<PortfolioId> ordered, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<PortfolioMember>>([.. held![id.Value].Select((stock, position) => new PortfolioMember(stock, position, _now))]);
+
+        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> RemoveMemberAsync(Guid userId, PortfolioId id, Guid stockId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> ReorderMembersAsync(Guid userId, PortfolioId id, IReadOnlyList<Guid> orderedStocks, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<DeletionPreview> PreviewDeletionAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class Market(IEnumerable<StockSnapshot> snapshots) : IMarketSnapshots
@@ -79,7 +111,7 @@ public sealed class GetWatchlistTests
     {
         var market = new Market(snapshots);
         Func<StockSnapshot, WatchlistItem> make = item ?? (s => Item(s));
-        return (new GetWatchlistHandler(new User(user ?? _user), new Items([.. snapshots.Select(make)]), market), market);
+        return (new GetWatchlistHandler(new User(user ?? _user), new Items([.. snapshots.Select(make)]), new Portfolios(), market), market);
     }
 
     private static async Task<WatchlistPage> RunAsync(GetWatchlistHandler handler, GetWatchlistQuery query) => (await handler.Handle(query, CancellationToken.None)).Value;
@@ -263,7 +295,7 @@ public sealed class GetWatchlistTests
         var other = Guid.CreateVersion7();
         var market = new Market([mine, theirs]);
         var items = new Items(Item(mine), WatchlistItem.Restore(WatchlistItemId.Create(Guid.CreateVersion7()), other, theirs.Stock.Id, null, null, _now, _now));
-        var handler = new GetWatchlistHandler(new User(_user), items, market);
+        var handler = new GetWatchlistHandler(new User(_user), items, new Portfolios(), market);
 
         WatchlistPage page = await RunAsync(handler, Query());
 
@@ -276,7 +308,7 @@ public sealed class GetWatchlistTests
         StockSnapshot known = Snapshot("KNOWN", "Known", 1m);
         StockSnapshot lost = Snapshot("LOST", "Lost", 1m);
         var market = new Market([known]);
-        var handler = new GetWatchlistHandler(new User(_user), new Items(Item(known), Item(lost)), market);
+        var handler = new GetWatchlistHandler(new User(_user), new Items(Item(known), Item(lost)), new Portfolios(), market);
 
         WatchlistPage page = await RunAsync(handler, Query());
 
@@ -289,7 +321,7 @@ public sealed class GetWatchlistTests
     {
         StockSnapshot ko = Snapshot("KO", "Coca-Cola Co.", 60m);
         WatchlistItem item = WatchlistItem.Restore(WatchlistItemId.Create(Guid.CreateVersion7()), _user, ko.Stock.Id, "Esperar", 70.5m, _now, _now.AddHours(1));
-        var handler = new GetWatchlistHandler(new User(_user), new Items(item), new Market([ko]));
+        var handler = new GetWatchlistHandler(new User(_user), new Items(item), new Portfolios(), new Market([ko]));
 
         WatchlistEntry entry = (await RunAsync(handler, Query())).Items.Single();
 
@@ -297,11 +329,40 @@ public sealed class GetWatchlistTests
     }
 
     [Fact]
+    public async Task ByPortfolio_ListsOnlyItsStocks_AndTheTotalCountsOnlyThose()
+    {
+        var market = new Market(_four);
+        var portfolioId = Guid.CreateVersion7();
+        var handler = new GetWatchlistHandler(
+            new User(_user), new Items([.. _four.Select(s => Item(s))]), new Portfolios(new() { [portfolioId] = [_four[1].Stock.Id, _four[2].Stock.Id] }), market);
+
+        WatchlistPage page = await RunAsync(handler, Query() with { PortfolioId = portfolioId });
+        WatchlistPage filtered = await RunAsync(handler, Query(search: "micro") with { PortfolioId = portfolioId });
+
+        page.Items.Select(e => e.Stock.Ticker).Should().Equal("AAPL", "MSFT");
+        page.Total.Should().Be(2);
+        filtered.Items.Select(e => e.Stock.Ticker).Should().Equal("MSFT");
+        market.SnapshotCalls.Should().Equal(2, 1);
+    }
+
+    [Fact]
+    public async Task ByAPortfolioThatIsNotTheCallers_Is404_AndNothingIsRead()
+    {
+        var market = new Market(_four);
+        var handler = new GetWatchlistHandler(new User(_user), new Items([.. _four.Select(s => Item(s))]), new Portfolios(new()), market);
+
+        Result<WatchlistPage> result = await handler.Handle(Query() with { PortfolioId = Guid.CreateVersion7() }, CancellationToken.None);
+
+        result.Error!.Code.Should().Be(PortfolioErrors.NotFound);
+        market.SnapshotCalls.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task AnEmptyWatchlist_IsAnEmptyPage_AndAnAnonymousCallerIsRefused()
     {
         var market = new Market([]);
-        var empty = new GetWatchlistHandler(new User(_user), new Items(), market);
-        var anonymous = new GetWatchlistHandler(new User(null), new Items(), market);
+        var empty = new GetWatchlistHandler(new User(_user), new Items(), new Portfolios(), market);
+        var anonymous = new GetWatchlistHandler(new User(null), new Items(), new Portfolios(), market);
 
         WatchlistPage page = await RunAsync(empty, Query());
         Result<WatchlistPage> refused = await anonymous.Handle(Query(), CancellationToken.None);

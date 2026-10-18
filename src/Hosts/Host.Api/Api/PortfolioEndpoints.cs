@@ -37,6 +37,35 @@ public sealed record PortfolioDetailResponse(PortfolioResponse Portfolio, IReadO
 /// <param name="StocksKept">How many of its stocks would stay because another portfolio holds them too.</param>
 public sealed record PortfolioDeletionPreviewResponse(PortfolioResponse Portfolio, IReadOnlyList<WatchlistStockResponse> StocksToRemove, int StocksKept);
 
+/// <summary>A stock and its change over a window.</summary>
+/// <param name="Stock">The stock.</param>
+/// <param name="Change">The change as a fraction (a decimal string; <c>0.0123</c> is 1.23 %).</param>
+public sealed record StockChangeResponse(WatchlistStockResponse Stock, decimal Change);
+
+/// <summary>What a portfolio did over one window, from the stocks that have a number for it.</summary>
+/// <param name="Window">One of <c>1D</c>, <c>1W</c>, <c>1M</c>, <c>3M</c>, <c>6M</c>, <c>YTD</c>, <c>1Y</c>, <c>5Y</c>.</param>
+/// <param name="Count">How many stocks have a change for the window; the other figures are over these only.</param>
+/// <param name="Average">The equal-weighted average change (a decimal string), or null when no stock has data.</param>
+/// <param name="Median">The median change (a decimal string), or null.</param>
+/// <param name="Best">The stock that rose most, or null.</param>
+/// <param name="Worst">The stock that rose least or fell most, or null.</param>
+public sealed record WindowMetricsResponse(string Window, int Count, decimal? Average, decimal? Median, StockChangeResponse? Best, StockChangeResponse? Worst);
+
+/// <summary>How many stocks of a portfolio have prices in each state.</summary>
+/// <param name="Current">Prices up to date.</param>
+/// <param name="Stale">The last known price is shown.</param>
+/// <param name="Pending">No history yet.</param>
+/// <param name="Unavailable">No price and loading failed for good.</param>
+public sealed record PriceStatusCountsResponse(int Current, int Stale, int Pending, int Unavailable);
+
+/// <summary>The aggregate numbers of a portfolio. Informational only, not financial advice.</summary>
+/// <param name="Portfolio">The portfolio.</param>
+/// <param name="StockCount">How many stocks it holds.</param>
+/// <param name="PriceStatuses">How many are in each price state.</param>
+/// <param name="StaleSince">The oldest moment a stale price went stale (ISO-8601 UTC), or null when none is.</param>
+/// <param name="Windows">The eight windows, in order.</param>
+public sealed record PortfolioMetricsResponse(PortfolioResponse Portfolio, int StockCount, PriceStatusCountsResponse PriceStatuses, DateTimeOffset? StaleSince, IReadOnlyList<WindowMetricsResponse> Windows);
+
 /// <summary>Body of <c>POST /v1/portfolios</c> and <c>PUT /v1/portfolios/{id}</c>.</summary>
 /// <param name="Name">Name; spaces at both ends are removed; 1 to 60 characters.</param>
 /// <param name="Description">Description up to 500 characters, or null.</param>
@@ -112,6 +141,19 @@ internal static class PortfolioEndpoints
             .WithDescription("The portfolio with its stocks by position. Carries an ETag.")
             .WithTags(_tag)
             .Produces<PortfolioDetailResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status304NotModified)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        v1.MapGet("/portfolios/{id:guid}/metrics", MetricsAsync)
+            .WithName("GetPortfolioMetrics")
+            .WithSummary("How a portfolio did")
+            .WithDescription("The group's equal-weighted average and median change over 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, with how many stocks have a number for each window and the stock that rose most and least, plus how many stocks have current, stale, pending or unavailable prices. A stock without a number for a window is left out of that window, never counted as zero. A portfolio holds no quantities, so these say how the stocks moved, not how a sum of money did. Informational only, not financial advice. Carries an ETag.")
+            .WithTags(_tag)
+            .Produces<PortfolioMetricsResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status304NotModified)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -212,6 +254,8 @@ internal static class PortfolioEndpoints
 
     private static PortfolioItemResponse ToResponse(PortfolioItemView i) => new(ToResponse(i.Stock), i.Position, i.AddedAt);
 
+    private static StockChangeResponse? ToResponse(StockChange? change) => change is null ? null : new StockChangeResponse(ToResponse(change.Stock), change.Change);
+
     private static async Task<IResult> CreateAsync(PortfolioRequest? body, HttpContext http, ISender sender, CancellationToken cancellationToken)
     {
         var key = IdempotencyKeyReader.Require(http);
@@ -244,6 +288,17 @@ internal static class PortfolioEndpoints
     {
         var result = await sender.Send(new GetPortfolioQuery(id), cancellationToken);
         return result.ToHttpResult(detail => ConditionalResults.Json(new PortfolioDetailResponse(ToResponse(detail.Portfolio), [.. detail.Items.Select(ToResponse)])));
+    }
+
+    private static async Task<IResult> MetricsAsync(Guid id, ISender sender, CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(new GetPortfolioMetricsQuery(id), cancellationToken);
+        return result.ToHttpResult(metrics => ConditionalResults.Json(new PortfolioMetricsResponse(
+            ToResponse(metrics.Portfolio),
+            metrics.StockCount,
+            new PriceStatusCountsResponse(metrics.PriceStatuses.Current, metrics.PriceStatuses.Stale, metrics.PriceStatuses.Pending, metrics.PriceStatuses.Unavailable),
+            metrics.StaleSince,
+            [.. metrics.Windows.Select(w => new WindowMetricsResponse(w.Window, w.Count, w.Average, w.Median, ToResponse(w.Best), ToResponse(w.Worst)))])));
     }
 
     private static async Task<IResult> UpdateAsync(Guid id, PortfolioRequest? body, ISender sender, CancellationToken cancellationToken)

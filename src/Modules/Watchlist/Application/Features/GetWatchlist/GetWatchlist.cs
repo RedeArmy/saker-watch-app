@@ -3,8 +3,10 @@ using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.MarketData.Contracts;
+using SakerWatch.Watchlist.Application.Features.Portfolios;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
 using SakerWatch.Watchlist.Domain.Items;
+using SakerWatch.Watchlist.Domain.Portfolios;
 
 namespace SakerWatch.Watchlist.Application.Features.GetWatchlist;
 
@@ -18,9 +20,10 @@ namespace SakerWatch.Watchlist.Application.Features.GetWatchlist;
 /// <param name="AssetType">Only this kind of instrument: <c>equity</c>, <c>etf</c> or <c>other</c>.</param>
 /// <param name="Search">Only stocks whose ticker or name contains this text, ignoring case.</param>
 /// <param name="PriceStatus">Only stocks whose prices are in this state (<see cref="PriceStatuses"/>).</param>
+/// <param name="PortfolioId">Only the stocks of this portfolio of the caller (404 when it is not one of theirs).</param>
 /// <param name="Limit">Items per page, 1 to 100.</param>
 /// <param name="Offset">Items to skip.</param>
-public sealed record GetWatchlistQuery(string? Sort, string? Order, string? Market, string? AssetType, string? Search, string? PriceStatus, int Limit, int Offset)
+public sealed record GetWatchlistQuery(string? Sort, string? Order, string? Market, string? AssetType, string? Search, string? PriceStatus, int Limit, int Offset, Guid? PortfolioId = null)
     : IQuery<WatchlistPage>, IReadsDatabase;
 
 /// <summary>A stock on the watchlist as the list shows it.</summary>
@@ -98,7 +101,7 @@ public sealed class GetWatchlistValidator : AbstractValidator<GetWatchlistQuery>
 /// Builds the page. A sort or a filter that depends on the market data reads it for every stock of the user (at most 500, in a few statements);
 /// every other request reads it only for the stocks of the page, so a watchlist sorted by name costs the page, not the list.
 /// </summary>
-public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepository items, IMarketSnapshots market)
+public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepository items, IPortfolioRepository portfolios, IMarketSnapshots market)
     : IRequestHandler<GetWatchlistQuery, Result<WatchlistPage>>
 {
     /// <inheritdoc />
@@ -110,6 +113,18 @@ public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepo
         }
 
         IReadOnlyList<WatchlistItem> all = await items.ListAsync(userId, cancellationToken);
+        if (request.PortfolioId is { } portfolioId)
+        {
+            var id = PortfolioId.Create(portfolioId);
+            if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
+            {
+                return PortfolioErrors.PortfolioNotFound();
+            }
+
+            HashSet<Guid> inPortfolio = [.. (await portfolios.MembersAsync(userId, id, cancellationToken)).Select(member => member.StockId)];
+            all = [.. all.Where(item => inPortfolio.Contains(item.StockId))];
+        }
+
         IReadOnlyDictionary<Guid, StockSummary> stocks = await market.FindManyAsync([.. all.Select(item => item.StockId)], cancellationToken);
 
         // An item whose stock the catalog cannot find is left out: it cannot be shown, and nothing deletes catalog rows.

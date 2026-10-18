@@ -85,13 +85,14 @@ internal static class WatchlistEndpoints
         v1.MapGet("/watchlist", ListAsync)
             .WithName("GetWatchlist")
             .WithSummary("List the watchlist")
-            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name) and priceStatus; sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
+            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller's portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
             .WithTags(_tag)
             .Produces<WatchlistPageResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status304NotModified)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
@@ -136,10 +137,11 @@ internal static class WatchlistEndpoints
         string? assetType = null,
         string? q = null,
         string? priceStatus = null,
+        Guid? portfolio = null,
         int limit = 50,
         int offset = 0)
     {
-        var result = await sender.Send(new GetWatchlistQuery(sort, order, market, assetType, q, priceStatus, limit, offset), cancellationToken);
+        var result = await sender.Send(new GetWatchlistQuery(sort, order, market, assetType, q, priceStatus, limit, offset, portfolio), cancellationToken);
         return result.ToHttpResult(page => ConditionalResults.Json(new WatchlistPageResponse(
             [.. page.Items.Select(ToResponse)], page.Total, page.Limit, page.Offset)));
     }
