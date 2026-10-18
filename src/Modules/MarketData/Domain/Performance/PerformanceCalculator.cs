@@ -32,6 +32,10 @@ public static class PerformanceCalculator
         };
     }
 
+    /// <summary>The report of a listing with no price: <see cref="PerformanceGap.NoData"/> in every window.</summary>
+    public static PerformanceReport NoData() =>
+        new(null, [.. Windows.Select(window => WindowPerformance.Missing(window, PerformanceGap.NoData))]);
+
     /// <summary>
     /// Computes the windows. <paramref name="baselines"/> holds, for each date of <see cref="TargetDates"/>, the last close on or before it, or
     /// <see langword="null"/> when nothing is stored that early. A date missing from the dictionary counts as nothing stored.
@@ -48,7 +52,7 @@ public static class PerformanceCalculator
 
         if (latest is null)
         {
-            return new PerformanceReport(null, [.. Windows.Select(window => WindowPerformance.Missing(window, PerformanceGap.NoData))]);
+            return NoData();
         }
 
         IReadOnlyDictionary<PerformanceWindow, DateOnly> targets = TargetDates(latest.Date, calendar);
