@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
@@ -75,6 +76,27 @@ public sealed record WatchlistPageResponse(IReadOnlyList<WatchlistEntryResponse>
 /// <param name="TargetPrice">Target price greater than zero with at most eight decimals, or null.</param>
 public sealed record PutWatchlistItemRequest(string? Notes, decimal? TargetPrice);
 
+/// <summary>The query string of <c>GET /v1/watchlist</c>; every part is optional.</summary>
+/// <param name="Sort">Sort key.</param>
+/// <param name="Order"><c>asc</c> or <c>desc</c>.</param>
+/// <param name="Market">Canonical market code.</param>
+/// <param name="AssetType"><c>equity</c>, <c>etf</c> or <c>other</c>.</param>
+/// <param name="Q">Text in the ticker or the name.</param>
+/// <param name="PriceStatus">Price state.</param>
+/// <param name="Portfolio">Id of one of the caller's portfolios.</param>
+/// <param name="Limit">Items per page, 1 to 100.</param>
+/// <param name="Offset">Items to skip.</param>
+internal sealed record WatchlistListParameters(
+    [FromQuery(Name = "sort")] string? Sort = null,
+    [FromQuery(Name = "order")] string? Order = null,
+    [FromQuery(Name = "market")] string? Market = null,
+    [FromQuery(Name = "assetType")] string? AssetType = null,
+    [FromQuery(Name = "q")] string? Q = null,
+    [FromQuery(Name = "priceStatus")] string? PriceStatus = null,
+    [FromQuery(Name = "portfolio")] Guid? Portfolio = null,
+    [FromQuery(Name = "limit")] int Limit = 50,
+    [FromQuery(Name = "offset")] int Offset = 0);
+
 /// <summary>Endpoints under <c>/v1/watchlist</c>.</summary>
 internal static class WatchlistEndpoints
 {
@@ -130,20 +152,11 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
-    private static async Task<IResult> ListAsync(
-        ISender sender,
-        CancellationToken cancellationToken,
-        string? sort = null,
-        string? order = null,
-        string? market = null,
-        string? assetType = null,
-        string? q = null,
-        string? priceStatus = null,
-        Guid? portfolio = null,
-        int limit = 50,
-        int offset = 0)
+    private static async Task<IResult> ListAsync(ISender sender, [AsParameters] WatchlistListParameters query, CancellationToken cancellationToken)
     {
-        var result = await sender.Send(new GetWatchlistQuery(sort, order, market, assetType, q, priceStatus, limit, offset, portfolio), cancellationToken);
+        var result = await sender.Send(
+            new GetWatchlistQuery(query.Sort, query.Order, query.Market, query.AssetType, query.Q, query.PriceStatus, query.Limit, query.Offset, query.Portfolio),
+            cancellationToken);
         return result.ToHttpResult(page => ConditionalResults.Json(new WatchlistPageResponse(
             [.. page.Items.Select(ToResponse)], page.Total, page.Limit, page.Offset)));
     }

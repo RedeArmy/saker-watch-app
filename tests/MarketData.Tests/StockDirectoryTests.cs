@@ -124,9 +124,9 @@ public sealed class StockDirectoryTests
         var router = new MarketDataProviderRouter(
             [provider],
             Options.Create(new MarketDataProvidersOptions { Markets = (markets ?? ["XNAS", "XNYS"]).ToDictionary(m => m, _ => "fake") }));
-        var directory = new StockDirectory(
-            catalog, registry, router, ExchangeCalendars.Default(), budget, cache, jobs, new TimeProviderIdGenerator(clock),
-            Options.Create(lookup ?? new StockLookupOptions()), Options.Create(new IngestionOptions()), clock, NullLogger<StockDirectory>.Instance);
+        var search = new ProviderSearch(budget, cache, Options.Create(lookup ?? new StockLookupOptions()), NullLogger<ProviderSearch>.Instance);
+        var registration = new StockRegistration(registry, jobs, Options.Create(new IngestionOptions()), NullLogger<StockRegistration>.Instance);
+        var directory = new StockDirectory(catalog, search, registration, router, ExchangeCalendars.Default(), new TimeProviderIdGenerator(clock), clock);
         return new Rig(directory, provider, catalog, registry, budget, cache, jobs);
     }
 

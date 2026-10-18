@@ -75,6 +75,8 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddSingleton<ISearchCache, RedisSearchCache>();
         services.TryAddScoped<IStockCatalog, StockCatalog>();
         services.TryAddScoped<IStockRegistry, StockRegistry>();
+        services.TryAddScoped<ProviderSearch>();
+        services.TryAddScoped<StockRegistration>();
         services.TryAddScoped<IStockDirectory, StockDirectory>();
 
         // What a list of stocks shows: the newest price, how current it is and the performance windows.

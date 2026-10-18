@@ -25,17 +25,12 @@ namespace SakerWatch.MarketData.Application.Lookup;
 /// </summary>
 public sealed partial class StockDirectory(
     IStockCatalog catalog,
-    IStockRegistry registry,
+    ProviderSearch search,
+    StockRegistration registration,
     IMarketDataProviderRouter router,
     ExchangeCalendars calendars,
-    IProviderCallBudget budget,
-    ISearchCache cache,
-    IJobEnqueuer jobs,
     IIdGenerator ids,
-    IOptions<StockLookupOptions> lookup,
-    IOptions<IngestionOptions> ingestion,
-    TimeProvider clock,
-    ILogger<StockDirectory> logger) : IStockDirectory
+    TimeProvider clock) : IStockDirectory
 {
     /// <summary>Code of the failure for a query that is not plain text.</summary>
     public const string QueryInvalidCode = "marketdata.search.query_invalid";
@@ -54,8 +49,6 @@ public sealed partial class StockDirectory(
 
     /// <summary>Longest accepted query.</summary>
     public const int MaxQueryLength = 40;
-
-    private const string _searchSuffix = "_search";
 
     private static readonly Counter<long> _lookups = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_stock_lookups_total",
@@ -79,7 +72,7 @@ public sealed partial class StockDirectory(
         var candidates = new Dictionary<(string, string), StockCandidate>();
         foreach (IMarketDataProvider provider in EnabledProviders())
         {
-            Result<IReadOnlyList<CachedListing>> found = await ListingsAsync(provider, text, cancellationToken);
+            Result<IReadOnlyList<CachedListing>> found = await search.ListingsAsync(provider, text, cancellationToken);
             if (!found.IsSuccess)
             {
                 Count("search", Outcome(found.Error!));
@@ -102,7 +95,7 @@ public sealed partial class StockDirectory(
                 .OrderBy(candidate => Rank(candidate.Ticker, upper))
                 .ThenBy(candidate => candidate.Ticker, StringComparer.Ordinal)
                 .ThenBy(candidate => candidate.Market, StringComparer.Ordinal)
-                .Take(lookup.Value.MaxResults),
+                .Take(search.MaxResults),
         ];
         Count("search", "success");
         return ordered;
@@ -244,7 +237,7 @@ public sealed partial class StockDirectory(
         }
 
         IMarketDataProvider provider = router.For(market).Value;
-        Result<IReadOnlyList<CachedListing>> found = await ListingsAsync(provider, ticker.Value, cancellationToken);
+        Result<IReadOnlyList<CachedListing>> found = await search.ListingsAsync(provider, ticker.Value, cancellationToken);
         if (!found.IsSuccess)
         {
             return found.Error!;
@@ -265,54 +258,7 @@ public sealed partial class StockDirectory(
             return Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.");
         }
 
-        StockId id = await registry.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
-        await jobs.EnqueueAsync(
-            BackfillStockJob.KeyFor(id),
-            new BackfillStockJob(id.Value),
-            new JobEnqueueOptions(MaxAttempts: ingestion.Value.BackfillMaxAttempts),
-            cancellationToken);
-        LogRegistered(market.Value);
+        StockId id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
         return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType));
     }
-
-    // The listings the provider returns for the text: from the cache when a copy is fresh, otherwise from the provider after spending one search of
-    // the shared budget. Failures of the provider are told apart only as busy or unavailable; its own message never reaches the caller.
-    private async Task<Result<IReadOnlyList<CachedListing>>> ListingsAsync(IMarketDataProvider provider, string text, CancellationToken cancellationToken)
-    {
-        StockLookupOptions settings = lookup.Value;
-        if (await cache.GetAsync(provider.Name, text, cancellationToken) is { } cached)
-        {
-            return Result.Success(cached);
-        }
-
-        BudgetDecision decision = await budget.TryAcquireAsync(
-            provider.Name + _searchSuffix, new BudgetLimits(settings.SearchesPerMinute, settings.SearchesPerDay), 1, cancellationToken);
-        if (!decision.Granted)
-        {
-            return Error.TooManyRequests(SearchBusyCode, "Searches are busy. Try again in a moment.", (int)Math.Ceiling(decision.RetryAfter.TotalSeconds));
-        }
-
-        Result<IReadOnlyList<ProviderListing>> response = await provider.SearchAsync(text, cancellationToken);
-        if (!response.IsSuccess)
-        {
-            LogProviderFailed(provider.Name, response.Error!.Code);
-            return ProviderErrors.Classify(response.Error) == ProviderFailureKind.RateLimited
-                ? Error.TooManyRequests(SearchBusyCode, "Searches are busy. Try again in a moment.", (int)Math.Ceiling((ProviderErrors.RetryAfter(response.Error) ?? TimeSpan.FromSeconds(30)).TotalSeconds))
-                : Error.Unavailable(ProviderUnavailableCode, "The market data provider cannot answer for now. Try again later.", 30);
-        }
-
-        CachedListing[] listings = [.. response.Value.Select(listing => new CachedListing(listing.Key.ProviderMic, listing.Key.Symbol, listing.Name, listing.Currency, listing.AssetType))];
-        if (settings.CacheMinutes > 0)
-        {
-            await cache.SetAsync(provider.Name, text, listings, TimeSpan.FromMinutes(settings.CacheMinutes), cancellationToken);
-        }
-
-        return listings;
-    }
-
-    [LoggerMessage(EventId = 2501, Level = LogLevel.Information, Message = "A stock of {Market} was registered in the catalog and its history queued")]
-    private partial void LogRegistered(string market);
-
-    [LoggerMessage(EventId = 2502, Level = LogLevel.Warning, Message = "The search at {Provider} failed with {Code}")]
-    private partial void LogProviderFailed(string provider, string code);
 }
