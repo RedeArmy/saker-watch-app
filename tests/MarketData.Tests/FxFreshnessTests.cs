@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Application.Fx;
 
 namespace SakerWatch.MarketData.Tests;
@@ -34,5 +35,5 @@ public sealed class FxFreshnessTests
 
     [Fact]
     public void TheAnchor_IsUsdToGtq() =>
-        FxFreshness.Anchor.Should().Be((SakerWatch.MarketData.Domain.Markets.CurrencyCode.Parse("USD"), SakerWatch.MarketData.Domain.Markets.CurrencyCode.Parse("GTQ")));
+        FxFreshness.Anchor.Should().Be((CurrencyCode.Parse("USD"), CurrencyCode.Parse("GTQ")));
 }

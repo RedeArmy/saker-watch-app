@@ -1,3 +1,4 @@
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 namespace SakerWatch.MarketData.Domain.Markets;
 
 /// <summary>

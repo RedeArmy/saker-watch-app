@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
 
@@ -35,7 +36,7 @@ public sealed class MarketValueObjectTests
     [InlineData("USDX")]
     [InlineData("U5D")]
     public void CurrencyCode_Create_RefusesAnythingButThreeLetters(string? input) =>
-        CurrencyCode.Create(input).Error!.Code.Should().Be("marketdata.currency.invalid");
+        CurrencyCode.Create(input).Error!.Code.Should().Be("money.currency_invalid");
 
     [Theory]
     [InlineData("aapl", "AAPL")]

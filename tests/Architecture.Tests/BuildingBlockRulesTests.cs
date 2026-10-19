@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using NetArchTest.Rules;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Mongo;
 using SakerWatch.BuildingBlocks.Observability;
@@ -27,6 +28,28 @@ public sealed class BuildingBlockRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue("the Kernel is pure and shared by every Domain");
+    }
+
+    [Fact]
+    public void MoneyTypes_AreOnlyBuiltThroughTheirValidatingFactories()
+    {
+        Type[] validated = [typeof(Money), typeof(Shares), typeof(ExchangeRate), typeof(RelativeChange), typeof(CurrencyCode)];
+
+        foreach (Type type in validated)
+        {
+            type.GetConstructors(BindingFlags.Public | BindingFlags.Instance).Should().BeEmpty($"{type.Name} is built by a factory that checks it (ADR-0037)");
+            type.GetProperties(BindingFlags.Public | BindingFlags.Instance).Should().OnlyContain(property => property.SetMethod == null, $"{type.Name} is immutable");
+        }
+    }
+
+    [Fact]
+    public void RoundedMoneyTypes_CarryNoArithmetic()
+    {
+        foreach (Type type in new[] { typeof(DisplayMoney), typeof(DisplayShares) })
+        {
+            type.GetMethods(BindingFlags.Public | BindingFlags.Static).Where(method => method.Name.StartsWith("op_", StringComparison.Ordinal) && method.Name is not ("op_Equality" or "op_Inequality"))
+                .Should().BeEmpty($"{type.Name} is for showing, and reusing a rounded figure in a calculation is how cents are lost (ADR-0037)");
+        }
     }
 
     [Fact]

@@ -84,6 +84,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0034-portfolio-api.md | ADR 0034 | Eder | draft | 2 | 2026-10-18 |
 | docs/adr/0035-portfolio-metrics.md | ADR 0035 | Eder | draft | 2 | 2026-10-18 |
 | docs/adr/0036-partial-purchase-calculator.md | ADR 0036 | Eder | draft | 2 | 2026-10-19 |
+| docs/adr/0037-money-kit.md | ADR 0037 | Eder | draft | 2 | 2026-10-19 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |

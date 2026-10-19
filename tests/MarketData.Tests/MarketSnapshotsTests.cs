@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Prices;

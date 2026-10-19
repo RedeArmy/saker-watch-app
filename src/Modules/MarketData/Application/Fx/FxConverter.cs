@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Domain.Fx;

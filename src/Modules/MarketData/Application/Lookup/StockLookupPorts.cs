@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;

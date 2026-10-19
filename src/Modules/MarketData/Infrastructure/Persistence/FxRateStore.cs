@@ -1,5 +1,6 @@
 using Npgsql;
 using NpgsqlTypes;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Domain.Fx;

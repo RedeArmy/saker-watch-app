@@ -1,3 +1,4 @@
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Domain.Fx;
 using SakerWatch.MarketData.Domain.Markets;
