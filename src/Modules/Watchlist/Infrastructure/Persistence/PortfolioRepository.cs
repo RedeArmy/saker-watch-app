@@ -357,7 +357,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
         while (await reader.ReadAsync(cancellationToken))
         {
             string? description = reader.IsDBNull(2) ? null : reader.GetString(2);
-            Portfolio portfolio = Portfolio.Restore(
+            var portfolio = Portfolio.Restore(
                 PortfolioId.Create(reader.GetGuid(0)),
                 userId,
                 PortfolioName.Create(reader.GetString(1)).Value,

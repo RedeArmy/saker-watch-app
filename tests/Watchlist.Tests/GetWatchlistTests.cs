@@ -322,7 +322,7 @@ public sealed class GetWatchlistTests
     public async Task AnEntry_CarriesTheItemsOwnFields()
     {
         StockSnapshot ko = Snapshot("KO", "Coca-Cola Co.", 60m);
-        WatchlistItem item = WatchlistItem.Restore(WatchlistItemId.Create(Guid.CreateVersion7()), _user, ko.Stock.Id, "Esperar", 70.5m, _now, _now.AddHours(1));
+        var item = WatchlistItem.Restore(WatchlistItemId.Create(Guid.CreateVersion7()), _user, ko.Stock.Id, "Esperar", 70.5m, _now, _now.AddHours(1));
         var handler = new GetWatchlistHandler(new User(_user), new Items(item), new Portfolios(), new Market([ko]));
 
         WatchlistEntry entry = (await RunAsync(handler, Query())).Items.Single();
@@ -351,7 +351,7 @@ public sealed class GetWatchlistTests
     public async Task ByAPortfolioThatIsNotTheCallers_Is404_AndNothingIsRead()
     {
         var market = new Market(_four);
-        var handler = new GetWatchlistHandler(new User(_user), new Items([.. _four.Select(s => Item(s))]), new Portfolios(new()), market);
+        var handler = new GetWatchlistHandler(new User(_user), new Items([.. _four.Select(s => Item(s))]), new Portfolios(), market);
 
         Result<WatchlistPage> result = await handler.Handle(Query() with { PortfolioId = Guid.CreateVersion7() }, CancellationToken.None);
 

@@ -47,7 +47,7 @@ public sealed class StockRegistryTests(TimescalePostgresFixture postgres) : ICla
     public async Task TheApiRole_RegistersAStockWithItsAliasAndAPendingIngestionState()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid id = Guid.CreateVersion7();
+        var id = Guid.CreateVersion7();
 
         Guid? returned = await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(id));
 
@@ -63,7 +63,7 @@ public sealed class StockRegistryTests(TimescalePostgresFixture postgres) : ICla
     public async Task RegisteringTheSameStockAgain_ReturnsTheFirstId_AndChangesNothing()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid first = Guid.CreateVersion7();
+        var first = Guid.CreateVersion7();
         await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(first));
 
         Guid? again = await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(Guid.CreateVersion7(), name: "Renamed by an attacker", currency: "EUR"));
@@ -79,7 +79,7 @@ public sealed class StockRegistryTests(TimescalePostgresFixture postgres) : ICla
     public async Task ASecondProvidersName_IsAddedAsAnotherAlias_AndAnIngestionStateAlreadyThereIsKept()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid id = Guid.CreateVersion7();
+        var id = Guid.CreateVersion7();
         await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(id));
         await db.Admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET status = 'ok', last_success_at = now()");
 

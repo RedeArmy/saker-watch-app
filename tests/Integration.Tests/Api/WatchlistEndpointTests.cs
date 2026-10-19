@@ -380,7 +380,7 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
         WatchlistRig.Rig rig = await StartAsync();
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-full" });
         HttpResponseMessage first = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { }));
-        Guid user = Guid.Parse((await BodyAsync(await rig.Client.SendAsync(ApiTestHost.Get("/v1/me", token)))).GetProperty("id").GetString()!);
+        var user = Guid.Parse((await BodyAsync(await rig.Client.SendAsync(ApiTestHost.Get("/v1/me", token)))).GetProperty("id").GetString()!);
         await rig.Api.Db.Admin.ExecuteAsync(
             "INSERT INTO watchlist.watchlist_items (id, user_id, stock_id, created_at, updated_at) SELECT gen_random_uuid(), @user, gen_random_uuid(), now(), now() FROM generate_series(1, 499)",
             ("user", user));

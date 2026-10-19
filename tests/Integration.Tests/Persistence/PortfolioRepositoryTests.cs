@@ -352,7 +352,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task MembersAddedInParallel_GetDistinctPositionsWithoutGaps()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         Portfolio portfolio = await AddAsync(db, user, "Carrera");
         Guid[] stocks = await FollowAsync(db, user, 12);
 
@@ -367,7 +367,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task PortfoliosCreatedInParallel_GetDistinctPositionsWithoutGaps()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
 
         // The way the use case creates one: lock the order, read the next position, insert.
         await Task.WhenAll(Enumerable.Range(0, 8).Select(n => AsAsync(db, user, async repository =>
@@ -385,7 +385,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task AMemberAddedWhileTheStocksAreBeingReordered_WaitsForTheOrder_AndLandsAfterIt()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         Portfolio portfolio = await AddAsync(db, user, "Orden");
         Guid[] stocks = await FollowAsync(db, user, 3);
         await PutAsync(db, user, portfolio, stocks[0]);

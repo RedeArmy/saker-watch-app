@@ -130,7 +130,7 @@ public sealed class PortfolioTests
         var id = PortfolioId.Create(Guid.CreateVersion7());
         PortfolioName name = PortfolioName.Create("Largo").Value;
 
-        Portfolio portfolio = Portfolio.Restore(id, _user, name, "d", 2, _now, _now.AddDays(1));
+        var portfolio = Portfolio.Restore(id, _user, name, "d", 2, _now, _now.AddDays(1));
 
         (portfolio.Id, portfolio.Name, portfolio.Description, portfolio.Position, portfolio.UpdatedAt).Should().Be((id, name, "d", 2, _now.AddDays(1)));
         id.ToString().Should().Be(id.Value.ToString("D"));

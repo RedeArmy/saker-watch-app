@@ -54,7 +54,7 @@ public static class ResultHttpExtensions
                 retryAfter = seconds[0];
             }
 
-            Dictionary<string, string[]> fields = error.Details.Where(pair => pair.Key != Error.RetryAfterSecondsKey).ToDictionary(pair => pair.Key, pair => pair.Value);
+            var fields = error.Details.Where(pair => pair.Key != Error.RetryAfterSecondsKey).ToDictionary(pair => pair.Key, pair => pair.Value);
             if (fields.Count > 0)
             {
                 extensions["errors"] = fields;

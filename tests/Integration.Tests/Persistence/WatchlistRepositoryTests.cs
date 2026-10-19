@@ -40,7 +40,7 @@ public sealed class WatchlistRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task AnAddedItem_ComesBackWithEveryValue()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         WatchlistItem item = NewItem(user, notes: "Esperar el informe", target: 123.45678901m);
 
         AddOutcome outcome = await AsAsync(db, user, repository => repository.AddAsync(item, CancellationToken.None));
@@ -55,7 +55,7 @@ public sealed class WatchlistRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task AnItemWithNoNotesAndNoTarget_IsStoredAsNulls()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         WatchlistItem item = NewItem(user);
         await AsAsync(db, user, repository => repository.AddAsync(item, CancellationToken.None));
 
@@ -69,8 +69,8 @@ public sealed class WatchlistRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task AddingTheSameStockAgain_IsAnOutcome_NotAnException_AndTheTransactionStaysUsable()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
-        Guid stock = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
+        var stock = Guid.CreateVersion7();
         await AsAsync(db, user, repository => repository.AddAsync(NewItem(user, stock), CancellationToken.None));
 
         (AddOutcome again, int count) = await AsAsync(db, user, async repository =>
@@ -84,7 +84,7 @@ public sealed class WatchlistRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task TheFiveHundredthStockFits_TheNextOneIsALimitOutcome()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         await db.Admin.ExecuteAsync(
             "INSERT INTO watchlist.watchlist_items (id, user_id, stock_id, created_at, updated_at) SELECT gen_random_uuid(), @user, gen_random_uuid(), now(), now() FROM generate_series(1, 499)",
             ("user", user));
@@ -100,7 +100,7 @@ public sealed class WatchlistRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task Update_ChangesTheNotesTheTargetAndTheDate_AndOnlyOfThatItem()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         WatchlistItem first = NewItem(user, notes: "uno");
         WatchlistItem second = NewItem(user, notes: "dos");
         await AsAsync(db, user, async repository =>
@@ -126,7 +126,7 @@ public sealed class WatchlistRepositoryTests(TimescalePostgresFixture postgres) 
     public async Task Remove_DeletesTheItemAndItsMemberships_AndSaysWhetherThereWasOne()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         WatchlistItem item = NewItem(user);
         await AsAsync(db, user, repository => repository.AddAsync(item, CancellationToken.None));
         var portfolio = Guid.CreateVersion7();

@@ -117,7 +117,7 @@ public sealed class WatchlistItemTests
     {
         var id = WatchlistItemId.Create(Guid.CreateVersion7());
 
-        WatchlistItem item = WatchlistItem.Restore(id, _user, _stock, "n", 3m, _now, _now.AddDays(1));
+        var item = WatchlistItem.Restore(id, _user, _stock, "n", 3m, _now, _now.AddDays(1));
 
         (item.Id, item.Notes, item.TargetPrice, item.UpdatedAt).Should().Be((id, "n", 3m, _now.AddDays(1)));
     }

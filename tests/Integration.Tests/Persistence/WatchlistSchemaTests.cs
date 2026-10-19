@@ -159,7 +159,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task PortfolioName_IsTrimmedAndBounded_ByTheDatabaseToo(string constraint, string name)
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
 
         await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, _insertPortfolio, Portfolio(Guid.CreateVersion7(), user, name)), "23514", constraint);
     }
@@ -168,7 +168,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task PortfolioName_OverSixtyCharacters_DoesNotFitTheColumn()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
 
         await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, _insertPortfolio, Portfolio(Guid.CreateVersion7(), user, new string('x', 61))), "22001");
         await db.Api.AsUserExecuteAsync(user, _insertPortfolio, Portfolio(Guid.CreateVersion7(), user, new string('x', 60)));
@@ -178,7 +178,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task OtherChecks_RefuseAnEmptyDescriptionNoteAWorthlessTargetAndANegativePosition()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
 
         await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, _insertPortfolio, Portfolio(Guid.CreateVersion7(), user, description: "")), "23514", "ck_portfolios_description");
         await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, _insertPortfolio, Portfolio(Guid.CreateVersion7(), user, position: -1)), "23514", "ck_portfolios_position");
@@ -266,7 +266,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task TheWatchlistCeiling_HoldsWhenRequestsRaceForTheLastPlace()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         await db.Api.AsUserExecuteAsync(
             user,
             "INSERT INTO watchlist.watchlist_items (id, user_id, stock_id, created_at, updated_at) SELECT gen_random_uuid(), @user, gen_random_uuid(), now(), now() FROM generate_series(1, 499)",
@@ -282,7 +282,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task APortfolioCeiling_HoldsWhenRequestsRaceForTheLastPlace()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         for (int i = 0; i < 19; i++)
         {
             await AddPortfolioAsync(db, user, $"Cartera {i}");
@@ -299,7 +299,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task APortfolioMembershipCeiling_HoldsWhenRequestsRaceForTheLastPlace()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         Guid portfolio = await AddPortfolioAsync(db, user);
         await db.Api.AsUserExecuteAsync(
             user,
@@ -321,7 +321,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task APortfolio_HoldsAtMostAHundredStocks_AndTheLimitIsPerPortfolio()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         Guid full = await AddPortfolioAsync(db, user, "Llena");
         Guid other = await AddPortfolioAsync(db, user, "Otra");
         await db.Api.AsUserExecuteAsync(
@@ -342,7 +342,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
     public async Task Deleting_AWatchlistItemOrAPortfolio_RemovesOnlyTheMemberships()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
-        Guid user = Guid.CreateVersion7();
+        var user = Guid.CreateVersion7();
         Guid itemA = await AddItemAsync(db, user), itemB = await AddItemAsync(db, user);
         Guid portfolio = await AddPortfolioAsync(db, user);
         await db.Api.AsUserExecuteAsync(user, _insertMember, ("portfolio", portfolio), ("item", itemA), ("user", user));
