@@ -23,6 +23,12 @@ public enum ErrorType
 
     /// <summary>The request is well-formed but cannot be processed, for example a reused idempotency key (maps to 422).</summary>
     Unprocessable,
+
+    /// <summary>The caller asked too often, or a shared budget behind the request is spent; trying again later may work (maps to 429).</summary>
+    TooManyRequests,
+
+    /// <summary>A service this request depends on is not reachable for now; trying again later may work (maps to 503).</summary>
+    Unavailable,
 }
 
 /// <summary>
@@ -60,4 +66,18 @@ public sealed record Error(
 
     /// <summary>Creates an <see cref="ErrorType.Unprocessable"/> error.</summary>
     public static Error Unprocessable(string code, string message) => new(code, message, ErrorType.Unprocessable);
+
+    /// <summary>Creates an <see cref="ErrorType.TooManyRequests"/> error; <paramref name="retryAfterSeconds"/> tells the client how long to wait, when known.</summary>
+    public static Error TooManyRequests(string code, string message, int? retryAfterSeconds = null) =>
+        new(code, message, ErrorType.TooManyRequests, RetryDetails(retryAfterSeconds));
+
+    /// <summary>Creates an <see cref="ErrorType.Unavailable"/> error; <paramref name="retryAfterSeconds"/> tells the client how long to wait, when known.</summary>
+    public static Error Unavailable(string code, string message, int? retryAfterSeconds = null) =>
+        new(code, message, ErrorType.Unavailable, RetryDetails(retryAfterSeconds));
+
+    /// <summary>Key of the detail that carries the wait, in seconds, for the <c>Retry-After</c> header.</summary>
+    public const string RetryAfterSecondsKey = "retry_after_seconds";
+
+    private static Dictionary<string, string[]>? RetryDetails(int? seconds) =>
+        seconds is > 0 ? new Dictionary<string, string[]> { [RetryAfterSecondsKey] = [seconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)] } : null;
 }

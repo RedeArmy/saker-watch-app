@@ -4,7 +4,15 @@
     <RootNamespace>SakerWatch.Watchlist.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Domain/SakerWatch.Watchlist.Domain.csproj" />
     <ProjectReference Include="../Contracts/SakerWatch.Watchlist.Contracts.csproj" />
+    <ProjectReference Include="../../MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Application/SakerWatch.BuildingBlocks.Application.csproj" />
   </ItemGroup>
 </Project>

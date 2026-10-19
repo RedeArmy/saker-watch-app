@@ -7,6 +7,7 @@ using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Web.Correlation;
 using SakerWatch.BuildingBlocks.Web.Health;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
+using SakerWatch.BuildingBlocks.Web.Json;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
 using SakerWatch.BuildingBlocks.Web.Security;
@@ -25,6 +26,7 @@ public static class WebSetup
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IIdGenerator, TimeProviderIdGenerator>();
+        services.ConfigureHttpJsonOptions(json => json.SerializerOptions.Converters.Add(new DecimalAsStringConverter()));
         services.AddSakerProblemDetails();
         services.AddSakerRateLimiting(configuration);
         services.AddSakerForwardedHeaders(configuration);

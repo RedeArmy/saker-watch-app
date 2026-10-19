@@ -56,6 +56,18 @@ internal static class ApiSetup
                 };
                 return Task.CompletedTask;
             });
+            // Every decimal travels as a string (docs/api/README.md), so the contract says so and generated clients never use floating point.
+            versioned.Document.AddSchemaTransformer((schema, context, _) =>
+            {
+                if (context.JsonTypeInfo.Type == typeof(decimal) || context.JsonTypeInfo.Type == typeof(decimal?))
+                {
+                    schema.Type = JsonSchemaType.String | (context.JsonTypeInfo.Type == typeof(decimal?) ? JsonSchemaType.Null : 0);
+                    schema.Format = "decimal";
+                    schema.Pattern = "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$";
+                }
+
+                return Task.CompletedTask;
+            });
             versioned.Document.AddOperationTransformer((operation, context, _) =>
             {
                 // Default-deny: every operation needs a bearer token unless its endpoint is explicitly anonymous.

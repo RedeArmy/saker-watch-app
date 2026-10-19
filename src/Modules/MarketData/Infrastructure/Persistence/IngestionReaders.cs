@@ -2,6 +2,7 @@ using Npgsql;
 using NpgsqlTypes;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
@@ -22,6 +23,59 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
         return await reader.ReadAsync(cancellationToken)
             ? new CatalogStock(id, Mic.Parse(reader.GetString(0)), Ticker.Parse(reader.GetString(1)), reader.GetBoolean(2))
             : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<CatalogListing?> FindByKeyAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT id, name, currency, asset_type, is_active FROM marketdata.stocks WHERE market_mic = @market AND ticker = @ticker",
+            session.Connection,
+            session.Transaction);
+        command.Parameters.AddWithValue("market", market.Value);
+        command.Parameters.AddWithValue("ticker", ticker.Value);
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new CatalogListing(
+                StockId.Create(reader.GetGuid(0)),
+                market,
+                ticker,
+                reader.GetString(1),
+                CurrencyCode.Parse(reader.GetString(2)),
+                reader.GetString(3) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
+                reader.GetBoolean(4))
+            : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CatalogListing>> FindManyAsync(IReadOnlyCollection<StockId> ids, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        var listings = new List<CatalogListing>();
+        foreach (StockId[] batch in ids.Distinct().Chunk(1000))
+        {
+            await using var command = new NpgsqlCommand(
+                "SELECT id, market_mic, ticker, name, currency, asset_type, is_active FROM marketdata.stocks WHERE id = ANY(@ids)",
+                session.Connection,
+                session.Transaction);
+            command.Parameters.AddWithValue("ids", batch.Select(id => id.Value).ToArray());
+
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                listings.Add(new CatalogListing(
+                    StockId.Create(reader.GetGuid(0)),
+                    Mic.Parse(reader.GetString(1)),
+                    Ticker.Parse(reader.GetString(2)),
+                    reader.GetString(3),
+                    CurrencyCode.Parse(reader.GetString(4)),
+                    reader.GetString(5) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
+                    reader.GetBoolean(6)));
+            }
+        }
+
+        return listings;
     }
 
     /// <inheritdoc />

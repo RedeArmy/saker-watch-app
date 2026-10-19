@@ -8,7 +8,7 @@ namespace SakerWatch.BuildingBlocks.Persistence.Conventions;
 public static class SnakeCaseNaming
 {
     /// <summary>
-    /// Renames columns, primary keys, foreign keys and indexes of every entity to snake_case. Table names are set
+    /// Renames columns, primary and alternate keys, foreign keys and indexes of every entity to snake_case. Table names are set
     /// explicitly per entity so schemas stay readable; call this at the end of <c>OnModelCreating</c>.
     /// </summary>
     public static ModelBuilder UseSnakeCaseNames(this ModelBuilder modelBuilder)
@@ -23,9 +23,12 @@ public static class SnakeCaseNaming
                 property.SetColumnName(ToSnake(property.GetColumnName()));
             }
 
+            // The primary key is pk_<table>; an alternate key (a unique target of a composite foreign key) is uq_<table>_<columns>.
+            IMutableKey? primary = entity.FindPrimaryKey();
             foreach (IMutableKey key in entity.GetKeys())
             {
-                key.SetName($"pk_{table}");
+                string columns = string.Join('_', key.Properties.Select(p => ToSnake(p.GetColumnName())));
+                key.SetName(key == primary ? $"pk_{table}" : $"uq_{table}_{columns}");
             }
 
             foreach (IMutableIndex index in entity.GetIndexes())

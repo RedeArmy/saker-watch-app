@@ -83,6 +83,21 @@ public sealed class ReadHandler : IRequestHandler<ReadQuery, Result<int>>
         ValueTask.FromResult(Result.Success(7));
 }
 
+public sealed record DatabaseReadQuery(bool Fail = false, bool Throw = false) : IQuery<int>, IReadsDatabase;
+
+public sealed class DatabaseReadHandler : IRequestHandler<DatabaseReadQuery, Result<int>>
+{
+    public ValueTask<Result<int>> Handle(DatabaseReadQuery request, CancellationToken cancellationToken)
+    {
+        if (request.Throw)
+        {
+            throw new InvalidOperationException("boom");
+        }
+
+        return ValueTask.FromResult(request.Fail ? Error.NotFound("demo.missing", "nothing") : Result.Success(7));
+    }
+}
+
 public sealed record UnhandledCommand : ICommand;
 
 public sealed record ThingDto(Guid Id, string Name);

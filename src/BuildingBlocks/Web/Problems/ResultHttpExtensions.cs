@@ -19,6 +19,8 @@ public static class ResultHttpExtensions
         ErrorType.NotFound => StatusCodes.Status404NotFound,
         ErrorType.Conflict => StatusCodes.Status409Conflict,
         ErrorType.Unprocessable => StatusCodes.Status422UnprocessableEntity,
+        ErrorType.TooManyRequests => StatusCodes.Status429TooManyRequests,
+        ErrorType.Unavailable => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status500InternalServerError,
     };
 
@@ -43,9 +45,20 @@ public static class ResultHttpExtensions
 
         int status = StatusFor(error.Type);
         var extensions = new Dictionary<string, object?> { ["code"] = error.Code };
+        string? retryAfter = null;
         if (error.Details is { Count: > 0 })
         {
-            extensions["errors"] = error.Details;
+            // The wait travels in the Retry-After header and not as a field error.
+            if (error.Details.TryGetValue(Error.RetryAfterSecondsKey, out string[]? seconds) && seconds.Length == 1)
+            {
+                retryAfter = seconds[0];
+            }
+
+            var fields = error.Details.Where(pair => pair.Key != Error.RetryAfterSecondsKey).ToDictionary(pair => pair.Key, pair => pair.Value);
+            if (fields.Count > 0)
+            {
+                extensions["errors"] = fields;
+            }
         }
 
         IResult problem = Results.Problem(
@@ -56,7 +69,12 @@ public static class ResultHttpExtensions
             extensions: extensions);
 
         // A duplicate that arrived while the first request is still running should retry shortly (ADR-0017).
-        return error.Code == IdempotencyErrors.InProgress ? new HeaderResult(problem, "Retry-After", "1") : problem;
+        if (error.Code == IdempotencyErrors.InProgress)
+        {
+            return new HeaderResult(problem, "Retry-After", "1");
+        }
+
+        return retryAfter is not null ? new HeaderResult(problem, "Retry-After", retryAfter) : problem;
     }
 
     private sealed class HeaderResult(IResult inner, string name, string value) : IResult

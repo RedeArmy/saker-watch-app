@@ -11,6 +11,7 @@ using SakerWatch.BuildingBlocks.Application.Idempotency;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Web;
 using SakerWatch.BuildingBlocks.Web.Health;
+using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
@@ -21,6 +22,8 @@ namespace SakerWatch.Web.Tests;
 internal static class WebTestServer
 {
     public const string TestUserHeader = "X-Test-User";
+
+    private static readonly string[] _etagItems = ["a", "b"];
 
     /// <summary>Sets the connection's remote address, which a real host takes from the socket (or from trusted forwarded headers).</summary>
     public const string TestRemoteIpHeader = "X-Test-Remote-Ip";
@@ -82,6 +85,10 @@ internal static class WebTestServer
                             (type == ErrorType.Validation
                                 ? Error.Validation("demo.invalid", "Bad input", new Dictionary<string, string[]> { ["name"] = ["required"] })
                                 : new Error("demo.error", "Something", type)).ToProblem());
+                        endpoints.MapGet("/etag/{version:int}", (int version) => ConditionalResults.Json(new { version, amount = 12.50m, items = _etagItems }));
+                        endpoints.MapPost("/etag/post", () => ConditionalResults.Json(new { ok = true }));
+                        endpoints.MapGet("/retry/{type}/{seconds:int}", (ErrorType type, int seconds) =>
+                            (type == ErrorType.TooManyRequests ? Error.TooManyRequests("demo.busy", "Slow down", seconds) : Error.Unavailable("demo.down", "Down", seconds)).ToProblem());
                         endpoints.MapPost("/idem", (HttpContext http) => IdempotencyKeyReader.Require(http).ToHttpResult(key => Results.Ok(key)));
                         endpoints.MapPost("/idem/{id}", (HttpContext http, string id) => IdempotencyKeyReader.Require(http).ToHttpResult(key => Results.Ok(key)));
                         endpoints.MapGet("/busy", () => Error.Conflict(IdempotencyErrors.InProgress, "still running").ToProblem());

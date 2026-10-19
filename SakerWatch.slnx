@@ -42,6 +42,7 @@
   <Project Path="tests/TestSupport/SakerWatch.TestSupport.csproj" />
   <Project Path="tests/Identity.Tests/SakerWatch.Identity.Tests.csproj" />
   <Project Path="tests/MarketData.Tests/SakerWatch.MarketData.Tests.csproj" />
+  <Project Path="tests/Watchlist.Tests/SakerWatch.Watchlist.Tests.csproj" />
   <Project Path="tests/Application.Tests/SakerWatch.Application.Tests.csproj" />
   <Project Path="tests/Web.Tests/SakerWatch.Web.Tests.csproj" />
   <Project Path="tests/Observability.Tests/SakerWatch.Observability.Tests.csproj" />

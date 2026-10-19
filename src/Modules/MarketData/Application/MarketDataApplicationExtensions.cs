@@ -11,7 +11,10 @@ namespace SakerWatch.MarketData.Application;
 /// <summary>Registration of the MarketData use cases and ports.</summary>
 public static class MarketDataApplicationExtensions
 {
-    /// <summary>Registers the provider router and its validated routing table. Providers themselves are registered by the Infrastructure.</summary>
+    /// <summary>
+    /// Registers the provider router and its validated routing table and the exchange calendars. Providers themselves, and the services that need
+    /// the worker's stores (the ingestion, the follow-up jobs, the converter), are registered by the Infrastructure.
+    /// </summary>
     public static IServiceCollection AddMarketDataApplication(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -27,9 +30,6 @@ public static class MarketDataApplicationExtensions
         services.TryAddSingleton<IMarketDataProviderRouter, MarketDataProviderRouter>();
         services.AddOptions<IngestionOptions>().ValidateDataAnnotations().ValidateOnStart();
         services.TryAddSingleton(ExchangeCalendars.Default());
-        services.TryAddScoped<ListingIngestion>();
-        services.TryAddScoped<FollowUpJobs>();
-        services.TryAddScoped<IFxConverter, FxConverter>();
         return services;
     }
 }

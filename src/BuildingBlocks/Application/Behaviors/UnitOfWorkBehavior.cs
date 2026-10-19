@@ -6,7 +6,8 @@ namespace SakerWatch.BuildingBlocks.Application.Behaviors;
 
 /// <summary>
 /// Runs every command (<see cref="ITransactionalRequest"/>) inside one unit of work: everything the handler writes
-/// commits together on success and rolls back together on any failure result or exception. Queries pass through.
+/// commits together on success and rolls back together on any failure result or exception. A query passes through, unless it is marked
+/// <see cref="IReadsDatabase"/>: it then gets the same unit of work, so its raw SQL runs on an open connection with the user set.
 /// It runs after validation, so invalid requests never open a transaction.
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
@@ -19,7 +20,7 @@ public sealed class UnitOfWorkBehavior<TRequest, TResponse>(IUnitOfWork unitOfWo
     /// <inheritdoc />
     public async ValueTask<TResponse> Handle(TRequest request, PipelineNext<TResponse> next, CancellationToken cancellationToken)
     {
-        if (request is not ITransactionalRequest)
+        if (request is not ITransactionalRequest and not IReadsDatabase)
         {
             return await next();
         }
