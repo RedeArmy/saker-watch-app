@@ -1,3 +1,4 @@
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
 namespace SakerWatch.MarketData.Domain.Performance;
@@ -74,7 +75,7 @@ public sealed record PriceSample
 /// </summary>
 public sealed record WindowPerformance
 {
-    private WindowPerformance(PerformanceWindow window, decimal? change, PriceSample? baseline, PerformanceGap? gap)
+    private WindowPerformance(PerformanceWindow window, RelativeChange? change, PriceSample? baseline, PerformanceGap? gap)
     {
         Window = window;
         Change = change;
@@ -86,7 +87,7 @@ public sealed record WindowPerformance
     public PerformanceWindow Window { get; }
 
     /// <summary>Newest close divided by the baseline close, minus one; <see langword="null"/> when there is a <see cref="Gap"/>.</summary>
-    public decimal? Change { get; }
+    public RelativeChange? Change { get; }
 
     /// <summary>The close the change is measured from; <see langword="null"/> when there is a <see cref="Gap"/>.</summary>
     public PriceSample? Baseline { get; }
@@ -95,7 +96,7 @@ public sealed record WindowPerformance
     public PerformanceGap? Gap { get; }
 
     /// <summary>A window with a change.</summary>
-    public static WindowPerformance Of(PerformanceWindow window, decimal change, PriceSample baseline) => new(window, change, baseline, null);
+    public static WindowPerformance Of(PerformanceWindow window, RelativeChange change, PriceSample baseline) => new(window, change, baseline, null);
 
     /// <summary>A window without a change and the reason.</summary>
     public static WindowPerformance Missing(PerformanceWindow window, PerformanceGap gap) => new(window, null, null, gap);

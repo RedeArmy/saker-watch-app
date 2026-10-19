@@ -3,7 +3,6 @@ using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Domain.Fx;
-using SakerWatch.MarketData.Domain.Markets;
 
 namespace SakerWatch.MarketData.Application.Fx;
 
@@ -11,16 +10,16 @@ namespace SakerWatch.MarketData.Application.Fx;
 public interface IFxConverter
 {
     /// <summary>
-    /// Converts <paramref name="amount"/> from <paramref name="from"/> to <paramref name="to"/> with the rates in force on <paramref name="date"/>
+    /// Converts <paramref name="amount"/> to <paramref name="to"/> with the rates in force on <paramref name="date"/>
     /// (today in Guatemala when not given): the newest rate published on or before it, never a day it was not published for. A pair that is
     /// not stored directly is tried the other way round and then through USD (ADR-0018); every step is returned with its day and source.
     /// </summary>
-    Task<Result<FxConversion>> ConvertAsync(decimal amount, CurrencyCode from, CurrencyCode to, DateOnly? date, CancellationToken cancellationToken);
+    Task<Result<FxConversion>> ConvertAsync(Money amount, CurrencyCode to, DateOnly? date, CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// <see cref="IFxConverter"/> over <see cref="IFxRateStore"/>. The math is plain <see cref="decimal"/> and nothing is rounded: rounding belongs
-/// to the presentation boundary (ADR-0006).
+/// <see cref="IFxConverter"/> over <see cref="IFxRateStore"/>. The math is done by the money kit (<see cref="ExchangeRate"/>, <see cref="Money"/>) and
+/// nothing is rounded: rounding belongs to the presentation boundary (ADR-0006, ADR-0037).
 /// </summary>
 public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> options, TimeProvider clock) : IFxConverter
 {
@@ -33,20 +32,21 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
     private static readonly CurrencyCode _pivot = CurrencyCode.Parse("USD");
 
     /// <inheritdoc />
-    public async Task<Result<FxConversion>> ConvertAsync(decimal amount, CurrencyCode from, CurrencyCode to, DateOnly? date, CancellationToken cancellationToken)
+    public async Task<Result<FxConversion>> ConvertAsync(Money amount, CurrencyCode to, DateOnly? date, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(amount);
         ArgumentNullException.ThrowIfNull(to);
 
-        if (amount < 0)
+        if (amount.Amount < 0)
         {
             return Error.Validation(AmountInvalidCode, "An amount to convert is zero or more.");
         }
 
         DateOnly day = date ?? FxFreshness.TodayInGuatemala(clock.GetUtcNow());
+        CurrencyCode from = amount.Currency;
         if (from == to)
         {
-            return new FxConversion(amount, from, to, amount, [], 1m, day, false);
+            return new FxConversion(amount, amount, [], ExchangeRate.Identity(from), day, false);
         }
 
         var legs = new List<FxLeg>(2);
@@ -61,7 +61,7 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
             legs.Add(leg);
         }
 
-        return Combine(amount, from, to, day, legs);
+        return Combine(amount, day, legs);
     }
 
     // One step when the pair is stored (in either direction) or one side is the pivot; otherwise through the pivot (ADR-0018).
@@ -82,32 +82,45 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
         FxRate? inverse = await store.OnOrBeforeAsync(to, from, day, cancellationToken);
         if (direct is not null && (inverse is null || direct.AsOfDate >= inverse.AsOfDate))
         {
-            return new FxLeg(from, to, direct.Rate, direct.AsOfDate, direct.Source, Inverted: false);
+            return new FxLeg(direct.Exchange, direct.AsOfDate, direct.Source, Inverted: false);
         }
 
-        return inverse is null ? null : new FxLeg(from, to, 1m / inverse.Rate, inverse.AsOfDate, inverse.Source, Inverted: true);
+        // The reciprocal of a stored rate is inside the range of rates because the range is symmetric, so this cannot fail; a rate that did not
+        // invert would be treated as missing, never as a crash.
+        return inverse is not null && inverse.Exchange.Invert() is { IsSuccess: true } inverted
+            ? new FxLeg(inverted.Value, inverse.AsOfDate, inverse.Source, Inverted: true)
+            : null;
     }
 
-    private Result<FxConversion> Combine(decimal amount, CurrencyCode from, CurrencyCode to, DateOnly day, List<FxLeg> legs)
+    private Result<FxConversion> Combine(Money amount, DateOnly day, List<FxLeg> legs)
     {
-        try
+        Money converted = amount;
+        ExchangeRate rate = legs[0].Rate;
+        foreach (FxLeg leg in legs)
         {
-            decimal converted = amount;
-            decimal rate = 1m;
-            foreach (decimal legRate in legs.Select(leg => leg.Rate))
+            Result<Money> step = leg.Rate.Convert(converted);
+            if (!step.IsSuccess)
             {
-                converted *= legRate;
-                rate *= legRate;
+                return Error.Validation(AmountInvalidCode, "The amount is too large to convert.");
             }
 
-            DateOnly oldest = legs.Min(leg => leg.AsOfDate);
-            int maxAge = options.Value.FxMaxAgeDays;
-            bool stale = legs.Exists(leg => FxFreshness.IsStale(leg.AsOfDate, day, maxAge));
-            return new FxConversion(amount, from, to, converted, legs, rate, oldest, stale);
+            converted = step.Value;
         }
-        catch (OverflowException)
+
+        foreach (FxLeg leg in legs.Skip(1))
         {
-            return Error.Validation(AmountInvalidCode, "The amount is too large to convert.");
+            Result<ExchangeRate> chained = rate.Then(leg.Rate);
+            if (!chained.IsSuccess)
+            {
+                return Error.Validation(RateUnavailableCode, "The rates of the path cannot be combined.");
+            }
+
+            rate = chained.Value;
         }
+
+        DateOnly oldest = legs.Min(leg => leg.AsOfDate);
+        int maxAge = options.Value.FxMaxAgeDays;
+        bool stale = legs.Exists(leg => FxFreshness.IsStale(leg.AsOfDate, day, maxAge));
+        return new FxConversion(amount, converted, legs, rate, oldest, stale);
     }
 }

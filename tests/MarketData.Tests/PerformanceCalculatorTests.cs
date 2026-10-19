@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Performance;
@@ -37,7 +38,7 @@ public sealed class PerformanceCalculatorTests
         PerformanceReport report = PerformanceCalculator.Calculate(latest, baselines, _calendar);
 
         report.Windows.Select(w => w.Window).Should().Equal(PerformanceCalculator.Windows);
-        report.Windows.Select(w => w.Change).Should().Equal(0.10m, 0m, 0.25m, -0.45m, 1.2m, 0.375m, -0.3125m, 1m);
+        report.Windows.Select(w => w.Change?.Fraction).Should().Equal(0.10m, 0m, 0.25m, -0.45m, 1.2m, 0.375m, -0.3125m, 1m);
         report.Windows.Should().OnlyContain(w => w.Gap == null && w.Baseline != null);
         Window(report, PerformanceWindow.FiveYears).Baseline!.Date.Should().Be(new DateOnly(2021, 10, 15));
     }
@@ -90,8 +91,8 @@ public sealed class PerformanceCalculatorTests
 
         PerformanceReport report = PerformanceCalculator.Calculate(latest, baselines, _calendar);
 
-        Window(report, PerformanceWindow.OneWeek).Change.Should().Be(0.02m, "102 / 100 - 1, not 102 / 400 - 1");
-        Window(report, PerformanceWindow.OneDay).Change.Should().BeApproximately(0.00990099009900990099m, 0.000000000000001m);
+        Window(report, PerformanceWindow.OneWeek).Change!.Fraction.Should().Be(0.02m, "102 / 100 - 1, not 102 / 400 - 1");
+        Window(report, PerformanceWindow.OneDay).Change!.Fraction.Should().BeApproximately(0.00990099009900990099m, 0.000000000000001m);
     }
 
     [Fact]
@@ -103,7 +104,7 @@ public sealed class PerformanceCalculatorTests
         PerformanceReport report = PerformanceCalculator.Calculate(latest, baselines, calendar: null);
 
         Window(report, PerformanceWindow.OneDay).Gap.Should().Be(PerformanceGap.CalendarUnavailable);
-        Window(report, PerformanceWindow.OneWeek).Change.Should().Be(0.1m);
+        Window(report, PerformanceWindow.OneWeek).Change!.Fraction.Should().Be(0.1m);
         report.Windows.Where(w => w.Window is not (PerformanceWindow.OneDay or PerformanceWindow.OneWeek)).Should().OnlyContain(w => w.Gap == PerformanceGap.InsufficientHistory);
         report.Windows.Should().HaveCount(8);
     }
@@ -133,8 +134,8 @@ public sealed class PerformanceCalculatorTests
 
         PerformanceReport report = PerformanceCalculator.Calculate(latest, baselines, _calendar);
 
-        Window(report, PerformanceWindow.OneDay).Change.Should().Be(0.05m);
-        Window(report, PerformanceWindow.OneWeek).Change.Should().Be(0.4m);
+        Window(report, PerformanceWindow.OneDay).Change!.Fraction.Should().Be(0.05m);
+        Window(report, PerformanceWindow.OneWeek).Change!.Fraction.Should().Be(0.4m);
         report.Windows.Skip(2).Should().OnlyContain(w => w.Gap == PerformanceGap.InsufficientHistory && w.Change == null);
     }
 
@@ -207,7 +208,7 @@ public sealed class PerformanceCalculatorTests
         PerformanceReport report = PerformanceCalculator.Calculate(
             latest, Baselines(_calendar, latest.Date, (PerformanceWindow.OneDay, Sample(2026, 10, 15, 3m))), _calendar);
 
-        Window(report, PerformanceWindow.OneDay).Change.Should().BeApproximately(-0.666666666666667m, 0.000000000000001m);
+        Window(report, PerformanceWindow.OneDay).Change!.Fraction.Should().BeApproximately(-0.666666666666667m, 0.000000000000001m);
     }
 
     [Fact]
@@ -222,10 +223,10 @@ public sealed class PerformanceCalculatorTests
     {
         PriceSample baseline = Sample(2026, 10, 15, 100m);
 
-        var change = WindowPerformance.Of(PerformanceWindow.OneDay, 0.1m, baseline);
+        var change = WindowPerformance.Of(PerformanceWindow.OneDay, RelativeChange.Between(100m, 110m).Value, baseline);
         var missing = WindowPerformance.Missing(PerformanceWindow.OneDay, PerformanceGap.HistoryGap);
 
-        (change.Change, change.Gap).Should().Be((0.1m, (PerformanceGap?)null));
-        (missing.Change, missing.Baseline, missing.Gap).Should().Be(((decimal?)null, (PriceSample?)null, (PerformanceGap?)PerformanceGap.HistoryGap));
+        (change.Change?.Fraction, change.Gap).Should().Be((0.1m, (PerformanceGap?)null));
+        (missing.Change, missing.Baseline, missing.Gap).Should().Be(((RelativeChange?)null, (PriceSample?)null, (PerformanceGap?)PerformanceGap.HistoryGap));
     }
 }

@@ -75,7 +75,7 @@ public sealed class MarketSnapshots(
             _ => "other",
         });
 
-    private static WindowSnapshot Window(WindowPerformance window) => new(Code(window.Window), window.Change, window.Baseline?.Date, window.Gap is { } gap ? Reason(gap) : null);
+    private static WindowSnapshot Window(WindowPerformance window) => new(Code(window.Window), window.Change?.Fraction, window.Baseline?.Date, window.Gap is { } gap ? Reason(gap) : null);
 
     private static string Code(PerformanceWindow window) => window switch
     {
