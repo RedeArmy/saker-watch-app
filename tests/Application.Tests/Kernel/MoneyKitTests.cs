@@ -1,6 +1,7 @@
 using System.Globalization;
 using AwesomeAssertions;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
+using SakerWatch.BuildingBlocks.Kernel.Results;
 
 namespace SakerWatch.Application.Tests.Kernel;
 
@@ -130,6 +131,39 @@ public sealed class MoneyKitTests
         (inverse.From, inverse.To, inverse.Rate).Should().Be((_gtq, _usd, 0.125m));
         (chained.From, chained.To, chained.Rate).Should().Be((_jpy, _gtq, 0.0512m));
         usdGtq.Then(jpyUsd).Error!.Code.Should().Be(MoneyErrors.CurrencyMismatch, "GTQ does not meet JPY");
+    }
+
+    [Fact]
+    public void ARateChainedBackToItsStartingCurrency_IsNotARate()
+    {
+        ExchangeRate there = ExchangeRate.Create(_usd, _gtq, 8m).Value;
+        ExchangeRate back = ExchangeRate.Create(_gtq, _usd, 0.15m).Value;
+
+        Result<ExchangeRate> roundTrip = there.Then(back);
+
+        roundTrip.Error!.Code.Should().Be(MoneyErrors.RateInvalid, "USD to USD at 1.2 would multiply money by a factor that is not a rate; only the identity relates a currency to itself");
+    }
+
+    [Fact]
+    public void TheTextOfMoneyAndOfItsErrors_DoesNotDependOnTheCulture()
+    {
+        CultureInfo before = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("es-GT");
+            CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator = ",";
+            CultureInfo.CurrentCulture.NumberFormat.NumberGroupSeparator = ".";
+
+            M("1234.5", _usd).ToString().Should().Be("1234.5 USD");
+            ExchangeRate.Create(_usd, _gtq, 7.75m).Value.ToString().Should().Be("USD/GTQ 7.75");
+            ExchangeRate.Create(_usd, _gtq, 0m).Error!.Message.Should().NotContain(",").And.Contain("0.000000000001");
+            Money.Create(Money.MaxMagnitude + 1m, _usd).Error!.Message.Should().NotContain("1,000").And.NotContain("1.000").And.Contain("at most 1000000000000000 in");
+            Shares.Create(0m).Error!.Message.Should().NotContain("1,000").And.NotContain("1.000").And.Contain("at most 1000000000000.");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = before;
+        }
     }
 
     [Theory]

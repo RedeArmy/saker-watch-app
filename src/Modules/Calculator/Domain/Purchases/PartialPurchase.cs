@@ -1,4 +1,5 @@
 using System.Globalization;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
 namespace SakerWatch.Calculator.Domain.Purchases;
@@ -63,22 +64,14 @@ public sealed record PartialPurchase(
     }
 }
 
-/// <summary>The minor units (decimals) of a currency, for the few that are not two.</summary>
+/// <summary>The minor units (decimals) of a currency, from the one table the money kit keeps (<see cref="CurrencyCode.MinorUnits"/>).</summary>
 public static class CurrencyMinorUnits
 {
-    private static readonly HashSet<string> _none = new(["JPY", "KRW", "CLP", "ISK", "VND", "PYG", "UGX"], StringComparer.Ordinal);
-    private static readonly HashSet<string> _three = new(["KWD", "BHD", "OMR", "JOD", "TND"], StringComparer.Ordinal);
-
-    /// <summary>The number of decimals money of <paramref name="currency"/> is shown with: 0, 2 or 3 (ISO 4217).</summary>
+    /// <summary>The number of decimals money of <paramref name="currency"/> is shown with: 0, 2 or 3 (ISO 4217); two for a code the kit does not accept.</summary>
     public static int Of(string currency)
     {
         ArgumentNullException.ThrowIfNull(currency);
-        if (_none.Contains(currency))
-        {
-            return 0;
-        }
-
-        return _three.Contains(currency) ? 3 : 2;
+        return CurrencyCode.Create(currency) is { IsSuccess: true } code ? code.Value.MinorUnits : 2;
     }
 }
 

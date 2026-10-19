@@ -1,3 +1,4 @@
+using System.Globalization;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
@@ -45,7 +46,7 @@ public sealed class ExchangeRate : ValueObject
 
         return rate is >= MinRate and <= MaxRate
             ? new ExchangeRate(from, to, rate)
-            : Error.Validation(MoneyErrors.RateInvalid, $"An exchange rate is between {MinRate} and {MaxRate:0}.");
+            : Error.Validation(MoneyErrors.RateInvalid, string.Create(CultureInfo.InvariantCulture, $"An exchange rate is between {MinRate} and {MaxRate:0}."));
     }
 
     /// <summary>The rate of a currency to itself: one.</summary>
@@ -79,17 +80,15 @@ public sealed class ExchangeRate : ValueObject
 
         if (From == next.To)
         {
-            // A round trip through another currency: the rate of a currency to itself is one only if the rates are each other's inverse, so keep the product.
-            return Rate * next.Rate is >= MinRate and <= MaxRate
-                ? new ExchangeRate(From, next.To, Rate * next.Rate)
-                : Error.Validation(MoneyErrors.RateInvalid, "The combined rate is outside the range.");
+            // A round trip is not a rate: a currency relates to itself only through the identity, and the product of two quoted rates is rarely one.
+            return Error.Validation(MoneyErrors.RateInvalid, "A rate cannot be chained back to the currency it starts from.");
         }
 
         return Within(From, next.To, Rate * next.Rate);
     }
 
     /// <inheritdoc />
-    public override string ToString() => $"{From}/{To} {Rate}";
+    public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{From}/{To} {Rate}");
 
     /// <inheritdoc />
     protected override IEnumerable<object?> GetEqualityComponents()
@@ -102,5 +101,5 @@ public sealed class ExchangeRate : ValueObject
     private static Result<ExchangeRate> Within(CurrencyCode from, CurrencyCode to, decimal rate) =>
         rate is >= MinRate and <= MaxRate
             ? new ExchangeRate(from, to, rate)
-            : Error.Validation(MoneyErrors.RateInvalid, $"An exchange rate is between {MinRate} and {MaxRate:0}.");
+            : Error.Validation(MoneyErrors.RateInvalid, string.Create(CultureInfo.InvariantCulture, $"An exchange rate is between {MinRate} and {MaxRate:0}."));
 }

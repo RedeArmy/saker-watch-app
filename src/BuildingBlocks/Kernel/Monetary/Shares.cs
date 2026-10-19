@@ -1,3 +1,4 @@
+using System.Globalization;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
@@ -26,13 +27,13 @@ public sealed class Shares : ValueObject
     public static Result<Shares> Create(decimal value) =>
         value is > 0m and <= MaxQuantity
             ? new Shares(value)
-            : Error.Validation(MoneyErrors.SharesInvalid, $"A number of shares is more than 0 and at most {MaxQuantity:0}.");
+            : Error.Validation(MoneyErrors.SharesInvalid, string.Create(CultureInfo.InvariantCulture, $"A number of shares is more than 0 and at most {MaxQuantity:0}."));
 
     /// <summary>Builds the quantity a user asked for: like <see cref="Create"/>, with at most six decimals (more would be cut on display, and the purchase would not be the one asked for).</summary>
     public static Result<Shares> FromRequest(decimal value) =>
         decimal.Round(value, DisplayDecimals) == value
             ? Create(value)
-            : Error.Validation(MoneyErrors.SharesInvalid, $"A number of shares has at most {DisplayDecimals} decimals.");
+            : Error.Validation(MoneyErrors.SharesInvalid, string.Create(CultureInfo.InvariantCulture, $"A number of shares has at most {DisplayDecimals} decimals."));
 
     /// <summary>How many shares <paramref name="amount"/> buys at <paramref name="unitPrice"/>; both are in the same currency and the price is positive.</summary>
     public static Result<Shares> Buying(Money amount, Money unitPrice)
@@ -57,7 +58,7 @@ public sealed class Shares : ValueObject
         }
         catch (OverflowException)
         {
-            return Error.Validation(MoneyErrors.SharesInvalid, $"A number of shares is more than 0 and at most {MaxQuantity:0}.");
+            return Error.Validation(MoneyErrors.SharesInvalid, string.Create(CultureInfo.InvariantCulture, $"A number of shares is more than 0 and at most {MaxQuantity:0}."));
         }
     }
 
@@ -74,7 +75,7 @@ public sealed class Shares : ValueObject
     public DisplayShares ToDisplay() => new(Math.Round(Value, DisplayDecimals, MidpointRounding.ToZero));
 
     /// <inheritdoc />
-    public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public override string ToString() => Value.ToString(CultureInfo.InvariantCulture);
 
     /// <inheritdoc />
     protected override IEnumerable<object?> GetEqualityComponents()

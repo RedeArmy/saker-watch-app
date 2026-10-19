@@ -1,3 +1,4 @@
+using System.Globalization;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
@@ -73,7 +74,7 @@ public sealed class Money : ValueObject
     public DisplayMoney ToDisplay() => new(Math.Round(Amount, Currency.MinorUnits, MidpointRounding.ToEven), Currency);
 
     /// <inheritdoc />
-    public override string ToString() => $"{Amount} {Currency}";
+    public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{Amount} {Currency}");
 
     /// <inheritdoc />
     protected override IEnumerable<object?> GetEqualityComponents()
@@ -96,7 +97,7 @@ public sealed class Money : ValueObject
     }
 
     internal static Error OutOfRange() =>
-        Error.Validation(MoneyErrors.AmountOutOfRange, $"An amount of money is at most {MaxMagnitude:0} in either direction.");
+        Error.Validation(MoneyErrors.AmountOutOfRange, string.Create(CultureInfo.InvariantCulture, $"An amount of money is at most {MaxMagnitude:0} in either direction."));
 
     private Error? SameCurrency(Money other) =>
         other.Currency == Currency

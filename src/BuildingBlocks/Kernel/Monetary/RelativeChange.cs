@@ -1,3 +1,4 @@
+using System.Globalization;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 
@@ -39,7 +40,7 @@ public sealed class RelativeChange : ValueObject
     }
 
     /// <inheritdoc />
-    public override string ToString() => Fraction.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public override string ToString() => Fraction.ToString(CultureInfo.InvariantCulture);
 
     /// <inheritdoc />
     protected override IEnumerable<object?> GetEqualityComponents()
