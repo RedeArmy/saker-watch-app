@@ -17,7 +17,7 @@ services:
     security_opt: ["no-new-privileges:true"]
   tempo:
     profiles: [obs]
-    image: grafana/tempo:2.10.8
+    image: grafana/tempo:3.1.0
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
       - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
