@@ -21,6 +21,9 @@ public enum RenameOutcome
 
     /// <summary>Another stock of the market already uses the new ticker.</summary>
     TickerTaken,
+
+    /// <summary>Another stock already has the provider symbol the rename would give this one.</summary>
+    SymbolTaken,
 }
 
 /// <summary>Writes the changes to the life of a listing (ADR-0039). Each call is one unit of work with the changes it implies.</summary>
@@ -66,6 +69,9 @@ public sealed partial class ListingLifecycle(
 
     /// <summary>Code of the failure when the new ticker is used by another stock of the market.</summary>
     public const string TickerTakenCode = "marketdata.lifecycle.ticker_taken";
+
+    /// <summary>Code of the failure when another stock already has the provider symbol the rename would give this one.</summary>
+    public const string SymbolTakenCode = "marketdata.lifecycle.symbol_taken";
 
     /// <summary>Code of the failure when the stock does not have the ticker it was asked to rename (it already changed).</summary>
     public const string TickerChangedCode = "marketdata.lifecycle.ticker_changed";
@@ -174,6 +180,7 @@ public sealed partial class ListingLifecycle(
         {
             RenameOutcome.Done => LogRenamedAndReturn(listing, fresh.Value),
             RenameOutcome.TickerTaken => Error.Conflict(TickerTakenCode, $"Another stock of {listing.Market} already uses the ticker {fresh.Value}."),
+            RenameOutcome.SymbolTaken => Error.Conflict(SymbolTakenCode, "Another stock already has that provider symbol; give the one this stock has with --provider-symbol."),
             _ => Error.NotFound(StockNotFoundCode, $"{old.Value} is not in the catalog of {listing.Market}."),
         };
     }

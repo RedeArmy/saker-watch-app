@@ -327,7 +327,7 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
             return new CompanyProfile(
                 asked,
                 name,
-                [.. StringList(root, "tickers", text => Ticker.Create(text).IsSuccess).Select(text => text.ToUpperInvariant())],
+                [.. StringList(root, "tickers", text => Ticker.Create(text).IsSuccess).Select(text => text.ToUpperInvariant()).Distinct(StringComparer.Ordinal)],
                 StringList(root, "exchanges", text => text.Length is >= 1 and <= 32 && Text().IsMatch(text)),
                 sic,
                 Bounded(root, "sicDescription", 100),
@@ -369,8 +369,14 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
             JsonElement[] filedOn = Column(recent, "filingDate");
             JsonElement[] reportedOn = Column(recent, "reportDate");
             JsonElement[] documents = Column(recent, "primaryDocument");
+            // The number, the form and the day are what makes a filing: a list without one of those columns is not a list of filings.
+            if (!HasColumns(recent, "accessionNumber", "form", "filingDate"))
+            {
+                return ProviderErrors.InvalidResponse(Name);
+            }
+
             int rows = new[] { numbers.Length, formsColumn.Length, filedOn.Length }.Min();
-            if (rows > _maxRows || numbers.Length == 0 && recent.TryGetProperty("accessionNumber", out JsonElement missing) && missing.ValueKind != JsonValueKind.Array)
+            if (rows > _maxRows)
             {
                 return ProviderErrors.InvalidResponse(Name);
             }
@@ -405,6 +411,9 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
             return ProviderErrors.InvalidResponse(Name);
         }
     }
+
+    private static bool HasColumns(JsonElement recent, params string[] properties) =>
+        properties.All(property => recent.TryGetProperty(property, out JsonElement column) && column.ValueKind == JsonValueKind.Array);
 
     private static JsonElement[] Column(JsonElement recent, string property) =>
         recent.TryGetProperty(property, out JsonElement column) && column.ValueKind == JsonValueKind.Array ? [.. column.EnumerateArray().Take(_maxRows + 1)] : [];

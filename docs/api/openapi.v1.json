@@ -2091,7 +2091,7 @@
           "Calculator"
         ],
         "summary": "Calculate a partial purchase",
-        "description": "How many shares an amount buys, or what a number of shares costs, in the stock\u0027s currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. An optional feePercent (0 to 10) is the broker\u0027s commission as a percentage of the value of the shares: with amount, the amount is the total paid and the shares are bought with what is left after the commission; with shares, the commission is added to their cost; without it the commission is 0 and nothing changes. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker\u0027s rate, fees and minimum order sizes differ, and nothing here is financial advice.",
+        "description": "How many shares an amount buys, or what a number of shares costs, in the stock\u0027s currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale or the stock no longer trades) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. An optional feePercent (0 to 10) is the broker\u0027s commission as a percentage of the value of the shares: with amount, the amount is the total paid and the shares are bought with what is left after the commission; with shares, the commission is added to their cost; without it the commission is 0 and nothing changes. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker\u0027s rate, fees and minimum order sizes differ, and nothing here is financial advice.",
         "operationId": "CalculatePartialPurchase",
         "requestBody": {
           "content": {
@@ -2414,7 +2414,7 @@
               "null",
               "string"
             ],
-            "description": "\u0060current\u0060 or \u0060stale\u0060 (the last known close is used), when the price came from the catalog."
+            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known close is used) or \u0060delisted\u0060 (the stock no longer trades; its last close is used), when the price came from the catalog."
           },
           "staleSince": {
             "type": [

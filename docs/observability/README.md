@@ -103,9 +103,10 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2601 | Warning | `The stock {Market} {Ticker} was marked delisted by {Source}` | `ListingLifecycle` |
 | 2602 | Information | `The stock {Market} {Ticker} is trading again; ingestion will try it from scratch` | `ListingLifecycle` |
 | 2603 | Information | `The stock {Market} {OldTicker} now has the ticker {NewTicker}; the old one is kept in its history` | `ListingLifecycle` |
-| 2604 | Information | `{Operation} of {Market} {Ticker} finished (changed: {Changed})` | `MarketDataCommandLine` (worker) |
-| 2605 | Warning | `{Operation} was refused with {Code}: {Reason}` | `MarketDataCommandLine` (worker) |
-| 2606 | Warning | `The request cannot be read: {Reason}` | `MarketDataCommandLine` (worker) |
+| 2604 | Information | `{Operation} of {Market} {Ticker} finished (changed: {Changed})` | `LifecycleCommandLine` |
+| 2605 | Warning | `{Operation} was refused with {Code}: {Reason}` | `LifecycleCommandLine` |
+| 2606 | Warning | `The request cannot be read: {Reason}` | `LifecycleCommandLine` |
+| 2607 | Error | `{Operation} failed and nothing was changed` (with the exception) | `LifecycleCommandLine` |
 | 2701 | Warning | `EDGAR {Operation}: {Dropped} of {Rows} rows were not valid and were dropped` | `EdgarProvider` |
 | 2702 | Warning | `EDGAR could not be reached ({ExceptionType})` | `EdgarProvider` |
 | 2703 | Warning | `The raw EDGAR response was not kept ({ExceptionType}); the call is not affected` | `EdgarProvider` |

@@ -142,6 +142,7 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<IListingLifecycleStore, ListingLifecycleStore>();
         services.TryAddScoped<ListingLifecycle>();
         services.TryAddScoped<LifecycleCommandRunner>();
+        services.TryAddScoped<LifecycleCommandLine>();
         services.TryAddScoped<IFreshnessReader, FreshnessReader>();
         services.AddHostedService<MarketDataScheduler>();
         services.AddSingleton<MarketDataFreshnessSampler>();

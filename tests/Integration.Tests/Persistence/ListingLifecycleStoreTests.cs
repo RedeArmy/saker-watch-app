@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
+using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
@@ -187,6 +188,29 @@ public sealed class ListingLifecycleStoreTests(TimescalePostgresFixture postgres
         (await db.Admin.ScalarAsync<string>("SELECT ticker FROM marketdata.stocks WHERE id = @id", ("id", id.Value))).Should().Be("RAN");
         (await db.Admin.ScalarAsync<bool>("SELECT NOT is_active FROM marketdata.stocks WHERE id = @id", ("id", id.Value))).Should().BeTrue();
         (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.corporate_actions")).Should().Be(2, "one rename and one delisting; the refused request wrote none");
+    }
+
+    [Fact]
+    public async Task ARenameIntoAProviderSymbolAnotherStockUses_IsRefused_NotAnException_AndLeavesNothingBehind()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        StockId id = await SeedStockAsync(db.Admin, "AAA");
+        StockId other = await SeedStockAsync(db.Admin, "BBB");
+        await db.Admin.ExecuteAsync("UPDATE marketdata.symbol_aliases SET provider_symbol = 'CCC' WHERE stock_id = @id", ("id", other.Value));
+
+        async Task<(bool Succeeded, string? Code)> RunAsync(params string[] args) => await InSessionlessAsync(db.Worker, async session =>
+        {
+            var lifecycle = new ListingLifecycle(new StockCatalog(session), new ListingLifecycleStore(session), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
+            Result<LifecycleChange> result = await new LifecycleCommandRunner(lifecycle, session).RunAsync(LifecycleCommand.Parse(args).Value, CancellationToken.None);
+            return (result.IsSuccess, result.Error?.Code);
+        });
+
+        (bool succeeded, string? code) = await RunAsync("rename", "XNAS", "AAA", "NEWA", "--provider-symbol", "CCC");
+
+        (succeeded, code).Should().Be((false, ListingLifecycle.SymbolTakenCode));
+        (await db.Admin.ScalarAsync<string>("SELECT ticker FROM marketdata.stocks WHERE id = @id", ("id", id.Value))).Should().Be("AAA", "the whole rename was undone");
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.ticker_history")).Should().Be(0);
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.corporate_actions")).Should().Be(0);
     }
 
     [Fact]

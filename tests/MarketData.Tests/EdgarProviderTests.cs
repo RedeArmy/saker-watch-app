@@ -22,6 +22,7 @@ public sealed class EdgarProviderTests
     private const string _agent = "SakerWatchTests tests@example.com";
     private static readonly DateTimeOffset _now = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
     private static readonly Cik _apple = Cik.Parse("320193");
+    private static readonly string[] _essentialColumns = ["accessionNumber", "form", "filingDate"];
 
     private sealed class RecordingStore(bool fail = false) : IProviderPayloadStore
     {
@@ -187,6 +188,22 @@ public sealed class EdgarProviderTests
         (await notJson.GetProfileAsync("AAPL", CancellationToken.None)).Error!.Code.Should().Be(ProviderErrors.InvalidResponseCode);
     }
 
+    [Theory]
+    [InlineData("accessionNumber")]
+    [InlineData("form")]
+    [InlineData("filingDate")]
+    public async Task ARecentListMissingAnEssentialColumn_IsInvalid_NotAnEmptyList(string missing)
+    {
+        string columns = string.Join(
+            ",",
+            _essentialColumns.Where(column => column != missing).Select(column => $"\"{column}\": []"));
+        (EdgarProvider provider, _, _, _) = Build(WithSubmissions($$"""{ "cik": "0000320193", "name": "Apple Inc.", "filings": { "recent": { {{columns}} } } }"""));
+
+        Result<IReadOnlyList<Filing>> result = await provider.GetFilingsAsync(new FilingsRequest(_apple, null, null, 10), CancellationToken.None);
+
+        result.Error!.Code.Should().Be(ProviderErrors.InvalidResponseCode);
+    }
+
     [Fact]
     public async Task OddFieldsOfAProfile_AreDroppedOneByOne_AndTheProfileStillComes()
     {
@@ -195,7 +212,7 @@ public sealed class EdgarProviderTests
         CompanyProfile profile = (await provider.GetProfileAsync("AAPL", CancellationToken.None)).Value;
 
         (profile.Name, profile.Sic, profile.SicDescription, profile.FiscalYearEnd).Should().Be(("Apple Inc.", null, null, null));
-        profile.Tickers.Should().Equal("AAPL", "AAPL");
+        profile.Tickers.Should().Equal("AAPL");
         profile.Exchanges.Should().Equal("Nasdaq");
     }
 

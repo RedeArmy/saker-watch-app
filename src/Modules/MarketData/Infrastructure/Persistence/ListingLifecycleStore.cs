@@ -63,35 +63,45 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
             return RenameOutcome.TickerTaken;
         }
 
-        int renamed = await ExecuteAsync(
-            "UPDATE marketdata.stocks SET ticker = @new WHERE id = @id AND market_mic = @market AND ticker = @old",
-            cancellationToken,
-            ("market", market.Value), ("old", oldTicker.Value), ("new", newTicker.Value), ("id", stock.Value));
-        if (renamed == 0)
+        // A ticker or a provider symbol that another stock took between the check and the write is an outcome, not an exception; the transaction is
+        // aborted by then, so the caller's unit of work rolls everything back.
+        try
         {
-            return RenameOutcome.StockNotFound;
+            int renamed = await ExecuteAsync(
+                "UPDATE marketdata.stocks SET ticker = @new WHERE id = @id AND market_mic = @market AND ticker = @old",
+                cancellationToken,
+                ("market", market.Value), ("old", oldTicker.Value), ("new", newTicker.Value), ("id", stock.Value));
+            if (renamed == 0)
+            {
+                return RenameOutcome.StockNotFound;
+            }
+
+            // The ticker in use is no longer a retired one (of this stock or of another that once had it); the old one is retired now.
+            await ExecuteAsync(
+                "DELETE FROM marketdata.ticker_history WHERE market_mic = @market AND ticker = @new",
+                cancellationToken,
+                ("market", market.Value), ("new", newTicker.Value));
+            await ExecuteAsync(
+                """
+                INSERT INTO marketdata.ticker_history (market_mic, ticker, stock_id, changed_on, created_at)
+                VALUES (@market, @old, @id, @on, @at)
+                ON CONFLICT (market_mic, ticker) DO UPDATE SET stock_id = EXCLUDED.stock_id, changed_on = EXCLUDED.changed_on
+                """,
+                cancellationToken,
+                ("market", market.Value), ("old", oldTicker.Value), ("id", stock.Value), ("on", on), ("at", at.ToUniversalTime()));
+
+            // The provider calls the stock by its new symbol from now on; a symbol that was not the old ticker is the operator's to change.
+            await ExecuteAsync(
+                "UPDATE marketdata.symbol_aliases SET provider_symbol = @symbol WHERE stock_id = @id AND provider_symbol = @old",
+                cancellationToken,
+                ("symbol", providerSymbol), ("id", stock.Value), ("old", oldTicker.Value));
+            await RecordActionAsync(stock, "symbol_change", on, Application.Lifecycle.ListingLifecycle.OperatorSource, at, cancellationToken);
+        }
+        catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return error.ConstraintName?.Contains("symbol_aliases", StringComparison.Ordinal) == true ? RenameOutcome.SymbolTaken : RenameOutcome.TickerTaken;
         }
 
-        // The ticker in use is no longer a retired one (of this stock or of another that once had it); the old one is retired now.
-        await ExecuteAsync(
-            "DELETE FROM marketdata.ticker_history WHERE market_mic = @market AND ticker = @new",
-            cancellationToken,
-            ("market", market.Value), ("new", newTicker.Value));
-        await ExecuteAsync(
-            """
-            INSERT INTO marketdata.ticker_history (market_mic, ticker, stock_id, changed_on, created_at)
-            VALUES (@market, @old, @id, @on, @at)
-            ON CONFLICT (market_mic, ticker) DO UPDATE SET stock_id = EXCLUDED.stock_id, changed_on = EXCLUDED.changed_on
-            """,
-            cancellationToken,
-            ("market", market.Value), ("old", oldTicker.Value), ("id", stock.Value), ("on", on), ("at", at.ToUniversalTime()));
-
-        // The provider calls the stock by its new symbol from now on; a symbol that was not the old ticker is the operator's to change.
-        await ExecuteAsync(
-            "UPDATE marketdata.symbol_aliases SET provider_symbol = @symbol WHERE stock_id = @id AND provider_symbol = @old",
-            cancellationToken,
-            ("symbol", providerSymbol), ("id", stock.Value), ("old", oldTicker.Value));
-        await RecordActionAsync(stock, "symbol_change", on, Application.Lifecycle.ListingLifecycle.OperatorSource, at, cancellationToken);
         return RenameOutcome.Done;
     }
 
