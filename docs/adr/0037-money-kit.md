@@ -1,6 +1,6 @@
 # ADR-0037: A money kit: exact amounts, typed currencies and rates, rounding only on display
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-19
 - **Deciders:** Eder
 

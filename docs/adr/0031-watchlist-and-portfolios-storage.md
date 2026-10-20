@@ -1,11 +1,11 @@
 # ADR-0031: Watchlist and portfolios: storage, isolation and limits
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-18
 - **Deciders:** Eder
 
 ## Context
-ADR-0026 (proposed) defines portfolios as named groups of watchlist stocks, with unique names per user, limits of 20 portfolios and 100 stocks each, and a delete that removes the stocks left in no portfolio. ADR-0010 (accepted) requires row-level security on every user-owned table and lets the worker reach user data only through narrow security-definer functions, naming `watchlist.tracked_stock_ids()`. The milestone 2.6 plan needs the storage settled before the use cases and the API are written on top of it.
+ADR-0026 (accepted) defines portfolios as named groups of watchlist stocks, with unique names per user, limits of 20 portfolios and 100 stocks each, and a delete that removes the stocks left in no portfolio. ADR-0010 (accepted) requires row-level security on every user-owned table and lets the worker reach user data only through narrow security-definer functions, naming `watchlist.tracked_stock_ids()`. The milestone 2.6 plan needs the storage settled before the use cases and the API are written on top of it.
 
 ## Options considered
 - **A foreign key from `watchlist_items.stock_id` to `marketdata.stocks`, or only the id.** The key would guarantee the stock exists, but it couples two module schemas in the database (a migration of one could block the other, and the watchlist role would need to read the catalog for the check). The catalog is append and update only: nobody deletes a stock, so a dangling id cannot appear.

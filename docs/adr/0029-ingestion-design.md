@@ -1,6 +1,6 @@
 # ADR-0029: Market data ingestion design
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-16
 - **Deciders:** Eder
 

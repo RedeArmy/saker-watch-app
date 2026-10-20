@@ -1,6 +1,6 @@
 # ADR-0028: FX source and conversion path
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-16
 - **Deciders:** Eder
 

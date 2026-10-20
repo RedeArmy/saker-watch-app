@@ -1,6 +1,6 @@
 # ADR-0035: Portfolio metrics: what a group of stocks did
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-18
 - **Deciders:** Eder
 

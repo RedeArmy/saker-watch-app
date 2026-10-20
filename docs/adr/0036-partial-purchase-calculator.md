@@ -1,6 +1,6 @@
 # ADR-0036: The partial-purchase calculator
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-19
 - **Deciders:** Eder
 

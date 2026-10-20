@@ -73,18 +73,18 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0023-api-surface-http-hardening-and-retention-defaults.md | ADR 0023 | Eder | approved | 1 | 2026-10-16 |
 | docs/adr/0024-mcp-servers-deferred.md | ADR 0024 | Eder | approved | 1 | 2026-10-16 |
 | docs/adr/0025-audit-log-retention-and-migration-down-policy.md | ADR 0025 | Eder | approved | 1 | 2026-10-16 |
-| docs/adr/0026-portfolios-groups-of-watchlist-stocks.md | ADR 0026 | Eder | draft | 2 | 2026-10-16 |
-| docs/adr/0027-market-data-providers-and-licensing.md | ADR 0027 | Eder | draft | 2 | 2026-10-16 |
-| docs/adr/0028-fx-source-and-conversion-path.md | ADR 0028 | Eder | draft | 2 | 2026-10-16 |
-| docs/adr/0029-ingestion-design.md | ADR 0029 | Eder | draft | 2 | 2026-10-16 |
-| docs/adr/0030-performance-windows-edge-rules.md | ADR 0030 | Eder | draft | 2 | 2026-10-17 |
-| docs/adr/0031-watchlist-and-portfolios-storage.md | ADR 0031 | Eder | draft | 2 | 2026-10-18 |
-| docs/adr/0032-on-demand-stock-registration.md | ADR 0032 | Eder | draft | 2 | 2026-10-18 |
-| docs/adr/0033-watchlist-read-model.md | ADR 0033 | Eder | draft | 2 | 2026-10-18 |
-| docs/adr/0034-portfolio-api.md | ADR 0034 | Eder | draft | 2 | 2026-10-18 |
-| docs/adr/0035-portfolio-metrics.md | ADR 0035 | Eder | draft | 2 | 2026-10-18 |
-| docs/adr/0036-partial-purchase-calculator.md | ADR 0036 | Eder | draft | 2 | 2026-10-19 |
-| docs/adr/0037-money-kit.md | ADR 0037 | Eder | draft | 2 | 2026-10-19 |
+| docs/adr/0026-portfolios-groups-of-watchlist-stocks.md | ADR 0026 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0027-market-data-providers-and-licensing.md | ADR 0027 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0028-fx-source-and-conversion-path.md | ADR 0028 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0029-ingestion-design.md | ADR 0029 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0030-performance-windows-edge-rules.md | ADR 0030 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0031-watchlist-and-portfolios-storage.md | ADR 0031 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0032-on-demand-stock-registration.md | ADR 0032 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0033-watchlist-read-model.md | ADR 0033 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0034-portfolio-api.md | ADR 0034 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0035-portfolio-metrics.md | ADR 0035 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0036-partial-purchase-calculator.md | ADR 0036 | Eder | approved | 2 | 2026-10-19 |
+| docs/adr/0037-money-kit.md | ADR 0037 | Eder | approved | 2 | 2026-10-19 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |

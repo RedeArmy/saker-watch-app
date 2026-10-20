@@ -1,6 +1,6 @@
 # ADR-0032: Finding and registering stocks on demand
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-18
 - **Deciders:** Eder
 
