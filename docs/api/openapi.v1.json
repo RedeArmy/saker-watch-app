@@ -1843,10 +1843,164 @@
           }
         ]
       }
+    },
+    "/v1/calculations/partial-purchase": {
+      "post": {
+        "tags": [
+          "Calculator"
+        ],
+        "summary": "Calculate a partial purchase",
+        "description": "How many shares an amount buys, or what a number of shares costs, in the stock\u0027s currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker\u0027s rate, fees and minimum order sizes differ, and nothing here is financial advice.",
+        "operationId": "CalculatePartialPurchase",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PartialPurchaseRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartialPurchaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "FxLegResponse": {
+        "required": [
+          "from",
+          "to",
+          "rate",
+          "asOf",
+          "source",
+          "inverted"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "The currency the step starts from."
+          },
+          "to": {
+            "type": "string",
+            "description": "The currency the step ends in."
+          },
+          "rate": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "Units of \u0060to\u0060 for one of \u0060from\u0060, as applied (a decimal string).",
+            "format": "decimal"
+          },
+          "asOf": {
+            "type": "string",
+            "description": "The day the stored rate was published for (ISO-8601 date).",
+            "format": "date"
+          },
+          "source": {
+            "type": "string",
+            "description": "Who published it."
+          },
+          "inverted": {
+            "type": "boolean",
+            "description": "Whether the stored rate was the other way round and was inverted."
+          }
+        },
+        "description": "One step of the exchange path."
+      },
       "MeResponse": {
         "required": [
           "id",
@@ -1887,6 +2041,211 @@
           }
         },
         "description": "The caller\u0027s own profile."
+      },
+      "PartialPurchaseRequest": {
+        "required": [
+          "market",
+          "ticker",
+          "price",
+          "currency",
+          "amount",
+          "shares"
+        ],
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Canonical market code of a stock in the catalog (\u0060XNAS\u0060)."
+          },
+          "ticker": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Ticker of that stock."
+          },
+          "price": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Price of one share, instead of a stock (a decimal string).",
+            "format": "decimal"
+          },
+          "currency": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Currency of the price (ISO 4217); only with \u0060price\u0060."
+          },
+          "amount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Money to invest, in the currency of the price (a decimal string).",
+            "format": "decimal"
+          },
+          "shares": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Number of shares to buy, up to six decimals (a decimal string).",
+            "format": "decimal"
+          }
+        },
+        "description": "Body of \u0060POST /v1/calculations/partial-purchase\u0060. Give a stock (\u0060market\u0060 and \u0060ticker\u0060) or a \u0060price\u0060 with its \u0060currency\u0060,\nand exactly one of \u0060amount\u0060 and \u0060shares\u0060. Decimals are strings."
+      },
+      "PartialPurchaseResponse": {
+        "required": [
+          "mode",
+          "priceSource",
+          "stock",
+          "priceDate",
+          "priceStatus",
+          "staleSince",
+          "quoteCurrency",
+          "priceNative",
+          "fxPath",
+          "fxRate",
+          "fxAsOf",
+          "fxSource",
+          "fxStale",
+          "fxLegs",
+          "costOneShareGtq",
+          "sharesFraction",
+          "amountNative",
+          "amountGtq",
+          "disclaimerKey"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "\u0060amount\u0060 (an amount was invested) or \u0060shares\u0060 (a number of shares was bought)."
+          },
+          "priceSource": {
+            "type": "string",
+            "description": "\u0060catalog\u0060 (the newest close of the stock) or \u0060manual\u0060 (the price given)."
+          },
+          "stock": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WatchlistStockResponse"
+              }
+            ],
+            "description": "The catalog stock, when the price came from one."
+          },
+          "priceDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The trading day of the close, when the price came from the catalog.",
+            "format": "date"
+          },
+          "priceStatus": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "\u0060current\u0060 or \u0060stale\u0060 (the last known close is used), when the price came from the catalog."
+          },
+          "staleSince": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the close went stale (ISO-8601 UTC), when it did.",
+            "format": "date-time"
+          },
+          "quoteCurrency": {
+            "type": "string",
+            "description": "The currency of the price and of \u0060amountNative\u0060."
+          },
+          "priceNative": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The price of one share, as given or as traded (a decimal string).",
+            "format": "decimal"
+          },
+          "fxPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The currencies the rate went through, for example \u0060[\u0022CAD\u0022,\u0022USD\u0022,\u0022GTQ\u0022]\u0060; just \u0060[\u0022GTQ\u0022]\u0060 when no conversion was needed."
+          },
+          "fxRate": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The combined rate to quetzales, exact (a decimal string).",
+            "format": "decimal"
+          },
+          "fxAsOf": {
+            "type": "string",
+            "description": "The oldest day among the steps of the rate (ISO-8601 date).",
+            "format": "date"
+          },
+          "fxSource": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Who published the rate; several sources are joined with a comma; null when no conversion was needed."
+          },
+          "fxStale": {
+            "type": "boolean",
+            "description": "Whether the rate is older than the allowed age."
+          },
+          "fxLegs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FxLegResponse"
+            },
+            "description": "The steps of the exchange path."
+          },
+          "costOneShareGtq": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The price of one share in quetzales, rounded to cents.",
+            "format": "decimal"
+          },
+          "sharesFraction": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The shares, cut at six decimals towards zero (never rounded up).",
+            "format": "decimal"
+          },
+          "amountNative": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The money spent in the stock\u0027s currency, rounded to its minor units.",
+            "format": "decimal"
+          },
+          "amountGtq": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The money spent in quetzales, rounded to cents.",
+            "format": "decimal"
+          },
+          "disclaimerKey": {
+            "type": "string",
+            "description": "Key of the notice to show: the rate is a reference and a broker\u0027s rate, fees and minimum order sizes differ."
+          }
+        },
+        "description": "The result of a partial-purchase calculation. A reference, not a quote."
       },
       "PortfolioDeletionPreviewResponse": {
         "required": [
@@ -2742,6 +3101,9 @@
     },
     {
       "name": "Portfolios"
+    },
+    {
+      "name": "Calculator"
     }
   ]
 }

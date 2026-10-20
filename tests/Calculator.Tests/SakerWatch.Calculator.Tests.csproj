@@ -11,8 +11,11 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="FsCheck.Xunit" />
+    <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Modules/Calculator/Domain/SakerWatch.Calculator.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/Calculator/Application/SakerWatch.Calculator.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
   </ItemGroup>
 </Project>

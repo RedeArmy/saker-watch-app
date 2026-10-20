@@ -4,7 +4,13 @@
     <RootNamespace>SakerWatch.Calculator.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Domain/SakerWatch.Calculator.Domain.csproj" />
     <ProjectReference Include="../Contracts/SakerWatch.Calculator.Contracts.csproj" />
+    <ProjectReference Include="../../MarketData/Contracts/SakerWatch.MarketData.Contracts.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/Application/SakerWatch.BuildingBlocks.Application.csproj" />
   </ItemGroup>
 </Project>

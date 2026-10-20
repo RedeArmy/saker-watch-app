@@ -85,6 +85,11 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<ILatestBars, LatestBars>();
         services.TryAddScoped<IIngestionStatuses, FailedIngestions>();
         services.TryAddScoped<IMarketSnapshots, MarketSnapshots>();
+
+        // The exchange rates the calculator reads (ADR-0028): the stored daily rates, the converter and the contract over it.
+        services.TryAddScoped<IFxRateStore, FxRateStore>();
+        services.TryAddScoped<IFxConverter, FxConverter>();
+        services.TryAddScoped<IFxRates, FxRates>();
         services.AddSingleton<TwelveDataProvider>();
         services.AddSingleton<IMarketDataProvider>(provider => provider.GetRequiredService<TwelveDataProvider>());
         return services;
@@ -125,9 +130,7 @@ public static class MarketDataServiceCollectionExtensions
 
         services.TryAddScoped<ListingIngestion>();
         services.TryAddScoped<FollowUpJobs>();
-        services.TryAddScoped<IFxConverter, FxConverter>();
         services.TryAddScoped<IPriceStore, PriceStore>();
-        services.TryAddScoped<IFxRateStore, FxRateStore>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
         services.TryAddScoped<IFreshnessReader, FreshnessReader>();
