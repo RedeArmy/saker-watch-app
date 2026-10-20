@@ -140,7 +140,7 @@ public sealed class MoneyKitPropertyTests
     [Property(Arbitrary = [typeof(MoneyKitArbitraries)])]
     public void ChainingRates_ConvertsLikeConvertingTwice(AmountOf amount, RateOf first, RateOf second)
     {
-        CurrencyCode jpy = CurrencyCode.Parse("JPY");
+        var jpy = CurrencyCode.Parse("JPY");
         Money start = Money.Create(Math.Abs(amount.Value), jpy).Value;
         ExchangeRate jpyUsd = ExchangeRate.Create(jpy, _usd, first.Value).Value;
         ExchangeRate usdGtq = ExchangeRate.Create(_usd, _gtq, second.Value).Value;

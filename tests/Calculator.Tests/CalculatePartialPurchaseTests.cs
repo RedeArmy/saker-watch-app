@@ -32,8 +32,11 @@ public sealed class CalculatePartialPurchaseTests
     {
         public Task<IReadOnlyDictionary<Guid, StockSummary>> FindManyAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyDictionary<Guid, StockSnapshot>>(snapshot is null ? new Dictionary<Guid, StockSnapshot>() : new Dictionary<Guid, StockSnapshot> { [snapshot.Stock.Id] = snapshot });
+        public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken)
+        {
+            StockSnapshot[] known = snapshot is null ? [] : [snapshot];
+            return Task.FromResult<IReadOnlyDictionary<Guid, StockSnapshot>>(known.ToDictionary(found => found.Stock.Id));
+        }
     }
 
     private sealed class Rates(params FxQuote[] quotes) : IFxRates

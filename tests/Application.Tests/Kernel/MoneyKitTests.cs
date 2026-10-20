@@ -179,7 +179,7 @@ public sealed class MoneyKitTests
     {
         ExchangeRate.Create(_usd, _usd, 1m).Error!.Code.Should().Be(MoneyErrors.RateInvalid);
 
-        ExchangeRate identity = ExchangeRate.Identity(_usd);
+        var identity = ExchangeRate.Identity(_usd);
 
         identity.Convert(M("12.34", _usd)).Value.Should().Be(M("12.34", _usd));
         identity.Invert().Value.Should().Be(identity);
