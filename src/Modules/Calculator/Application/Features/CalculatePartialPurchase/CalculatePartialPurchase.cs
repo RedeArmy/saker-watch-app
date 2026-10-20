@@ -19,7 +19,8 @@ namespace SakerWatch.Calculator.Application.Features.CalculatePartialPurchase;
 /// <param name="Currency">The currency of <paramref name="Price"/> (ISO 4217), or <see langword="null"/> for a catalog stock.</param>
 /// <param name="Amount">The money to invest, in the currency of the price, or <see langword="null"/>.</param>
 /// <param name="Shares">The number of shares to buy, with at most six decimals, or <see langword="null"/>.</param>
-public sealed record CalculatePartialPurchaseQuery(string? Market, string? Ticker, decimal? Price, string? Currency, decimal? Amount, decimal? Shares)
+/// <param name="Fee">The broker's commission as a percentage of the value of the shares (<c>1</c> is 1 %), or <see langword="null"/> for none. The amount, when given, is the total paid with the commission included.</param>
+public sealed record CalculatePartialPurchaseQuery(string? Market, string? Ticker, decimal? Price, string? Currency, decimal? Amount, decimal? Shares, decimal? Fee = null)
     : IQuery<PartialPurchaseView>, IReadsDatabase;
 
 /// <summary>What was calculated and what it was calculated from.</summary>
@@ -64,6 +65,8 @@ public sealed class CalculatePartialPurchaseValidator : AbstractValidator<Calcul
         RuleFor(x => x.Price).GreaterThan(0m).When(x => x.Price is not null);
         RuleFor(x => x.Amount).GreaterThan(0m).When(x => x.Amount is not null);
         RuleFor(x => x.Shares).GreaterThan(0m).When(x => x.Shares is not null);
+        RuleFor(x => x.Fee).InclusiveBetween(0m, FeePercent.Max).When(x => x.Fee is not null)
+            .WithMessage($"The commission is between 0 and {FeePercent.Max:0} percent.");
     }
 
     private static bool HasExactlyOneSource(CalculatePartialPurchaseQuery request)
@@ -96,6 +99,18 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
             shares = parsed.Value;
         }
 
+        FeePercent? fee = null;
+        if (request.Fee is { } commission)
+        {
+            Result<FeePercent> parsedFee = FeePercent.Create(commission);
+            if (!parsedFee.IsSuccess)
+            {
+                return parsedFee.Error!;
+            }
+
+            fee = parsedFee.Value;
+        }
+
         Result<PriceFound> price = await FindPriceAsync(request, cancellationToken);
         if (!price.IsSuccess)
         {
@@ -112,12 +127,12 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
         Result<PartialPurchase> purchase;
         if (shares is not null)
         {
-            purchase = PartialPurchaseCalculator.ByShares(unitPrice, shares, quote.Value.Rate);
+            purchase = PartialPurchaseCalculator.ByShares(unitPrice, shares, quote.Value.Rate, fee);
         }
         else
         {
             Result<Money> amount = Money.Create(request.Amount!.Value, unitPrice.Currency);
-            purchase = amount.IsSuccess ? PartialPurchaseCalculator.ByAmount(unitPrice, amount.Value, quote.Value.Rate) : amount.Error!;
+            purchase = amount.IsSuccess ? PartialPurchaseCalculator.ByAmount(unitPrice, amount.Value, quote.Value.Rate, fee) : amount.Error!;
         }
 
         if (!purchase.IsSuccess)

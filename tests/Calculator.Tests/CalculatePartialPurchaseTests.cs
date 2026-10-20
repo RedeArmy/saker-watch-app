@@ -62,8 +62,8 @@ public sealed class CalculatePartialPurchaseTests
     private static CalculatePartialPurchaseHandler Handler(Directory? directory = null, Market? market = null, Rates? rates = null) =>
         new(directory ?? new Directory(_apple), market ?? new Market(Snapshot(600m)), rates ?? new Rates(Quote(_usd, 7.75m, "banguat")));
 
-    private static CalculatePartialPurchaseQuery Stock(decimal? amount = null, decimal? shares = null) =>
-        new("XNAS", "AAPL", null, null, amount, shares);
+    private static CalculatePartialPurchaseQuery Stock(decimal? amount = null, decimal? shares = null, decimal? fee = null) =>
+        new("XNAS", "AAPL", null, null, amount, shares, fee);
 
     private static CalculatePartialPurchaseQuery Manual(string price, string currency, decimal? amount = null, decimal? shares = null) =>
         new(null, null, decimal.Parse(price, CultureInfo.InvariantCulture), currency, amount, shares);
@@ -87,6 +87,45 @@ public sealed class CalculatePartialPurchaseTests
         PartialPurchaseView view = (await Run(Handler(), Stock(shares: 0.5m))).Value;
 
         (view.Mode, view.Purchase.Shares.Value, view.Purchase.Amount.Amount, view.Purchase.AmountConverted.Amount).Should().Be(("shares", 0.5m, 300m, 2325m));
+    }
+
+    [Fact]
+    public async Task ACommission_IsPartOfTheTotalPaid_WhenAnAmountIsInvested()
+    {
+        PartialPurchaseView view = (await Run(Handler(), Stock(amount: 101m, fee: 1m))).Value;
+
+        (view.Purchase.FeePercent.Value, view.Purchase.Amount.Amount, view.Purchase.Fee.Amount, view.Purchase.AmountConverted.Amount, view.Purchase.FeeConverted.Amount)
+            .Should().Be((1m, 101m, 1m, 782.75m, 7.75m));
+        view.Purchase.Shares.Value.Should().Be(0.166666m, "101 paid in all buys 100 worth of shares");
+    }
+
+    [Fact]
+    public async Task ACommission_IsAddedToTheCostOfTheShares()
+    {
+        PartialPurchaseView view = (await Run(Handler(), Stock(shares: 2m, fee: 1m))).Value;
+
+        (view.Purchase.Amount.Amount, view.Purchase.Fee.Amount, view.Purchase.AmountConverted.Amount).Should().Be((1212m, 12m, 9393m));
+    }
+
+    [Fact]
+    public async Task WithoutACommission_ItIsZero_AndTheResultIsTheOneWithoutIt()
+    {
+        PartialPurchaseView without = (await Run(Handler(), Stock(amount: 50m))).Value;
+        PartialPurchaseView zero = (await Run(Handler(), Stock(amount: 50m, fee: 0m))).Value;
+
+        (without.Purchase.FeePercent.Value, without.Purchase.Fee.Amount, without.Purchase.FeeConverted.Amount).Should().Be((0m, 0m, 0m));
+        zero.Purchase.Should().Be(without.Purchase);
+    }
+
+    [Fact]
+    public async Task ACommissionOutsideZeroToTenPercent_IsAValidationFailure_BeforeAnythingIsRead()
+    {
+        var rates = new Rates(Quote(_usd, 7.75m, "banguat"));
+
+        Result<PartialPurchaseView> result = await Run(Handler(rates: rates), Stock(amount: 50m, fee: 10.5m));
+
+        result.Error!.Code.Should().Be("calculator.fee_out_of_range");
+        rates.Calls.Should().Be(0);
     }
 
     [Fact]
@@ -188,6 +227,27 @@ public sealed class CalculatePartialPurchaseTests
         var query = new CalculatePartialPurchaseQuery(market, ticker, Num(price), currency, Num(amount), Num(shares));
 
         new CalculatePartialPurchaseValidator().Validate(query).IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("-0.1")]
+    [InlineData("10.01")]
+    public void TheValidator_RefusesACommissionOutsideZeroToTenPercent(string fee)
+    {
+        var query = new CalculatePartialPurchaseQuery("XNAS", "AAPL", null, null, 50m, null, Num(fee));
+
+        new CalculatePartialPurchaseValidator().Validate(query).Errors.Should().ContainSingle().Which.PropertyName.Should().Be("Fee");
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1.5")]
+    [InlineData("10")]
+    public void TheValidator_AcceptsACommissionFromZeroToTenPercent(string fee)
+    {
+        var query = new CalculatePartialPurchaseQuery("XNAS", "AAPL", null, null, 50m, null, Num(fee));
+
+        new CalculatePartialPurchaseValidator().Validate(query).IsValid.Should().BeTrue();
     }
 
     [Theory]

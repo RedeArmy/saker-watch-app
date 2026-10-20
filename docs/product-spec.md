@@ -15,7 +15,7 @@ A personal stock **watchlist and research assistant**. It does **not** execute t
 ### 2.2 Calculator (USD and other quote currencies → GTQ)
 - Endpoint `POST /v1/calculations/partial-purchase` (pure computation: no `Idempotency-Key` needed; the logic is also usable client-side). Input `{ticker|price, amount, currency}`; output (camelCase, decimals as strings) `{quoteCurrency, priceNative, fxPath, fxRate, fxAsOf, fxSource, costOneShareGtq, sharesFraction, amountNative, amountGtq}`. `quoteCurrency` is the stock's native currency (USD in the first release); the FX path is direct or via USD (ADR-0018).
 - Example: USD 50 on a USD 600 share buys 0.083333 shares.
-- Always show the FX date and source and a disclaimer that broker FX, fees and minimum order sizes differ. Optional configurable spread/fee assumption. Fractional-share availability is informational text, not logic.
+- Always show the FX date and source and a disclaimer that broker FX, fees and minimum order sizes differ. Optional fee assumption: `feePercent`, the broker's commission as a percentage of the value of the shares, part of the total paid (ADR-0036); a broker's exchange-rate spread is not modelled. Fractional-share availability is informational text, not logic.
 
 ### 2.3 Analysis agent
 - Runs over every stock in the watchlist using a **self-hosted LLM** (ADR-0008) and versioned prompt templates; stores all results.
