@@ -10,7 +10,7 @@ namespace SakerWatch.MarketData.Tests.Live;
 
 /// <summary>
 /// The EDGAR adapter against the real, public service, through the same registration the hosts use (allow-listed client included). It also checks the
-/// shape the fixtures were written from (assumption A-028): run it once with a real identity before turning the adapter on.
+/// shape the fixtures were written from (assumption A-028, verified 2026-10-20): run it again before turning the adapter on, and whenever the SEC may have changed.
 /// </summary>
 public sealed class EdgarLiveTests
 {

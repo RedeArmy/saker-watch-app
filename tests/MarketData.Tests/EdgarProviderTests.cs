@@ -13,8 +13,8 @@ using SakerWatch.MarketData.Infrastructure.Providers.Edgar;
 namespace SakerWatch.MarketData.Tests;
 
 /// <summary>
-/// The EDGAR adapter against fixtures that have the shape of the registry's answers, written by hand (<c>.synthetic</c>): the real service was not
-/// called, so the shape comes from the SEC's documentation until the live check is run with a real identity (assumption A-028). Nothing here
+/// The EDGAR adapter against fixtures that have the shape of the registry's answers, written by hand (<c>.synthetic</c>): the shape was checked once
+/// against the real service with the live check (assumption A-028, 2026-10-20), and these files keep it. Nothing here
 /// calls the network.
 /// </summary>
 public sealed class EdgarProviderTests
