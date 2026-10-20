@@ -198,6 +198,15 @@ public sealed class MoneyKitTests
         Shares.Buying(M("-50", _usd), M("600", _usd)).Error!.Code.Should().Be(MoneyErrors.SharesInvalid);
     }
 
+    [Fact]
+    public void AnAmountTooSmallToBuyAnyPartOfAShare_SaysSo_InsteadOfNamingTheUpperLimit()
+    {
+        Result<Shares> tiny = Shares.Buying(M("0.0000000000000000000000000001", _usd), M("600", _usd));
+
+        tiny.Error!.Code.Should().Be(MoneyErrors.SharesInvalid);
+        tiny.Error.Message.Should().Contain("too small").And.NotContain("at most");
+    }
+
     [Theory]
     [InlineData("0.0833333", "0.083333")]
     [InlineData("0.0833339", "0.083333")]

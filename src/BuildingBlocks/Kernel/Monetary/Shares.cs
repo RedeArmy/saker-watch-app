@@ -54,7 +54,10 @@ public sealed class Shares : ValueObject
         // A price of a hundred-trillionth of a unit would overflow the quotient: that is a quantity beyond the limit, not a crash.
         try
         {
-            return Create(amount.Amount / unitPrice.Amount);
+            decimal quotient = amount.Amount / unitPrice.Amount;
+            return quotient == 0m && amount.IsPositive
+                ? Error.Validation(MoneyErrors.SharesInvalid, "The amount is too small to buy any part of a share.")
+                : Create(quotient);
         }
         catch (OverflowException)
         {
