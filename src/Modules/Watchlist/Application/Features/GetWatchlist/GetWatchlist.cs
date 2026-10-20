@@ -112,19 +112,13 @@ public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepo
             return Error.Unauthorized(WatchlistErrors.NotAuthenticated, "Authentication is required.");
         }
 
-        IReadOnlyList<WatchlistItem> all = await items.ListAsync(userId, cancellationToken);
-        if (request.PortfolioId is { } portfolioId)
+        Result<IReadOnlyList<WatchlistItem>> scoped = await PortfolioScope.ItemsAsync(items, portfolios, userId, request.PortfolioId, cancellationToken);
+        if (!scoped.IsSuccess)
         {
-            var id = PortfolioId.Create(portfolioId);
-            if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
-            {
-                return PortfolioErrors.PortfolioNotFound();
-            }
-
-            HashSet<Guid> inPortfolio = [.. (await portfolios.MembersAsync(userId, id, cancellationToken)).Select(member => member.StockId)];
-            all = [.. all.Where(item => inPortfolio.Contains(item.StockId))];
+            return scoped.Error!;
         }
 
+        IReadOnlyList<WatchlistItem> all = scoped.Value;
         IReadOnlyDictionary<Guid, StockSummary> stocks = await market.FindManyAsync([.. all.Select(item => item.StockId)], cancellationToken);
 
         // An item whose stock the catalog cannot find is left out: it cannot be shown, and nothing deletes catalog rows.

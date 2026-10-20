@@ -86,6 +86,10 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<IIngestionStatuses, FailedIngestions>();
         services.TryAddScoped<IMarketSnapshots, MarketSnapshots>();
 
+        // The price history charts and sparklines draw (ADR-0038).
+        services.TryAddScoped<IPriceSeriesReader, PriceSeriesReader>();
+        services.TryAddScoped<IPriceHistory, PriceHistory>();
+
         // The exchange rates the calculator reads (ADR-0028): the stored daily rates, the converter and the contract over it.
         services.TryAddScoped<IFxRateStore, FxRateStore>();
         services.TryAddScoped<IFxConverter, FxConverter>();

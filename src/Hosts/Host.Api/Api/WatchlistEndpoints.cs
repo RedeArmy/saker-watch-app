@@ -4,6 +4,7 @@ using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
+using SakerWatch.Watchlist.Application.Features.GetSparklines;
 using SakerWatch.Watchlist.Application.Features.GetWatchlist;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
 using SakerWatch.Watchlist.Application.Features.RemoveWatchlistItem;
@@ -71,6 +72,16 @@ public sealed record WatchlistEntryResponse(
 /// <param name="Offset">Items skipped.</param>
 public sealed record WatchlistPageResponse(IReadOnlyList<WatchlistEntryResponse> Items, int Total, int Limit, int Offset);
 
+/// <summary>The recent shape of the price of one stock on the watchlist.</summary>
+/// <param name="Stock">The stock.</param>
+/// <param name="Points">The adjusted closes of the last stored days, oldest first (decimal strings); empty while the stock has no price yet.</param>
+public sealed record SparklineResponse(WatchlistStockResponse Stock, IReadOnlyList<decimal> Points);
+
+/// <summary>The small price charts of the watchlist.</summary>
+/// <param name="Days">How many of the last stored trading days each line has.</param>
+/// <param name="Items">One line per stock, ordered by ticker and market.</param>
+public sealed record SparklinesResponse(int Days, IReadOnlyList<SparklineResponse> Items);
+
 /// <summary>Body of <c>PUT /v1/watchlist/items/{market}/{ticker}</c>. Both fields replace what is stored; leaving one out clears it.</summary>
 /// <param name="Notes">Notes, up to 2000 characters, or null.</param>
 /// <param name="TargetPrice">Target price greater than zero with at most eight decimals, or null.</param>
@@ -119,6 +130,20 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
+        v1.MapGet("/watchlist/sparklines", SparklinesAsync)
+            .WithName("GetWatchlistSparklines")
+            .WithSummary("Small price charts of the watchlist")
+            .WithDescription("For every stock on the caller's watchlist (or only those of one portfolio), the adjusted closes of its last stored trading days, oldest first, in a few statements whatever the number of stocks: the lines the table draws next to each row. days is 5 to 250 (default 30). A stock with no price yet has an empty line. The answer carries an ETag. Informational only, not financial advice.")
+            .WithTags(_tag)
+            .Produces<SparklinesResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status304NotModified)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
         v1.MapPut("/watchlist/items/{market}/{ticker}", PutAsync)
             .WithName("PutWatchlistItem")
             .WithSummary("Put a stock on the watchlist")
@@ -159,6 +184,16 @@ internal static class WatchlistEndpoints
             cancellationToken);
         return result.ToHttpResult(page => ConditionalResults.Json(new WatchlistPageResponse(
             [.. page.Items.Select(ToResponse)], page.Total, page.Limit, page.Offset)));
+    }
+
+    private static async Task<IResult> SparklinesAsync(ISender sender, CancellationToken cancellationToken, int days = 30, Guid? portfolio = null)
+    {
+        var result = await sender.Send(new GetSparklinesQuery(days, portfolio), cancellationToken);
+        return result.ToHttpResult(view => ConditionalResults.Json(new SparklinesResponse(
+            view.Days,
+            [.. view.Items.Select(line => new SparklineResponse(
+                new WatchlistStockResponse(line.Stock.Id, line.Stock.Market, line.Stock.Ticker, line.Stock.Name, line.Stock.Currency, line.Stock.AssetType),
+                line.Points))])));
     }
 
     private static WatchlistEntryResponse ToResponse(WatchlistEntry entry) =>

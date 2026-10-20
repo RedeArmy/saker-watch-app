@@ -309,6 +309,132 @@
         ]
       }
     },
+    "/v1/stocks/{market}/{ticker}/prices": {
+      "get": {
+        "tags": [
+          "Stocks"
+        ],
+        "summary": "Price history of a stock",
+        "description": "The stored days of a stock of the catalog over a range (1W, 1M, 3M, 6M, YTD, 1Y, 5Y or MAX; default 1Y), oldest first, each with the close as traded and the adjusted close (draw the adjusted one: it is continuous across splits and dividends). A range starts where the performance window of the same name does. The interval is day, week or month (a week or a month is shown by its last trading day); auto uses days up to a year, weeks for five years and months for all the history. A stock with no price yet answers an empty series with its status. The answer carries an ETag. Informational only, not financial advice.",
+        "operationId": "GetStockPrices",
+        "parameters": [
+          {
+            "name": "market",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticker",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceSeriesResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/watchlist": {
       "get": {
         "tags": [
@@ -411,6 +537,121 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WatchlistPageResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/watchlist/sparklines": {
+      "get": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Small price charts of the watchlist",
+        "description": "For every stock on the caller\u0027s watchlist (or only those of one portfolio), the adjusted closes of its last stored trading days, oldest first, in a few statements whatever the number of stocks: the lines the table draws next to each row. days is 5 to 250 (default 30). A stock with no price yet has an empty line. The answer carries an ETag. Informational only, not financial advice.",
+        "operationId": "GetWatchlistSparklines",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 30
+            }
+          },
+          {
+            "name": "portfolio",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparklinesResponse"
                 }
               }
             }
@@ -2503,6 +2744,39 @@
         },
         "description": "A portfolio: a named group of the caller\u0027s watchlist stocks, kept for observation (never holdings)."
       },
+      "PricePointResponse": {
+        "required": [
+          "date",
+          "close",
+          "adjustedClose",
+          "isFinal"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The trading day (ISO-8601 date).",
+            "format": "date"
+          },
+          "close": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The close as traded (a decimal string).",
+            "format": "decimal"
+          },
+          "adjustedClose": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The close adjusted for splits and dividends, the one to draw because it is continuous (a decimal string).",
+            "format": "decimal"
+          },
+          "isFinal": {
+            "type": "boolean",
+            "description": "False while the day may still change."
+          }
+        },
+        "description": "One stored day of a stock."
+      },
       "PriceResponse": {
         "required": [
           "value",
@@ -2528,6 +2802,79 @@
           }
         },
         "description": "The newest stored bar of a stock."
+      },
+      "PriceSeriesResponse": {
+        "required": [
+          "stock",
+          "range",
+          "interval",
+          "from",
+          "to",
+          "count",
+          "points",
+          "priceStatus",
+          "staleSince"
+        ],
+        "type": "object",
+        "properties": {
+          "stock": {
+            "description": "The stock.",
+            "$ref": "#/components/schemas/WatchlistStockResponse"
+          },
+          "range": {
+            "type": "string",
+            "description": "The range asked for."
+          },
+          "interval": {
+            "type": "string",
+            "description": "The interval used: \u0060day\u0060, \u0060week\u0060 or \u0060month\u0060."
+          },
+          "from": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The first day the range covers, or null for all the history.",
+            "format": "date"
+          },
+          "to": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The day of the newest stored price, or null when there is none.",
+            "format": "date"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "How many points there are.",
+            "format": "int32"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PricePointResponse"
+            },
+            "description": "The days, oldest first; empty when the stock has no price in the range."
+          },
+          "priceStatus": {
+            "type": "string",
+            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known price is the newest), \u0060pending\u0060 or \u0060unavailable\u0060."
+          },
+          "staleSince": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the newest price went stale (ISO-8601 UTC), when it did.",
+            "format": "date-time"
+          }
+        },
+        "description": "The price history of a stock over a range."
       },
       "PriceStatusCountsResponse": {
         "required": [
@@ -2679,6 +3026,50 @@
           }
         },
         "description": "Body of \u0060PUT /v1/portfolios/order\u0060."
+      },
+      "SparklineResponse": {
+        "required": [
+          "stock",
+          "points"
+        ],
+        "type": "object",
+        "properties": {
+          "stock": {
+            "description": "The stock.",
+            "$ref": "#/components/schemas/WatchlistStockResponse"
+          },
+          "points": {
+            "type": "array",
+            "description": "The adjusted closes of the last stored days, oldest first (decimal strings); empty while the stock has no price yet."
+          }
+        },
+        "description": "The recent shape of the price of one stock on the watchlist."
+      },
+      "SparklinesResponse": {
+        "required": [
+          "days",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "days": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "How many of the last stored trading days each line has.",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SparklineResponse"
+            },
+            "description": "One line per stock, ordered by ticker and market."
+          }
+        },
+        "description": "The small price charts of the watchlist."
       },
       "StockCandidateResponse": {
         "required": [
