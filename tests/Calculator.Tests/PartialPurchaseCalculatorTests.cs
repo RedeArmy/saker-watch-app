@@ -1,82 +1,83 @@
+using System.Globalization;
 using AwesomeAssertions;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.Calculator.Domain.Purchases;
 
 namespace SakerWatch.Calculator.Tests;
 
-/// <summary>Hand-computed cases of the partial-purchase arithmetic and of its presentation rounding (ADR-0006, ADR-0036).</summary>
+/// <summary>Hand-computed cases of the partial-purchase arithmetic on the money kit, and of what it refuses (ADR-0006, ADR-0036, ADR-0037).</summary>
 public sealed class PartialPurchaseCalculatorTests
 {
+    private static readonly CurrencyCode _usd = CurrencyCode.Parse("USD");
+    private static readonly CurrencyCode _gtq = CurrencyCode.Parse("GTQ");
+    private static readonly CurrencyCode _jpy = CurrencyCode.Parse("JPY");
+
+    private static decimal D(string text) => decimal.Parse(text, CultureInfo.InvariantCulture);
+
+    private static Money M(string amount, CurrencyCode currency) => Money.Create(D(amount), currency).Value;
+
+    private static ExchangeRate Rate(CurrencyCode from, CurrencyCode to, string rate) => ExchangeRate.Create(from, to, D(rate)).Value;
+
+    private static Shares S(string shares) => Shares.FromRequest(D(shares)).Value;
+
     [Fact]
     public void ByAmount_FiftyDollarsOnASixHundredDollarShare_BuysAboutATwelfth_AtTheRateOfTheDay()
     {
-        PartialPurchase purchase = PartialPurchaseCalculator.ByAmount("USD", 600m, 50m, 7.75m).Value;
+        PartialPurchase purchase = PartialPurchaseCalculator.ByAmount(M("600", _usd), M("50", _usd), Rate(_usd, _gtq, "7.75")).Value;
 
-        purchase.Shares.Should().Be(50m / 600m, "kept exact until the presentation boundary");
-        (purchase.AmountNative, purchase.CostOneShareGtq, purchase.AmountGtq).Should().Be((50m, 4650m, 387.5m));
-        PartialPurchase shown = purchase.ForDisplay();
-        (shown.Shares, shown.AmountNative, shown.CostOneShareGtq, shown.AmountGtq).Should().Be((0.083333m, 50m, 4650m, 387.5m));
+        purchase.Shares.Value.Should().Be(50m / 600m, "kept exact until the presentation boundary");
+        purchase.Amount.Should().Be(M("50", _usd));
+        (purchase.PriceConverted, purchase.AmountConverted).Should().Be((M("4650", _gtq), M("387.5", _gtq)));
+        PartialPurchaseDisplay shown = purchase.ForDisplay();
+        (shown.Shares.Value, shown.Amount.Amount, shown.PriceConverted.Amount, shown.AmountConverted.Amount).Should().Be((0.083333m, 50m, 4650m, 387.5m));
+        (shown.PriceConverted.Currency, shown.AmountConverted.Currency).Should().Be((_gtq, _gtq));
     }
 
     [Fact]
-    public void ByShares_ThreeAndAHalfSharesAtTwoHundredAndTwentyCents_CostsTheirProductInBothCurrencies()
+    public void ByShares_ThreeAndAHalfShares_CostTheirProductInBothCurrencies()
     {
-        PartialPurchase purchase = PartialPurchaseCalculator.ByShares("USD", 221.37m, 3.5m, 7.7821m).Value;
+        PartialPurchase purchase = PartialPurchaseCalculator.ByShares(M("221.37", _usd), S("3.5"), Rate(_usd, _gtq, "7.7821")).Value;
 
-        purchase.Shares.Should().Be(3.5m, "the shares are the ones asked for");
-        purchase.AmountNative.Should().Be(774.795m);
-        purchase.AmountGtq.Should().Be(774.795m * 7.7821m);
-        PartialPurchase shown = purchase.ForDisplay();
-        (shown.Shares, shown.AmountNative, shown.AmountGtq, shown.CostOneShareGtq).Should().Be((3.5m, 774.80m, 6029.53m, 1722.72m));
+        purchase.Shares.Value.Should().Be(3.5m, "the shares are the ones asked for");
+        purchase.Amount.Amount.Should().Be(774.795m);
+        purchase.AmountConverted.Amount.Should().Be(774.795m * 7.7821m);
+        PartialPurchaseDisplay shown = purchase.ForDisplay();
+        (shown.Shares.Value, shown.Amount.Amount, shown.AmountConverted.Amount, shown.PriceConverted.Amount).Should().Be((3.5m, 774.80m, 6029.53m, 1722.72m));
     }
-
-    [Theory]
-    [InlineData("0.125", "0.12")]
-    [InlineData("0.135", "0.14")]
-    [InlineData("0.145", "0.14")]
-    [InlineData("2.675", "2.68")]
-    public void ForDisplay_RoundsMoneyToMinorUnitsHalfToEven(string exact, string expected)
-    {
-        var purchase = new PartialPurchase("USD", 1m, 1m, 1m, decimal.Parse(exact, System.Globalization.CultureInfo.InvariantCulture), 1m, decimal.Parse(exact, System.Globalization.CultureInfo.InvariantCulture));
-
-        PartialPurchase shown = purchase.ForDisplay();
-
-        shown.AmountNative.Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
-        shown.AmountGtq.Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
-    }
-
-    [Theory]
-    [InlineData("0.0833333", "0.083333")]
-    [InlineData("0.0833339", "0.083333")]
-    [InlineData("0.9999999", "0.999999")]
-    [InlineData("12.5", "12.5")]
-    public void ForDisplay_CutsSharesTowardsZero_NeverUpToANeighbour(string exact, string expected)
-    {
-        var purchase = new PartialPurchase("USD", 1m, 1m, decimal.Parse(exact, System.Globalization.CultureInfo.InvariantCulture), 1m, 1m, 1m);
-
-        purchase.ForDisplay().Shares.Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
-    }
-
-    [Theory]
-    [InlineData("JPY", 0)]
-    [InlineData("KRW", 0)]
-    [InlineData("USD", 2)]
-    [InlineData("CAD", 2)]
-    [InlineData("EUR", 2)]
-    [InlineData("GTQ", 2)]
-    [InlineData("KWD", 3)]
-    public void MinorUnits_FollowTheCurrency(string currency, int decimals) =>
-        CurrencyMinorUnits.Of(currency).Should().Be(decimals);
 
     [Fact]
-    public void ForDisplay_ShowsTheNativeAmountInTheMinorUnitsOfItsCurrency_AndQuetzalesWithTwo()
+    public void ForDisplay_ShowsEachAmountInTheMinorUnitsOfItsOwnCurrency()
     {
-        PartialPurchase yen = PartialPurchaseCalculator.ByShares("JPY", 2987.5m, 1.5m, 0.0518m).Value;
+        PartialPurchase yen = PartialPurchaseCalculator.ByShares(M("2987.5", _jpy), S("1.5"), Rate(_jpy, _gtq, "0.0518")).Value;
 
-        PartialPurchase shown = yen.ForDisplay();
+        PartialPurchaseDisplay shown = yen.ForDisplay();
 
-        shown.AmountNative.Should().Be(4481m, "4481.25 yen, shown without decimals");
-        shown.AmountGtq.Should().Be(232.13m, "4481.25 x 0.0518 = 232.12875");
-        shown.CostOneShareGtq.Should().Be(154.75m, "2987.5 x 0.0518 = 154.7525");
+        shown.Amount.Amount.Should().Be(4481m, "4481.25 yen, shown without decimals");
+        shown.AmountConverted.Amount.Should().Be(232.13m, "4481.25 x 0.0518 = 232.12875");
+        shown.PriceConverted.Amount.Should().Be(154.75m, "2987.5 x 0.0518 = 154.7525");
+    }
+
+    [Fact]
+    public void AStockPricedInQuetzales_UsesTheIdentityRate()
+    {
+        PartialPurchase purchase = PartialPurchaseCalculator.ByAmount(M("40", _gtq), M("100", _gtq), ExchangeRate.Identity(_gtq)).Value;
+
+        purchase.Shares.Value.Should().Be(2.5m);
+        purchase.AmountConverted.Should().Be(purchase.Amount);
+        purchase.PriceConverted.Should().Be(purchase.Price);
+    }
+
+    [Fact]
+    public void ForDisplay_EchoesThePriceAndTheRateAsGiven_AndNeverRoundsThemOrTheExactPurchase()
+    {
+        PartialPurchase purchase = PartialPurchaseCalculator.ByAmount(M("0.123456", _usd), M("10", _usd), Rate(_usd, _gtq, "7.64572")).Value;
+
+        PartialPurchaseDisplay shown = purchase.ForDisplay();
+
+        shown.Price.Amount.Should().Be(0.123456m);
+        shown.Rate.Rate.Should().Be(7.64572m);
+        purchase.Shares.Value.Should().Be(10m / 0.123456m, "showing it did not change the exact figure");
+        shown.Shares.Value.Should().Be(81.000518m, "10 / 0.123456 = 81.00051840..., cut at six decimals");
     }
 
     [Theory]
@@ -86,48 +87,38 @@ public sealed class PartialPurchaseCalculatorTests
     [InlineData("1000000000.01")]
     public void APriceOutsideTheBounds_IsRefused_InBothModes(string text)
     {
-        decimal price = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        Money price = M(text, _usd);
 
-        PartialPurchaseCalculator.ByAmount("USD", price, 50m, 7.75m).Error!.Code.Should().Be(CalculatorErrors.PriceInvalid);
-        PartialPurchaseCalculator.ByShares("USD", price, 1m, 7.75m).Error!.Code.Should().Be(CalculatorErrors.PriceInvalid);
+        PartialPurchaseCalculator.ByAmount(price, M("50", _usd), Rate(_usd, _gtq, "7.75")).Error!.Code.Should().Be(CalculatorErrors.PriceOutOfRange);
+        PartialPurchaseCalculator.ByShares(price, S("1"), Rate(_usd, _gtq, "7.75")).Error!.Code.Should().Be(CalculatorErrors.PriceOutOfRange);
     }
 
     [Theory]
     [InlineData("0")]
     [InlineData("-50")]
-    [InlineData("1000000000000.01")]
-    public void AnAmountOutsideTheBounds_IsRefused(string text) =>
-        PartialPurchaseCalculator.ByAmount("USD", 600m, decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture), 7.75m).Error!.Code.Should().Be(CalculatorErrors.AmountInvalid);
+    public void AnAmountThatIsNotPositive_IsRefused(string text) =>
+        PartialPurchaseCalculator.ByAmount(M("600", _usd), M(text, _usd), Rate(_usd, _gtq, "7.75")).Error!.Code.Should().Be(CalculatorErrors.AmountInvalid);
 
-    [Theory]
-    [InlineData("0")]
-    [InlineData("-2")]
-    [InlineData("0.0000001")]
-    [InlineData("1000000000000.01")]
-    public void SharesOutsideTheBounds_OrWithMoreThanSixDecimals_AreRefused(string text) =>
-        PartialPurchaseCalculator.ByShares("USD", 600m, decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture), 7.75m).Error!.Code.Should().Be(CalculatorErrors.SharesInvalid);
-
-    [Theory]
-    [InlineData("0")]
-    [InlineData("-7.75")]
-    [InlineData("0.000000001")]
-    [InlineData("1000000.01")]
-    public void ARateOutsideTheBounds_IsRefused_InBothModes(string text)
+    [Fact]
+    public void Currencies_ThatDoNotMatch_AreRefused()
     {
-        decimal rate = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        ExchangeRate usdToGtq = Rate(_usd, _gtq, "7.75");
 
-        PartialPurchaseCalculator.ByAmount("USD", 600m, 50m, rate).Error!.Code.Should().Be(CalculatorErrors.RateInvalid);
-        PartialPurchaseCalculator.ByShares("USD", 600m, 1m, rate).Error!.Code.Should().Be(CalculatorErrors.RateInvalid);
+        PartialPurchaseCalculator.ByAmount(M("600", _usd), M("50", _gtq), usdToGtq).Error!.Code.Should().Be(MoneyErrors.CurrencyMismatch, "quetzales cannot buy a dollar-priced share");
+        PartialPurchaseCalculator.ByAmount(M("600", _jpy), M("50", _jpy), usdToGtq).Error!.Code.Should().Be(MoneyErrors.CurrencyMismatch, "a rate from dollars does not convert yen");
+        PartialPurchaseCalculator.ByShares(M("600", _jpy), S("1"), usdToGtq).Error!.Code.Should().Be(MoneyErrors.CurrencyMismatch);
     }
 
     [Fact]
-    public void TheLargestAcceptedInputs_NeitherOverflowNorLoseTheShape()
+    public void WhatTheKitCannotHold_IsAnOutcome_NotAnException()
     {
-        PartialPurchase biggest = PartialPurchaseCalculator.ByAmount("USD", PartialPurchaseCalculator.MinPrice, PartialPurchaseCalculator.MaxAmount, PartialPurchaseCalculator.MaxRate).Value;
-        PartialPurchase dearest = PartialPurchaseCalculator.ByShares("USD", PartialPurchaseCalculator.MaxPrice, PartialPurchaseCalculator.MaxShares, PartialPurchaseCalculator.MaxRate).Value;
+        ExchangeRate usdToGtq = Rate(_usd, _gtq, "7.75");
 
-        biggest.Shares.Should().Be(1_000_000_000_000m / 0.000001m);
-        dearest.AmountGtq.Should().Be(1_000_000_000m * 1_000_000_000_000m * 1_000_000m);
-        biggest.ForDisplay().Shares.Should().BePositive();
+        PartialPurchaseCalculator.ByAmount(M("0.000001", _usd), Money.Create(Money.MaxMagnitude, _usd).Value, usdToGtq).Error!.Code
+            .Should().Be(MoneyErrors.SharesInvalid, "a thousand million million at a millionth of a dollar is more shares than one purchase may hold");
+        PartialPurchaseCalculator.ByShares(M("1000000000", _usd), Shares.Create(Shares.MaxQuantity).Value, usdToGtq).Error!.Code
+            .Should().Be(MoneyErrors.AmountOutOfRange, "that many dear shares cost more than money can be");
+        PartialPurchaseCalculator.ByAmount(M("600", _usd), M("500000000000000", _usd), ExchangeRate.Create(_usd, _gtq, ExchangeRate.MaxRate).Value).Error!.Code
+            .Should().Be(MoneyErrors.AmountOutOfRange, "converted at the largest rate it is beyond the range of money");
     }
 }
