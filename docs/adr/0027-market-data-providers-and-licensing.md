@@ -1,6 +1,6 @@
 # ADR-0027: Market data providers, routing and licensing
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-16
 - **Deciders:** Eder
 

@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
@@ -41,7 +42,7 @@ public sealed class SnapshotReadersTests(TimescalePostgresFixture postgres) : IC
             new StockCatalog(session).FindManyAsync([aapl, spy, StockId.Create(Guid.CreateVersion7()), aapl], CancellationToken.None));
 
         found.Should().HaveCount(2);
-        found.Single(l => l.Id == spy).Should().Be(new CatalogListing(spy, SakerWatch.MarketData.Domain.Markets.Mic.Parse("ARCX"), Ticker.Parse("SPY"), "SPY Inc.", SakerWatch.MarketData.Domain.Markets.CurrencyCode.Parse("USD"), AssetType.Etf, true));
+        found.Single(l => l.Id == spy).Should().Be(new CatalogListing(spy, SakerWatch.MarketData.Domain.Markets.Mic.Parse("ARCX"), Ticker.Parse("SPY"), "SPY Inc.", CurrencyCode.Parse("USD"), AssetType.Etf, true));
         found.Single(l => l.Id == aapl).AssetType.Should().Be(AssetType.Equity);
     }
 

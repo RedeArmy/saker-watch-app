@@ -1,6 +1,6 @@
 # ADR-0034: The portfolio API: membership, order and deleting safely
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-18
 - **Deciders:** Eder
 

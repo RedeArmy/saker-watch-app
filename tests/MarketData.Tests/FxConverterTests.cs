@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
@@ -43,7 +44,7 @@ public sealed class FxConverterTests
     private static Rates Bank() => new Rates().With("USD", "GTQ", 16, 7.64572m).With("USD", "GTQ", 17, 7.64572m);
 
     private static Task<Result<FxConversion>> ConvertAsync(FxConverter converter, decimal amount, CurrencyCode from, CurrencyCode to, DateOnly? date = null) =>
-        converter.ConvertAsync(amount, from, to, date, CancellationToken.None);
+        converter.ConvertAsync(Money.Create(amount, from).Value, to, date, CancellationToken.None);
 
     [Fact]
     public async Task Convert_UsdToGtq_AppliesTheStoredRateExactly()
@@ -51,9 +52,9 @@ public sealed class FxConverterTests
         Result<FxConversion> result = await ConvertAsync(Converter(Bank()), 100m, _usd, _gtq);
 
         FxConversion conversion = result.Value;
-        conversion.Converted.Should().Be(764.572m, "100 x 7.64572, hand-computed, with no rounding");
-        conversion.Rate.Should().Be(7.64572m);
-        conversion.Legs.Should().ContainSingle().Which.Should().Be(new FxLeg(_usd, _gtq, 7.64572m, new DateOnly(2026, 10, 17), "banguat", Inverted: false));
+        conversion.Converted.Amount.Should().Be(764.572m, "100 x 7.64572, hand-computed, with no rounding");
+        conversion.Rate.Rate.Should().Be(7.64572m);
+        conversion.Legs.Should().ContainSingle().Which.Should().Be(new FxLeg(ExchangeRate.Create(_usd, _gtq, 7.64572m).Value, new DateOnly(2026, 10, 17), "banguat", Inverted: false));
         (conversion.AsOfDate, conversion.IsStale).Should().Be((new DateOnly(2026, 10, 17), false));
     }
 
@@ -62,10 +63,10 @@ public sealed class FxConverterTests
     {
         FxConversion conversion = (await ConvertAsync(Converter(Bank()), 764.572m, _gtq, _usd)).Value;
 
-        conversion.Converted.Should().BeApproximately(100m, 0.0000000001m);
+        conversion.Converted.Amount.Should().BeApproximately(100m, 0.0000000001m);
         FxLeg leg = conversion.Legs.Should().ContainSingle().Subject;
         (leg.Inverted, leg.From, leg.To, leg.Source).Should().Be((true, _gtq, _usd, "banguat"));
-        leg.Rate.Should().BeApproximately(1m / 7.64572m, 0.000000000000000001m);
+        leg.Rate.Rate.Should().BeApproximately(1m / 7.64572m, 0.000000000000000001m);
     }
 
     [Fact]
@@ -76,9 +77,9 @@ public sealed class FxConverterTests
 
         FxConversion conversion = (await ConvertAsync(Converter(rates), 100m, _cad, _gtq)).Value;
 
-        conversion.Converted.Should().BeApproximately(535.3021074m, 0.0000001m);
+        conversion.Converted.Amount.Should().BeApproximately(535.3021074m, 0.0000001m);
         conversion.Legs.Select(l => (l.From.Value, l.To.Value, l.Inverted, l.Source)).Should().Equal(("CAD", "USD", true, "other"), ("USD", "GTQ", false, "banguat"));
-        conversion.Rate.Should().BeApproximately(conversion.Converted / 100m, 0.000000000000001m);
+        conversion.Rate.Rate.Should().BeApproximately(conversion.Converted.Amount / 100m, 0.000000000000001m);
         conversion.AsOfDate.Should().Be(new DateOnly(2026, 10, 16), "the oldest day among the legs");
     }
 
@@ -89,7 +90,7 @@ public sealed class FxConverterTests
 
         FxConversion conversion = (await ConvertAsync(Converter(rates), 1000m, _cad, _jpy)).Value;
 
-        conversion.Converted.Should().BeApproximately(1000m / 1.4283m * 150m, 0.0000001m);
+        conversion.Converted.Amount.Should().BeApproximately(1000m / 1.4283m * 150m, 0.0000001m);
         conversion.Legs.Should().HaveCount(2);
     }
 
@@ -100,7 +101,7 @@ public sealed class FxConverterTests
 
         FxConversion conversion = (await ConvertAsync(Converter(rates), 10m, _cad, _jpy)).Value;
 
-        conversion.Converted.Should().Be(1050m);
+        conversion.Converted.Amount.Should().Be(1050m);
         conversion.Legs.Should().ContainSingle().Which.Inverted.Should().BeFalse();
     }
 
@@ -111,7 +112,7 @@ public sealed class FxConverterTests
 
         FxLeg leg = (await ConvertAsync(Converter(rates), 8m, _usd, _gtq)).Value.Legs.Single();
 
-        (leg.Inverted, leg.AsOfDate, leg.Rate).Should().Be((true, new DateOnly(2026, 10, 16), 8m));
+        (leg.Inverted, leg.AsOfDate, leg.Rate.Rate).Should().Be((true, new DateOnly(2026, 10, 16), 8m));
     }
 
     [Fact]
@@ -127,7 +128,7 @@ public sealed class FxConverterTests
     {
         FxConversion conversion = (await ConvertAsync(Converter(new Rates()), 42.5m, _usd, _usd)).Value;
 
-        (conversion.Converted, conversion.Rate, conversion.IsStale).Should().Be((42.5m, 1m, false));
+        (conversion.Converted.Amount, conversion.Rate.Rate, conversion.IsStale).Should().Be((42.5m, 1m, false));
         conversion.Legs.Should().BeEmpty();
     }
 
@@ -139,7 +140,7 @@ public sealed class FxConverterTests
         FxConversion conversion = (await ConvertAsync(Converter(rates), 10m, _usd, _gtq, new DateOnly(2026, 10, 12))).Value;
 
         conversion.Legs.Single().AsOfDate.Should().Be(new DateOnly(2026, 10, 9), "never a day the rate was not published for");
-        conversion.Converted.Should().Be(76m);
+        conversion.Converted.Amount.Should().Be(76m);
     }
 
     [Fact]
@@ -200,14 +201,15 @@ public sealed class FxConverterTests
 
     [Fact]
     public async Task Convert_Zero_IsZero() =>
-        (await ConvertAsync(Converter(Bank()), 0m, _usd, _gtq)).Value.Converted.Should().Be(0m);
+        (await ConvertAsync(Converter(Bank()), 0m, _usd, _gtq)).Value.Converted.Amount.Should().Be(0m);
 
     [Fact]
     public async Task Convert_AnAmountThatOverflows_IsRefusedInsteadOfThrowing()
     {
-        Result<FxConversion> result = await ConvertAsync(Converter(Bank()), decimal.MaxValue, _usd, _gtq);
+        Result<FxConversion> result = await ConvertAsync(Converter(Bank()), Money.MaxMagnitude, _usd, _gtq);
 
-        result.Error!.Code.Should().Be(FxConverter.AmountInvalidCode);
+        result.Error!.Code.Should().Be(FxConverter.AmountInvalidCode, "the product is beyond what money can be");
+        Money.Create(decimal.MaxValue, _usd).Error!.Code.Should().Be(MoneyErrors.AmountOutOfRange, "and an amount that large is refused before it gets here");
     }
 
     [Theory]
@@ -220,8 +222,8 @@ public sealed class FxConverterTests
         decimal amount = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
         FxConverter converter = Converter(Bank().With("USD", "CAD", 17, 1.4283m));
 
-        decimal there = (await ConvertAsync(converter, amount, _cad, _gtq)).Value.Converted;
-        decimal back = (await ConvertAsync(converter, there, _gtq, _cad)).Value.Converted;
+        decimal there = (await ConvertAsync(converter, amount, _cad, _gtq)).Value.Converted.Amount;
+        decimal back = (await ConvertAsync(converter, there, _gtq, _cad)).Value.Converted.Amount;
 
         back.Should().BeApproximately(amount, amount * 0.000000000000001m);
     }
@@ -233,8 +235,8 @@ public sealed class FxConverterTests
     {
         FxConverter converter = Converter(Bank());
 
-        decimal a = (await ConvertAsync(converter, small, _usd, _gtq)).Value.Converted;
-        decimal b = (await ConvertAsync(converter, large, _usd, _gtq)).Value.Converted;
+        decimal a = (await ConvertAsync(converter, small, _usd, _gtq)).Value.Converted.Amount;
+        decimal b = (await ConvertAsync(converter, large, _usd, _gtq)).Value.Converted.Amount;
 
         b.Should().BeGreaterThan(a);
     }
@@ -244,7 +246,29 @@ public sealed class FxConverterTests
     {
         FxConversion conversion = (await ConvertAsync(Converter(Bank().With("USD", "CAD", 17, 1.4283m)), 250m, _cad, _gtq)).Value;
 
-        (conversion.Rate * 250m).Should().BeApproximately(conversion.Converted, 0.0000000000001m);
+        (conversion.Rate.Rate * 250m).Should().BeApproximately(conversion.Converted.Amount, 0.0000000000001m);
+    }
+
+    [Fact]
+    public async Task Convert_ReturnsMoneyInTheRightCurrencies_AndEachLegChainsToTheNext()
+    {
+        FxConversion conversion = (await ConvertAsync(Converter(Bank().With("USD", "CAD", 17, 1.4283m)), 250m, _cad, _gtq)).Value;
+
+        (conversion.Amount.Currency, conversion.Converted.Currency).Should().Be((_cad, _gtq));
+        (conversion.From, conversion.To).Should().Be((_cad, _gtq));
+        (conversion.Rate.From, conversion.Rate.To).Should().Be((_cad, _gtq));
+        conversion.Legs.Select(leg => (leg.From, leg.To)).Should().Equal((_cad, _usd), (_usd, _gtq));
+        conversion.Rate.Convert(conversion.Amount).Value.Amount.Should().BeApproximately(conversion.Converted.Amount, 0.0000000000001m);
+        conversion.Rate.Convert(Money.Create(1m, _gtq).Value).Error!.Code.Should().Be(MoneyErrors.CurrencyMismatch, "the combined rate is never applied the wrong way round");
+    }
+
+    [Fact]
+    public async Task Convert_TheSameCurrency_UsesTheIdentityRate()
+    {
+        FxConversion conversion = (await ConvertAsync(Converter(new Rates()), 42.5m, _usd, _usd)).Value;
+
+        conversion.Rate.Should().Be(ExchangeRate.Identity(_usd));
+        conversion.Converted.Should().Be(conversion.Amount);
     }
 
     [Fact]

@@ -136,7 +136,7 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
         oneWeekRaw.Should().Be(oneWeekAdjusted * 4, "the fixture really has a raw close four times the adjusted one before the split");
         WindowPerformance week = report.Windows.Single(w => w.Window == PerformanceWindow.OneWeek);
         week.Baseline!.AdjustedClose.Should().Be(oneWeekAdjusted);
-        week.Change.Should().BeGreaterThan(-0.2m, "a raw-close comparison would show about -75 %");
+        week.Change!.Fraction.Should().BeGreaterThan(-0.2m, "a raw-close comparison would show about -75 %");
         ShouldMatch(report, await OracleAsync(db.Admin, id));
     }
 

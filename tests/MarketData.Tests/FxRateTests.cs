@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Domain.Fx;
 using SakerWatch.MarketData.Domain.Markets;
 

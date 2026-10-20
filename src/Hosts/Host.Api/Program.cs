@@ -40,6 +40,7 @@ Assembly[] moduleAssemblies =
     typeof(SakerWatch.Identity.Application.IAssemblyMarker).Assembly,
     typeof(SakerWatch.Watchlist.Application.IAssemblyMarker).Assembly,
     typeof(SakerWatch.MarketData.Application.IAssemblyMarker).Assembly,
+    typeof(SakerWatch.Calculator.Application.IAssemblyMarker).Assembly,
 ];
 builder.Services.AddApplicationPipeline(moduleAssemblies);
 builder.Services.AddIdempotency(builder.Configuration);
@@ -92,6 +93,7 @@ v1.MapMe();
 v1.MapStocks();
 v1.MapWatchlist();
 v1.MapPortfolios();
+v1.MapCalculations();
 
 // The OpenAPI document and Swagger UI describe the surface only. Outside development the document needs a valid token unless
 // OpenApi:Anonymous is set (ADR-0014).

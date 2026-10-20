@@ -1,3 +1,5 @@
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
+using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Domain.Calendars;
 
 namespace SakerWatch.MarketData.Domain.Performance;
@@ -85,8 +87,15 @@ public static class PerformanceCalculator
             return WindowPerformance.Missing(window, PerformanceGap.InsufficientHistory);
         }
 
-        return target.DayNumber - baseline.Date.DayNumber > allowedGapDays
-            ? WindowPerformance.Missing(window, PerformanceGap.HistoryGap)
-            : WindowPerformance.Of(window, latest.AdjustedClose / baseline.AdjustedClose - 1m, baseline);
+        if (target.DayNumber - baseline.Date.DayNumber > allowedGapDays)
+        {
+            return WindowPerformance.Missing(window, PerformanceGap.HistoryGap);
+        }
+
+        // Both closes are positive by construction, so the change always exists; a baseline the kit refuses is treated as no usable history.
+        Result<RelativeChange> change = RelativeChange.Between(baseline.AdjustedClose, latest.AdjustedClose);
+        return change.IsSuccess
+            ? WindowPerformance.Of(window, change.Value, baseline)
+            : WindowPerformance.Missing(window, PerformanceGap.InsufficientHistory);
     }
 }

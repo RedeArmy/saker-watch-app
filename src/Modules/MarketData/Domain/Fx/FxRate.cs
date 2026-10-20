@@ -1,5 +1,5 @@
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
-using SakerWatch.MarketData.Domain.Markets;
 
 namespace SakerWatch.MarketData.Domain.Fx;
 
@@ -12,31 +12,32 @@ public sealed record FxRate
     /// <summary>The longest source name.</summary>
     public const int MaxSourceLength = 32;
 
-    private FxRate(CurrencyCode baseCurrency, CurrencyCode quote, DateOnly asOfDate, decimal rate, string source)
+    private FxRate(ExchangeRate exchange, DateOnly asOfDate, string source)
     {
-        Base = baseCurrency;
-        Quote = quote;
+        Exchange = exchange;
         AsOfDate = asOfDate;
-        Rate = rate;
         Source = source;
     }
 
+    /// <summary>The rate with its direction: <see cref="Base"/> to <see cref="Quote"/>.</summary>
+    public ExchangeRate Exchange { get; }
+
     /// <summary>The currency being priced (the "1 unit of" side).</summary>
-    public CurrencyCode Base { get; }
+    public CurrencyCode Base => Exchange.From;
 
     /// <summary>The currency the price is expressed in.</summary>
-    public CurrencyCode Quote { get; }
+    public CurrencyCode Quote => Exchange.To;
 
     /// <summary>The day the rate applies to, in the publisher's calendar.</summary>
     public DateOnly AsOfDate { get; }
 
     /// <summary>Units of <see cref="Quote"/> for one unit of <see cref="Base"/>. Always positive.</summary>
-    public decimal Rate { get; }
+    public decimal Rate => Exchange.Rate;
 
     /// <summary>Who published it: lower-case letters, digits and underscores (<c>banguat</c>).</summary>
     public string Source { get; }
 
-    /// <summary>Validates and builds a rate: two different currencies, a positive rate and a well-formed source.</summary>
+    /// <summary>Validates and builds a rate: two different currencies, a positive rate inside the range of rates and a well-formed source.</summary>
     public static Result<FxRate> Create(CurrencyCode baseCurrency, CurrencyCode quote, DateOnly asOfDate, decimal rate, string? source)
     {
         ArgumentNullException.ThrowIfNull(baseCurrency);
@@ -52,9 +53,15 @@ public sealed record FxRate
             return Error.Validation("marketdata.fx.rate_not_positive", "A rate is greater than zero.");
         }
 
+        Result<ExchangeRate> exchange = ExchangeRate.Create(baseCurrency, quote, rate);
+        if (!exchange.IsSuccess)
+        {
+            return exchange.Error!;
+        }
+
         string normalized = (source ?? string.Empty).Trim();
         return normalized.Length is >= 1 and <= MaxSourceLength && normalized.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '_')
-            ? new FxRate(baseCurrency, quote, asOfDate, rate, normalized)
+            ? new FxRate(exchange.Value, asOfDate, normalized)
             : Error.Validation("marketdata.fx.source_invalid", "A source is one to 32 lower-case letters, digits or underscores.");
     }
 }

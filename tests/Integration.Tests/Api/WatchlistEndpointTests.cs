@@ -335,9 +335,11 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
             rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", bob, new { notes = "bob" })),
             rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", alice, new { notes = "alice" })));
 
-        responses.Select(r => r.StatusCode).Should().OnlyContain(status => status == HttpStatusCode.Created || status == HttpStatusCode.OK);
-        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1);
-        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.watchlist_items")).Should().Be(2);
+        // The bodies go into the failure message: this race failed once under the load of the whole suite and could not be reproduced afterwards.
+        string answers = string.Join(" | ", await Task.WhenAll(responses.Select(async r => $"{(int)r.StatusCode} {await r.Content.ReadAsStringAsync()}")));
+        responses.Select(r => r.StatusCode).Should().OnlyContain(status => status == HttpStatusCode.Created || status == HttpStatusCode.OK, "the answers were: {0}", answers);
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1, "the answers were: {0}", answers);
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.watchlist_items")).Should().Be(2, "the answers were: {0}", answers);
         (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(DISTINCT user_id) FROM watchlist.watchlist_items")).Should().Be(2);
         (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM platform.job_queue")).Should().Be(1, "one first load for the stock, whoever registered it");
     }

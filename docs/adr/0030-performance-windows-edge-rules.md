@@ -1,6 +1,6 @@
 # ADR-0030: Performance windows, edge rules and reasons
 
-- **Status:** proposed
+- **Status:** accepted (owner confirmed 2026-10-19)
 - **Date:** 2026-10-17
 - **Deciders:** Eder
 

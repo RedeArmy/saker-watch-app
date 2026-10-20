@@ -3,4 +3,7 @@
     <AssemblyName>SakerWatch.Calculator.Domain</AssemblyName>
     <RootNamespace>SakerWatch.Calculator.Domain</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../BuildingBlocks/Kernel/SakerWatch.BuildingBlocks.Kernel.csproj" />
+  </ItemGroup>
 </Project>

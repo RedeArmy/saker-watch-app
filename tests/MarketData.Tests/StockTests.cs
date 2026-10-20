@@ -30,7 +30,7 @@ public sealed class StockTests
     [Theory]
     [InlineData("XN", "AAPL", "Apple", "USD", "America/New_York", "marketdata.mic.invalid")]
     [InlineData("XNAS", "A PL", "Apple", "USD", "America/New_York", "marketdata.ticker.invalid")]
-    [InlineData("XNAS", "AAPL", "Apple", "US", "America/New_York", "marketdata.currency.invalid")]
+    [InlineData("XNAS", "AAPL", "Apple", "US", "America/New_York", "money.currency_invalid")]
     [InlineData("XNAS", "AAPL", "  ", "USD", "America/New_York", "marketdata.stock.name_invalid")]
     [InlineData("XNAS", "AAPL", null, "USD", "America/New_York", "marketdata.stock.name_invalid")]
     [InlineData("XNAS", "AAPL", "Apple", "USD", "Nowhere/Land", "marketdata.stock.time_zone_invalid")]

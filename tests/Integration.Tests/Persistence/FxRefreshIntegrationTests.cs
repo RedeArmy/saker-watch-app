@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
@@ -80,12 +81,12 @@ public sealed class FxRefreshIntegrationTests(TimescalePostgresFixture postgres)
         await session.BeginAsync(CancellationToken.None);
         var converter = new FxConverter(new FxRateStore(session), Options.Create(new IngestionOptions()), new FakeTimeProvider(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero)));
 
-        FxConversion forward = (await converter.ConvertAsync(100m, _usd, _gtq, null, CancellationToken.None)).Value;
-        FxConversion back = (await converter.ConvertAsync(764.572m, _gtq, _usd, null, CancellationToken.None)).Value;
+        FxConversion forward = (await converter.ConvertAsync(Money.Create(100m, _usd).Value, _gtq, null, CancellationToken.None)).Value;
+        FxConversion back = (await converter.ConvertAsync(Money.Create(764.572m, _gtq).Value, _usd, null, CancellationToken.None)).Value;
 
-        forward.Converted.Should().Be(764.572m);
+        forward.Converted.Amount.Should().Be(764.572m);
         forward.Legs.Single().AsOfDate.Should().Be(new DateOnly(2026, 10, 16));
-        back.Converted.Should().BeApproximately(100m, 0.0000000001m);
+        back.Converted.Amount.Should().BeApproximately(100m, 0.0000000001m);
     }
 
     private sealed class FxRateStoreReader(string connection)
