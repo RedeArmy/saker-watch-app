@@ -34,8 +34,9 @@ public sealed record PricePointResponse(DateOnly Date, decimal Close, decimal Ad
 /// <param name="To">The day of the newest stored price, or null when there is none.</param>
 /// <param name="Count">How many points there are.</param>
 /// <param name="Points">The days, oldest first; empty when the stock has no price in the range.</param>
-/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is the newest), <c>pending</c> or <c>unavailable</c>.</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is the newest), <c>pending</c>, <c>unavailable</c> or <c>delisted</c> (the stock no longer trades).</param>
 /// <param name="StaleSince">When the newest price went stale (ISO-8601 UTC), when it did.</param>
+/// <param name="DelistedAt">When the stock stopped trading (ISO-8601 UTC), only for <c>delisted</c>.</param>
 public sealed record PriceSeriesResponse(
     WatchlistStockResponse Stock,
     string Range,
@@ -45,7 +46,8 @@ public sealed record PriceSeriesResponse(
     int Count,
     IReadOnlyList<PricePointResponse> Points,
     string PriceStatus,
-    DateTimeOffset? StaleSince);
+    DateTimeOffset? StaleSince,
+    DateTimeOffset? DelistedAt);
 
 /// <summary>Endpoints under <c>/v1/stocks</c>.</summary>
 internal static class StocksEndpoints
@@ -96,7 +98,8 @@ internal static class StocksEndpoints
             series.Points.Count,
             [.. series.Points.Select(point => new PricePointResponse(point.Date, point.Close, point.AdjustedClose, point.IsFinal))],
             series.PriceStatus,
-            series.StaleSince)));
+            series.StaleSince,
+            series.DelistedAt)));
     }
 
     private static async Task<IResult> SearchAsync(string? q, ISender sender, CancellationToken cancellationToken)

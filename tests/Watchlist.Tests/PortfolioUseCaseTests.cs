@@ -489,6 +489,24 @@ public sealed class PortfolioUseCaseTests
     }
 
     [Fact]
+    public async Task Metrics_CountADelistedStockApart_KeepItsLastNumbers_AndItIsNeverStale()
+    {
+        (Repository repo, _) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        var gone = new StockSummary(Guid.CreateVersion7(), "XNAS", "GONE", "Gone Inc.", "USD", "equity");
+        repo.Members[PortfolioId.Create(portfolio.Id)] = [new PortfolioMember(_apple.Id, 0, _now), new PortfolioMember(gone.Id, 1, _now)];
+        var market = new SnapshotMarket(
+            Snap(_apple, PriceStatuses.Current, null, ("1D", 0.10m)),
+            Snap(gone, PriceStatuses.Delisted, null, ("1D", -0.50m)));
+
+        PortfolioMetrics metrics = (await new GetPortfolioMetricsHandler(new User(_user), repo, market).Handle(new GetPortfolioMetricsQuery(portfolio.Id), CancellationToken.None)).Value;
+
+        metrics.PriceStatuses.Should().Be(new PriceStatusCounts(1, 0, 0, 0, 1));
+        metrics.StaleSince.Should().BeNull();
+        metrics.Windows[0].Count.Should().Be(2, "a delisted stock keeps the numbers it had");
+    }
+
+    [Fact]
     public async Task Metrics_OfAnEmptyPortfolio_HaveNoNumbersAndNoStaleMoment_AndOfAnotherUsersAreNotFound()
     {
         (Repository repo, _) = World();

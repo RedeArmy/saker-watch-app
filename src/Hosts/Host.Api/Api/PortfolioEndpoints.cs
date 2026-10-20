@@ -56,7 +56,8 @@ public sealed record WindowMetricsResponse(string Window, int Count, decimal? Av
 /// <param name="Stale">The last known price is shown.</param>
 /// <param name="Pending">No history yet.</param>
 /// <param name="Unavailable">No price and loading failed for good.</param>
-public sealed record PriceStatusCountsResponse(int Current, int Stale, int Pending, int Unavailable);
+/// <param name="Delisted">The stock no longer trades; its last known price is shown.</param>
+public sealed record PriceStatusCountsResponse(int Current, int Stale, int Pending, int Unavailable, int Delisted);
 
 /// <summary>The aggregate numbers of a portfolio. Informational only, not financial advice.</summary>
 /// <param name="Portfolio">The portfolio.</param>
@@ -151,7 +152,7 @@ internal static class PortfolioEndpoints
         v1.MapGet("/portfolios/{id:guid}/metrics", MetricsAsync)
             .WithName("GetPortfolioMetrics")
             .WithSummary("How a portfolio did")
-            .WithDescription("The group's equal-weighted average and median change over 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, with how many stocks have a number for each window and the stock that rose most and least, plus how many stocks have current, stale, pending or unavailable prices. A stock without a number for a window is left out of that window, never counted as zero. A portfolio holds no quantities, so these say how the stocks moved, not how a sum of money did. Informational only, not financial advice. Carries an ETag.")
+            .WithDescription("The group's equal-weighted average and median change over 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, with how many stocks have a number for each window and the stock that rose most and least, plus how many stocks have current, stale, pending, unavailable or delisted prices. A stock without a number for a window is left out of that window, never counted as zero. A portfolio holds no quantities, so these say how the stocks moved, not how a sum of money did. Informational only, not financial advice. Carries an ETag.")
             .WithTags(_tag)
             .Produces<PortfolioMetricsResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status304NotModified)
@@ -296,7 +297,7 @@ internal static class PortfolioEndpoints
         return result.ToHttpResult(metrics => ConditionalResults.Json(new PortfolioMetricsResponse(
             ToResponse(metrics.Portfolio),
             metrics.StockCount,
-            new PriceStatusCountsResponse(metrics.PriceStatuses.Current, metrics.PriceStatuses.Stale, metrics.PriceStatuses.Pending, metrics.PriceStatuses.Unavailable),
+            new PriceStatusCountsResponse(metrics.PriceStatuses.Current, metrics.PriceStatuses.Stale, metrics.PriceStatuses.Pending, metrics.PriceStatuses.Unavailable, metrics.PriceStatuses.Delisted),
             metrics.StaleSince,
             [.. metrics.Windows.Select(w => new WindowMetricsResponse(w.Window, w.Count, w.Average, w.Median, ToResponse(w.Best), ToResponse(w.Worst)))])));
     }

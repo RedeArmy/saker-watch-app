@@ -6,6 +6,7 @@ using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
 using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Lifecycle;
 using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
@@ -137,6 +138,9 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<IPriceStore, PriceStore>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
+        services.TryAddScoped<IListingLifecycleStore, ListingLifecycleStore>();
+        services.TryAddScoped<ListingLifecycle>();
+        services.TryAddScoped<LifecycleCommandRunner>();
         services.TryAddScoped<IFreshnessReader, FreshnessReader>();
         services.AddHostedService<MarketDataScheduler>();
         services.AddSingleton<MarketDataFreshnessSampler>();

@@ -30,7 +30,8 @@ public sealed record WindowMetrics(string Window, int Count, decimal? Average, d
 /// <param name="Stale">The last known price is shown; a session has settled since.</param>
 /// <param name="Pending">No history yet.</param>
 /// <param name="Unavailable">No price and loading failed for good.</param>
-public sealed record PriceStatusCounts(int Current, int Stale, int Pending, int Unavailable);
+/// <param name="Delisted">The stock no longer trades; its last known price is shown.</param>
+public sealed record PriceStatusCounts(int Current, int Stale, int Pending, int Unavailable, int Delisted = 0);
 
 /// <summary>The aggregate numbers of a portfolio. Informational only: nothing here is a recommendation.</summary>
 /// <param name="Portfolio">The portfolio.</param>
@@ -73,7 +74,8 @@ public sealed class GetPortfolioMetricsHandler(ICurrentUser currentUser, IPortfo
             stocks.Count(s => s.PriceStatus == PriceStatuses.Current),
             stocks.Count(s => s.PriceStatus == PriceStatuses.Stale),
             stocks.Count(s => s.PriceStatus == PriceStatuses.Pending),
-            stocks.Count(s => s.PriceStatus == PriceStatuses.Unavailable));
+            stocks.Count(s => s.PriceStatus == PriceStatuses.Unavailable),
+            stocks.Count(s => s.PriceStatus == PriceStatuses.Delisted));
         DateTimeOffset[] staleMoments = [.. stocks.Where(s => s.StaleSince is not null).Select(s => s.StaleSince!.Value)];
         DateTimeOffset? staleSince = staleMoments.Length == 0 ? null : staleMoments.Min();
 

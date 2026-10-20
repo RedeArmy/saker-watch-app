@@ -53,13 +53,14 @@ public sealed class MarketSnapshots(
         foreach (CatalogListing listing in listings)
         {
             latest.TryGetValue(listing.Id, out LatestBar? bar);
-            (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, bar, failed.Contains(listing.Id), now, settle);
+            (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, bar, failed.Contains(listing.Id), listing.DelistedAt, now, settle);
             snapshots[listing.Id.Value] = new StockSnapshot(
                 Summary(listing),
                 status,
                 bar is null ? null : new PriceSnapshot(bar.Close, bar.Date, bar.IsFinal),
                 staleSince,
-                [.. reports[listing.Id].Windows.Select(Window)]);
+                [.. reports[listing.Id].Windows.Select(Window)],
+                listing.DelistedAt);
         }
 
         return snapshots;

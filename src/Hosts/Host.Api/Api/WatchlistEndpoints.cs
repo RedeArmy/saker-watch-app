@@ -49,10 +49,11 @@ public sealed record WindowResponse(string Window, decimal? Change, DateOnly? Ba
 /// <param name="TargetPrice">The caller's target price, or null. A note, never an order.</param>
 /// <param name="CreatedAt">When the stock was added (ISO-8601 UTC).</param>
 /// <param name="UpdatedAt">When the item last changed (ISO-8601 UTC).</param>
-/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is shown), <c>pending</c> (no history yet) or <c>unavailable</c> (loading failed for good).</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is shown), <c>pending</c> (no history yet) or <c>unavailable</c> (loading failed for good) or <c>delisted</c> (the stock no longer trades; the last known price is shown).</param>
 /// <param name="Price">The newest stored bar, or null when there is none.</param>
 /// <param name="StaleSince">When the price went stale (ISO-8601 UTC), only for <c>stale</c>.</param>
 /// <param name="Windows">The eight performance windows, in order.</param>
+/// <param name="DelistedAt">When the stock stopped trading (ISO-8601 UTC), only for <c>delisted</c>.</param>
 public sealed record WatchlistEntryResponse(
     Guid Id,
     WatchlistStockResponse Stock,
@@ -63,7 +64,8 @@ public sealed record WatchlistEntryResponse(
     string PriceStatus,
     PriceResponse? Price,
     DateTimeOffset? StaleSince,
-    IReadOnlyList<WindowResponse> Windows);
+    IReadOnlyList<WindowResponse> Windows,
+    DateTimeOffset? DelistedAt);
 
 /// <summary>A page of the caller's watchlist.</summary>
 /// <param name="Items">The entries of the page.</param>
@@ -119,7 +121,7 @@ internal static class WatchlistEndpoints
         v1.MapGet("/watchlist", ListAsync)
             .WithName("GetWatchlist")
             .WithSummary("List the watchlist")
-            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller's portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
+            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus: current, stale with staleSince, pending, unavailable, or delisted with delistedAt when the stock no longer trades) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller's portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
             .WithTags(_tag)
             .Produces<WatchlistPageResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status304NotModified)
@@ -207,7 +209,8 @@ internal static class WatchlistEndpoints
             entry.PriceStatus,
             entry.Price is null ? null : new PriceResponse(entry.Price.Value, entry.Price.Date, entry.Price.IsFinal),
             entry.StaleSince,
-            [.. entry.Windows.Select(w => new WindowResponse(w.Window, w.Change, w.BaselineDate, w.Reason))]);
+            [.. entry.Windows.Select(w => new WindowResponse(w.Window, w.Change, w.BaselineDate, w.Reason))],
+            entry.DelistedAt);
 
     private static async Task<IResult> PutAsync(string market, string ticker, PutWatchlistItemRequest? body, ISender sender, CancellationToken cancellationToken)
     {

@@ -7,6 +7,7 @@ using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Lifecycle;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
@@ -57,7 +58,14 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
             .HandleAsync(new BackfillStockJob(world.Id.Value), Context(), CancellationToken.None));
 
     private static Task RefreshAsync(World world, DateOnly day) => InSessionAsync(world, session =>
-        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), WaiterFor(world), LifecycleFor(session, world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+            .HandleAsync(new RefreshStockJob(world.Id.Value, day), Context(), CancellationToken.None));
+
+    private static ListingLifecycle LifecycleFor(DbSession session, World world, IngestionOptions? options = null) =>
+        new(new StockCatalog(session), new ListingLifecycleStore(session), Options.Create(options ?? new IngestionOptions()), world.Time, NullLogger<ListingLifecycle>.Instance);
+
+    private static Task RefreshWithAsync(World world, DateOnly day, IngestionOptions settings) => InSessionAsync(world, session =>
+        new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), WaiterFor(world), LifecycleFor(session, world, settings), Options.Create(settings), world.Time, NullLogger<RefreshStockHandler>.Instance)
             .HandleAsync(new RefreshStockJob(world.Id.Value, day), Context(), CancellationToken.None));
 
     private static FollowUpJobs WaiterFor(World world) => new(world.Jobs, Options.Create(new IngestionOptions()), world.Time);
@@ -181,6 +189,64 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
     }
 
     [Fact]
+    public async Task Refresh_WhenTheProviderDoesNotKnowTheSymbol_CountsTheDay_WithoutFailingTheListing_AndDelistsAtTheLimit()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Time.Advance(TimeSpan.FromHours(36));
+        var settings = new IngestionOptions { DelistAfterNotFoundDays = 2 };
+
+        world.Provider.FailNext(ProviderErrors.SymbolNotFound("fake", "AAPL"));
+        await RefreshWithAsync(world, new DateOnly(2026, 10, 16), settings);
+        world.Provider.FailNext(ProviderErrors.SymbolNotFound("fake", "AAPL"));
+        await RefreshWithAsync(world, new DateOnly(2026, 10, 16), settings);
+
+        (await world.Admin.ScalarAsync<int>("SELECT not_found_days FROM marketdata.ingestion_state")).Should().Be(1, "the same day counts once however many times it is tried");
+        (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("ok", "the listing is not failed for good on a day the provider did not know it");
+        (await world.Admin.ScalarAsync<bool>("SELECT is_active FROM marketdata.stocks")).Should().BeTrue();
+
+        world.Provider.FailNext(ProviderErrors.SymbolNotFound("fake", "AAPL"));
+        await RefreshWithAsync(world, new DateOnly(2026, 10, 17), settings);
+
+        (await world.Admin.ScalarAsync<bool>("SELECT is_active FROM marketdata.stocks")).Should().BeFalse("two different days in a row reached the limit");
+        (await world.Admin.ScalarAsync<bool>("SELECT delisted_at IS NOT NULL FROM marketdata.stocks")).Should().BeTrue();
+        (await world.Admin.ScalarAsync<string>("SELECT source FROM marketdata.corporate_actions WHERE kind = 'delisting'")).Should().Be("ingestion");
+        (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("ok");
+    }
+
+    [Fact]
+    public async Task Refresh_AnySuccessStartsTheCountOfUnknownDaysAgain()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Time.Advance(TimeSpan.FromHours(36));
+        var settings = new IngestionOptions { DelistAfterNotFoundDays = 2 };
+
+        world.Provider.FailNext(ProviderErrors.SymbolNotFound("fake", "AAPL"));
+        await RefreshWithAsync(world, new DateOnly(2026, 10, 16), settings);
+        await RefreshWithAsync(world, new DateOnly(2026, 10, 17), settings);
+        world.Provider.FailNext(ProviderErrors.SymbolNotFound("fake", "AAPL"));
+        await RefreshWithAsync(world, new DateOnly(2026, 10, 18), settings);
+
+        (await world.Admin.ScalarAsync<int>("SELECT not_found_days FROM marketdata.ingestion_state")).Should().Be(1, "the day in between worked, so the days are not in a row");
+        (await world.Admin.ScalarAsync<bool>("SELECT is_active FROM marketdata.stocks")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Refresh_OfADelistedStock_IsSkipped_AndItIsLeftOutOfWhatIngestionTries()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        await world.Admin.ExecuteAsync("UPDATE marketdata.stocks SET is_active = false, delisted_at = now()");
+        world.Time.Advance(TimeSpan.FromHours(36));
+        int calls = world.Provider.Calls;
+
+        await RefreshAsync(world, new DateOnly(2026, 10, 16));
+
+        world.Provider.Calls.Should().Be(calls, "a delisted stock is never asked for again");
+    }
+
+    [Fact]
     public async Task Refresh_WhenTheCallBudgetIsSpent_WaitsInTheQueueInsteadOfFailing()
     {
         World world = await SetUpAsync(postgres);
@@ -209,7 +275,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         world.Provider.FailNext(ProviderErrors.RateLimited("fake"));
 
         await InSessionAsync(world, session =>
-            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), WaiterFor(world), LifecycleFor(session, world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
                 .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16), Waits: 3), new JobContext(Guid.CreateVersion7(), "marketdata.refresh:abc:20261016:w3", 1, 5, null), CancellationToken.None));
 
         world.Jobs.Queued.Should().ContainSingle().Which.Key.Should().Be("marketdata.refresh:abc:20261016:w4");
@@ -225,7 +291,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         int max = new IngestionOptions().MaxRateLimitWaits;
 
         Func<Task> act = () => InSessionAsync(world, session =>
-            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new IngestionState(session), WaiterFor(world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), WaiterFor(world), LifecycleFor(session, world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
                 .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16), Waits: max), Context(), CancellationToken.None));
 
         await act.Should().ThrowAsync<IngestionRetryException>();

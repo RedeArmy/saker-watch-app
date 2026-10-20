@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
+using SakerWatch.MarketData.Application.Lifecycle;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
@@ -70,15 +71,15 @@ public sealed partial class IngestMarketDayHandler(IStockCatalog catalog, IJobEn
 public sealed partial class RefreshStockHandler(
     ListingIngestion ingestion,
     IPriceStore prices,
-    IIngestionState state,
     FollowUpJobs followUps,
+    ListingLifecycle lifecycle,
     IOptions<IngestionOptions> options,
     TimeProvider clock,
     ILogger<RefreshStockHandler> logger) : IJobHandler<RefreshStockJob>
 {
     private static readonly Counter<long> _refreshes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_refreshes_total",
-        description: "Daily refreshes of a listing by outcome (completed, backfill_queued, reload_queued, waiting, retry, failed).");
+        description: "Daily refreshes of a listing by outcome (completed, backfill_queued, reload_queued, waiting, retry, failed, not_found, delisted).");
 
     private static readonly Counter<long> _rows = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_price_rows_total",
@@ -118,7 +119,7 @@ public sealed partial class RefreshStockHandler(
         bool rewritten = merged.Value.Points.Any(point => stored.TryGetValue(point.Raw.Date, out decimal old) && HasChanged(old, point.AdjustedClose, settings.RewriteTolerance));
 
         int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
-        await state.RecordSuccessAsync(id, now, cancellationToken);
+        await ingestion.RecordSuccessAsync(id, now, cancellationToken);
         _rows.Add(written, new KeyValuePair<string, object?>("operation", "refresh"));
 
         if (rewritten)
@@ -157,6 +158,14 @@ public sealed partial class RefreshStockHandler(
         {
             Count("retry");
             throw new IngestionRetryException(error.Code);
+        }
+
+        // A listing that had prices and that the provider no longer knows is not failed for good on the first day: the provider may have had a bad
+        // day. It is counted, and it is delisted when the days in a row reach the limit (ADR-0039); the next daily refresh tries again.
+        if (ProviderErrors.Classify(error) == ProviderFailureKind.SymbolNotFound)
+        {
+            Count(await lifecycle.NoteSymbolNotFoundAsync(id, payload.Day, cancellationToken) ? "delisted" : "not_found");
+            return;
         }
 
         await ingestion.RecordPermanentFailureAsync(id, error.Code, now, cancellationToken);

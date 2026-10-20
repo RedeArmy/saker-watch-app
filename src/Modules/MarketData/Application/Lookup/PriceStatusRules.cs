@@ -8,16 +8,21 @@ namespace SakerWatch.MarketData.Application.Lookup;
 
 /// <summary>
 /// How current the prices of a stock are (ADR-0033): the one rule behind the watchlist, the portfolios and the price charts, so they cannot
-/// disagree. A stock with no price is pending, or unavailable once loading failed for good; one with a price is current, or stale since the
-/// session that settled after it (ADR-0029).
+/// disagree. A delisted stock is delisted, whatever it has stored (ADR-0039). Otherwise a stock with no price is pending, or unavailable once
+/// loading failed for good; one with a price is current, or stale since the session that settled after it (ADR-0029).
 /// </summary>
 public static class PriceStatusRules
 {
     /// <summary>The status of a stock and, when it is stale, since when.</summary>
-    public static (string Status, DateTimeOffset? StaleSince) Of(ExchangeCalendars calendars, Mic market, LatestBar? bar, bool failed, DateTimeOffset now, TimeSpan settle)
+    public static (string Status, DateTimeOffset? StaleSince) Of(ExchangeCalendars calendars, Mic market, LatestBar? bar, bool failed, DateTimeOffset? delistedAt, DateTimeOffset now, TimeSpan settle)
     {
         ArgumentNullException.ThrowIfNull(calendars);
         ArgumentNullException.ThrowIfNull(market);
+
+        if (delistedAt is not null)
+        {
+            return (PriceStatuses.Delisted, null);
+        }
 
         if (bar is null)
         {

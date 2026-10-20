@@ -66,13 +66,13 @@ public sealed class PriceHistory(
         IReadOnlyDictionary<StockId, LatestBar> latest = await bars.ReadAsync(one, cancellationToken);
         IReadOnlySet<StockId> failed = await statuses.FailedAsync(one, cancellationToken);
         latest.TryGetValue(listing.Id, out LatestBar? newest);
-        (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, newest, failed.Contains(listing.Id), clock.GetUtcNow(), ingestion.Value.SettleDelay);
+        (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, newest, failed.Contains(listing.Id), listing.DelistedAt, clock.GetUtcNow(), ingestion.Value.SettleDelay);
 
         string used = wantedInterval == PriceIntervals.Auto ? PriceRange.DefaultInterval(wantedRange) : wantedInterval;
         StockSummary stock = new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, AssetTypeText(listing.AssetType));
         if (newest is null)
         {
-            return new PriceSeries(stock, wantedRange, used, null, null, [], status, staleSince);
+            return new PriceSeries(stock, wantedRange, used, null, null, [], status, staleSince, listing.DelistedAt);
         }
 
         DateOnly? from = PriceRange.StartOf(wantedRange, newest.Date);
@@ -85,7 +85,8 @@ public sealed class PriceHistory(
             newest.Date,
             [.. days.Select(day => new ChartPoint(day.Date, day.Close, day.AdjustedClose, day.IsFinal))],
             status,
-            staleSince);
+            staleSince,
+            listing.DelistedAt);
     }
 
     /// <inheritdoc />

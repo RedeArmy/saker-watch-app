@@ -50,6 +50,9 @@ public sealed class Stock : AggregateRoot<StockId>
     /// <summary>False once the instrument is delisted; its history is kept until the retention policy removes it.</summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>When the instrument stopped trading on its market (ADR-0039); <see langword="null"/> while it trades.</summary>
+    public DateTimeOffset? DelistedAt { get; private set; }
+
     /// <summary>When the listing entered the catalog.</summary>
     public DateTimeOffset ListedAt { get; }
 
@@ -103,11 +106,22 @@ public sealed class Stock : AggregateRoot<StockId>
         return Result.Success();
     }
 
-    /// <summary>Marks the instrument as delisted. Idempotent.</summary>
-    public void Deactivate() => IsActive = false;
+    /// <summary>
+    /// Marks the instrument as delisted at <paramref name="at"/> (ADR-0039): it is no longer active, so ingestion leaves it alone, and its history is
+    /// kept. Idempotent: delisting again keeps the first moment.
+    /// </summary>
+    public void Delist(DateTimeOffset at)
+    {
+        IsActive = false;
+        DelistedAt ??= at;
+    }
 
     /// <summary>Marks the instrument as listed again (a relisting or a wrong delisting). Idempotent.</summary>
-    public void Reactivate() => IsActive = true;
+    public void Relist()
+    {
+        IsActive = true;
+        DelistedAt = null;
+    }
 
     private static string? NormalizeName(string? name)
     {

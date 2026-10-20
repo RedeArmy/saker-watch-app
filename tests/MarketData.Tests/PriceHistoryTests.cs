@@ -135,6 +135,20 @@ public sealed class PriceHistoryTests
         reader.Reads.Should().BeEmpty("there is no anchor to start a range from, so nothing is read");
     }
 
+    [Fact]
+    public async Task ADelistedStock_IsDelisted_WhateverItHasStored_WithTheMomentItStoppedTrading()
+    {
+        var delistedAt = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+        CatalogListing delisted = _listing with { IsActive = false, DelistedAt = delistedAt };
+        var reader = new Reader(Bar(9, 30, 90m));
+
+        PriceSeries series = (await History(reader, Newest(9, 30), listing: delisted).SeriesAsync("XNAS", "AAPL", "1M", "auto", CancellationToken.None)).Value;
+        PriceSeries empty = (await History(new Reader(), latest: null, listing: delisted).SeriesAsync("XNAS", "AAPL", "1M", "auto", CancellationToken.None)).Value;
+
+        (series.PriceStatus, series.StaleSince, series.DelistedAt, series.Points.Count).Should().Be((PriceStatuses.Delisted, (DateTimeOffset?)null, (DateTimeOffset?)delistedAt, 1));
+        (empty.PriceStatus, empty.DelistedAt).Should().Be((PriceStatuses.Delisted, (DateTimeOffset?)delistedAt));
+    }
+
     [Theory]
     [InlineData("2Y", "auto", PriceHistory.RangeInvalidCode)]
     [InlineData("", "auto", PriceHistory.RangeInvalidCode)]

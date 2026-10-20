@@ -68,6 +68,7 @@ public sealed record ChartPoint(DateOnly Date, decimal Close, decimal AdjustedCl
 /// <param name="Points">The days, oldest first. Empty when the stock has no price in the range.</param>
 /// <param name="PriceStatus">How current the prices are (see <see cref="PriceStatuses"/>).</param>
 /// <param name="StaleSince">When the newest price went stale, when it did.</param>
+/// <param name="DelistedAt">When the stock stopped trading, when <paramref name="PriceStatus"/> is delisted.</param>
 public sealed record PriceSeries(
     StockSummary Stock,
     string Range,
@@ -76,7 +77,8 @@ public sealed record PriceSeries(
     DateOnly? To,
     IReadOnlyList<ChartPoint> Points,
     string PriceStatus,
-    DateTimeOffset? StaleSince);
+    DateTimeOffset? StaleSince,
+    DateTimeOffset? DelistedAt = null);
 
 /// <summary>Read access to stored prices for the modules that draw them: the stock detail and the watchlist sparklines.</summary>
 public interface IPriceHistory

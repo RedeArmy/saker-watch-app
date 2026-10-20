@@ -149,9 +149,19 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_attempt_at");
 
+                    b.Property<DateOnly?>("LastNotFoundOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_not_found_on");
+
                     b.Property<DateTimeOffset?>("LastSuccessAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_success_at");
+
+                    b.Property<int>("NotFoundDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("not_found_days");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -165,6 +175,8 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                     b.ToTable("ingestion_state", "marketdata", t =>
                         {
                             t.HasCheckConstraint("ck_ingestion_state_failure", "(status = 'failed') = (failure_code IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_ingestion_state_not_found_days", "not_found_days >= 0");
 
                             t.HasCheckConstraint("ck_ingestion_state_status", "status IN ('pending', 'ok', 'failed')");
                         });
@@ -258,6 +270,10 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         .HasColumnName("currency")
                         .IsFixedLength();
 
+                    b.Property<DateTimeOffset?>("DelistedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("delisted_at");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -304,6 +320,8 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_stocks_currency", "currency ~ '^[A-Z]{3}$'");
 
+                            t.HasCheckConstraint("ck_stocks_delisted", "delisted_at IS NULL OR NOT is_active");
+
                             t.HasCheckConstraint("ck_stocks_market_mic", "market_mic ~ '^[A-Z0-9]{4}$'");
 
                             t.HasCheckConstraint("ck_stocks_name", "char_length(name) BETWEEN 1 AND 200");
@@ -346,6 +364,43 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                     b.ToTable("symbol_aliases", "marketdata");
                 });
 
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.TickerHistoryRow", b =>
+                {
+                    b.Property<string>("MarketMic")
+                        .HasMaxLength(4)
+                        .HasColumnType("character(4)")
+                        .HasColumnName("market_mic")
+                        .IsFixedLength();
+
+                    b.Property<string>("Ticker")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("ticker");
+
+                    b.Property<DateOnly>("ChangedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("changed_on");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("StockId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_id");
+
+                    b.HasKey("MarketMic", "Ticker")
+                        .HasName("pk_ticker_history");
+
+                    b.HasIndex("StockId")
+                        .HasDatabaseName("ix_ticker_history_stock_id");
+
+                    b.ToTable("ticker_history", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_ticker_history_ticker", "ticker ~ '^[A-Z0-9][A-Z0-9._-]{0,15}$'");
+                        });
+                });
+
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.CorporateActionRow", b =>
                 {
                     b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
@@ -374,6 +429,15 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.SymbolAliasRow", b =>
+                {
+                    b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
+                        .WithMany()
+                        .HasForeignKey("StockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.TickerHistoryRow", b =>
                 {
                     b.HasOne("SakerWatch.MarketData.Infrastructure.Persistence.StockRow", null)
                         .WithMany()
