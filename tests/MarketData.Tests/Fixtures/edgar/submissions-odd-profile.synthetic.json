@@ -1,0 +1,10 @@
+{
+  "cik": 320193,
+  "sic": "35",
+  "sicDescription": "<b>bold</b>",
+  "name": "  Apple Inc.  ",
+  "tickers": ["aapl", "bad ticker", "AAPL"],
+  "exchanges": ["Nasdaq", "x<y"],
+  "fiscalYearEnd": "1332",
+  "filings": { "recent": { "accessionNumber": [], "filingDate": [], "reportDate": [], "form": [], "primaryDocument": [] } }
+}

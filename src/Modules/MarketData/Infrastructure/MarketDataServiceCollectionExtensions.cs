@@ -14,6 +14,7 @@ using SakerWatch.MarketData.Contracts;
 using SakerWatch.MarketData.Infrastructure.Persistence;
 using SakerWatch.MarketData.Infrastructure.Providers;
 using SakerWatch.MarketData.Infrastructure.Providers.Banguat;
+using SakerWatch.MarketData.Infrastructure.Providers.Edgar;
 using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 
 namespace SakerWatch.MarketData.Infrastructure;
@@ -147,6 +148,50 @@ public static class MarketDataServiceCollectionExtensions
         services.AddHostedService(provider => provider.GetRequiredService<MarketDataFreshnessSampler>());
         services.AddSingleton<BanguatFxProvider>();
         services.AddSingleton<IFxRateProvider>(provider => provider.GetRequiredService<BanguatFxProvider>());
+        services.AddEdgar(configuration);
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the SEC EDGAR adapter for company profiles and filings (ADR-0040) <b>only when</b> <c>Edgar:Enabled</c> is true, with the
+    /// identity the SEC requires. Off by default: nothing calls the SEC until the owner says who is calling. The settings are always checked at
+    /// startup, so a bad address or an identity without a contact stops the host instead of failing the first call.
+    /// </summary>
+    public static IServiceCollection AddEdgar(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<EdgarOptions>().Bind(configuration.GetSection(EdgarOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EdgarOptions>, EdgarOptionsValidator>());
+
+        var settings = new EdgarOptions();
+        configuration.GetSection(EdgarOptions.SectionName).Bind(settings);
+        if (!settings.Enabled || services.Any(descriptor => descriptor.ServiceType == typeof(EdgarProvider)))
+        {
+            return services;
+        }
+
+        Uri www = Uri.TryCreate(settings.WwwBaseUrl, UriKind.Absolute, out Uri? wwwUri) ? wwwUri : new Uri(new EdgarOptions().WwwBaseUrl);
+        Uri data = Uri.TryCreate(settings.DataBaseUrl, UriKind.Absolute, out Uri? dataUri) ? dataUri : new Uri(new EdgarOptions().DataBaseUrl);
+        services.AddSakerHttpClient(
+            EdgarProvider.ClientName,
+            www,
+            http =>
+            {
+                http.AllowedHosts = [.. new[] { www, data }.Select(uri => uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}").Distinct(StringComparer.OrdinalIgnoreCase)];
+                // The submissions of a large filer hold a thousand recent filings and the map of tickers has about ten thousand rows.
+                http.MaxResponseBytes = 16 * 1024 * 1024;
+                http.MaxRetries = 2;
+                http.AttemptTimeout = TimeSpan.FromSeconds(20);
+                http.TotalTimeout = TimeSpan.FromSeconds(45);
+                // The gate of the adapter keeps the pace; a 429 is the SEC asking to slow down, not a sign the service is unwell.
+                http.RateLimitIsTransient = false;
+            });
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<EdgarProvider>();
+        services.AddSingleton<IFundamentalsProvider>(provider => provider.GetRequiredService<EdgarProvider>());
+        services.AddSingleton<IFilingsProvider>(provider => provider.GetRequiredService<EdgarProvider>());
         return services;
     }
 }

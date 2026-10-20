@@ -1,0 +1,11 @@
+{
+  "0": { "cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc." },
+  "1": { "cik_str": 789019, "ticker": "MSFT", "title": "MICROSOFT CORP" },
+  "2": { "cik_str": 1067983, "ticker": "BRK-B", "title": "BERKSHIRE HATHAWAY INC" },
+  "3": { "cik_str": 999, "ticker": "AAPL", "title": "A later row with the same ticker keeps the first" },
+  "4": { "cik_str": -5, "ticker": "NEGA", "title": "A key that is not positive" },
+  "5": { "cik_str": 12345, "ticker": "bad ticker", "title": "A ticker with a space" },
+  "6": { "cik_str": "not a number", "ticker": "TEXT", "title": "A key that is text" },
+  "7": "not an object",
+  "8": { "cik_str": "0000051143", "ticker": "IBM", "title": "INTERNATIONAL BUSINESS MACHINES CORP" }
+}
