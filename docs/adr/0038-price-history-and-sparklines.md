@@ -1,6 +1,6 @@
 # ADR-0038: Price history for charts and sparklines
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-19
 - **Deciders:** Eder
 

@@ -1,6 +1,6 @@
 # ADR-0039: The life of a listing: delisting, relisting and a change of ticker
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-20
 - **Deciders:** Eder
 
