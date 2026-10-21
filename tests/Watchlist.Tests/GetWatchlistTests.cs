@@ -269,6 +269,24 @@ public sealed class GetWatchlistTests
     }
 
     [Fact]
+    public async Task TheDelistedFilter_ListsOnlyTheStocksThatNoLongerTrade_WithTheMomentTheyStopped()
+    {
+        var delistedAt = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+        StockSnapshot[] stocks =
+        [
+            Snapshot("AAA", "A", 1m),
+            Snapshot("BBB", "B", 2m, status: PriceStatuses.Delisted) with { DelistedAt = delistedAt },
+        ];
+        (GetWatchlistHandler handler, _) = Build(stocks);
+
+        WatchlistPage page = await RunAsync(handler, Query(priceStatus: PriceStatuses.Delisted));
+
+        page.Items.Select(e => (e.Stock.Ticker, e.PriceStatus, e.DelistedAt, e.StaleSince)).Should().Equal(("BBB", PriceStatuses.Delisted, (DateTimeOffset?)delistedAt, (DateTimeOffset?)null));
+        page.Items[0].Price.Should().NotBeNull("the last known price is still shown");
+        new GetWatchlistValidator().Validate(Query(priceStatus: PriceStatuses.Delisted)).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ASortByNameReadsTheMarketDataOnlyForThePage()
     {
         (GetWatchlistHandler handler, Market market) = Build(_four);

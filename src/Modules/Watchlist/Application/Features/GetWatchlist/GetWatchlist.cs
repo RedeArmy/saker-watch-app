@@ -37,6 +37,7 @@ public sealed record GetWatchlistQuery(string? Sort, string? Order, string? Mark
 /// <param name="Price">The newest stored bar, or <see langword="null"/>.</param>
 /// <param name="StaleSince">When the price went stale, when it did.</param>
 /// <param name="Windows">The eight performance windows.</param>
+/// <param name="DelistedAt">When the stock stopped trading, when <paramref name="PriceStatus"/> is delisted.</param>
 public sealed record WatchlistEntry(
     Guid Id,
     StockSummary Stock,
@@ -47,7 +48,8 @@ public sealed record WatchlistEntry(
     string PriceStatus,
     PriceSnapshot? Price,
     DateTimeOffset? StaleSince,
-    IReadOnlyList<WindowSnapshot> Windows);
+    IReadOnlyList<WindowSnapshot> Windows,
+    DateTimeOffset? DelistedAt = null);
 
 /// <summary>One page of the watchlist.</summary>
 /// <param name="Items">The entries of the page.</param>
@@ -77,7 +79,7 @@ public sealed class GetWatchlistValidator : AbstractValidator<GetWatchlistQuery>
 
     private static readonly string[] _orders = ["asc", "desc"];
     private static readonly string[] _assetTypes = ["equity", "etf", "other"];
-    private static readonly string[] _priceStatuses = [PriceStatuses.Current, PriceStatuses.Stale, PriceStatuses.Pending, PriceStatuses.Unavailable];
+    private static readonly string[] _priceStatuses = [PriceStatuses.Current, PriceStatuses.Stale, PriceStatuses.Pending, PriceStatuses.Unavailable, PriceStatuses.Delisted];
 
     /// <summary>Creates the validator.</summary>
     public GetWatchlistValidator()
@@ -112,19 +114,13 @@ public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepo
             return Error.Unauthorized(WatchlistErrors.NotAuthenticated, "Authentication is required.");
         }
 
-        IReadOnlyList<WatchlistItem> all = await items.ListAsync(userId, cancellationToken);
-        if (request.PortfolioId is { } portfolioId)
+        Result<IReadOnlyList<WatchlistItem>> scoped = await PortfolioScope.ItemsAsync(items, portfolios, userId, request.PortfolioId, cancellationToken);
+        if (!scoped.IsSuccess)
         {
-            var id = PortfolioId.Create(portfolioId);
-            if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
-            {
-                return PortfolioErrors.PortfolioNotFound();
-            }
-
-            HashSet<Guid> inPortfolio = [.. (await portfolios.MembersAsync(userId, id, cancellationToken)).Select(member => member.StockId)];
-            all = [.. all.Where(item => inPortfolio.Contains(item.StockId))];
+            return scoped.Error!;
         }
 
+        IReadOnlyList<WatchlistItem> all = scoped.Value;
         IReadOnlyDictionary<Guid, StockSummary> stocks = await market.FindManyAsync([.. all.Select(item => item.StockId)], cancellationToken);
 
         // An item whose stock the catalog cannot find is left out: it cannot be shown, and nothing deletes catalog rows.
@@ -222,5 +218,6 @@ public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepo
             snapshot?.PriceStatus ?? PriceStatuses.Pending,
             snapshot?.Price,
             snapshot?.StaleSince,
-            snapshot?.Windows ?? []);
+            snapshot?.Windows ?? [],
+            snapshot?.DelistedAt);
 }

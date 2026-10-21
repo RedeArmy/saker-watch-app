@@ -4,6 +4,7 @@ using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Problems;
 using SakerWatch.BuildingBlocks.Web.RateLimiting;
+using SakerWatch.Watchlist.Application.Features.GetSparklines;
 using SakerWatch.Watchlist.Application.Features.GetWatchlist;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
 using SakerWatch.Watchlist.Application.Features.RemoveWatchlistItem;
@@ -48,10 +49,11 @@ public sealed record WindowResponse(string Window, decimal? Change, DateOnly? Ba
 /// <param name="TargetPrice">The caller's target price, or null. A note, never an order.</param>
 /// <param name="CreatedAt">When the stock was added (ISO-8601 UTC).</param>
 /// <param name="UpdatedAt">When the item last changed (ISO-8601 UTC).</param>
-/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is shown), <c>pending</c> (no history yet) or <c>unavailable</c> (loading failed for good).</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known price is shown), <c>pending</c> (no history yet) or <c>unavailable</c> (loading failed for good) or <c>delisted</c> (the stock no longer trades; the last known price is shown).</param>
 /// <param name="Price">The newest stored bar, or null when there is none.</param>
 /// <param name="StaleSince">When the price went stale (ISO-8601 UTC), only for <c>stale</c>.</param>
 /// <param name="Windows">The eight performance windows, in order.</param>
+/// <param name="DelistedAt">When the stock stopped trading (ISO-8601 UTC), only for <c>delisted</c>.</param>
 public sealed record WatchlistEntryResponse(
     Guid Id,
     WatchlistStockResponse Stock,
@@ -62,7 +64,8 @@ public sealed record WatchlistEntryResponse(
     string PriceStatus,
     PriceResponse? Price,
     DateTimeOffset? StaleSince,
-    IReadOnlyList<WindowResponse> Windows);
+    IReadOnlyList<WindowResponse> Windows,
+    DateTimeOffset? DelistedAt);
 
 /// <summary>A page of the caller's watchlist.</summary>
 /// <param name="Items">The entries of the page.</param>
@@ -70,6 +73,16 @@ public sealed record WatchlistEntryResponse(
 /// <param name="Limit">Items per page asked for.</param>
 /// <param name="Offset">Items skipped.</param>
 public sealed record WatchlistPageResponse(IReadOnlyList<WatchlistEntryResponse> Items, int Total, int Limit, int Offset);
+
+/// <summary>The recent shape of the price of one stock on the watchlist.</summary>
+/// <param name="Stock">The stock.</param>
+/// <param name="Points">The adjusted closes of the last stored days, oldest first (decimal strings); empty while the stock has no price yet.</param>
+public sealed record SparklineResponse(WatchlistStockResponse Stock, IReadOnlyList<decimal> Points);
+
+/// <summary>The small price charts of the watchlist.</summary>
+/// <param name="Days">How many of the last stored trading days each line has.</param>
+/// <param name="Items">One line per stock, ordered by ticker and market.</param>
+public sealed record SparklinesResponse(int Days, IReadOnlyList<SparklineResponse> Items);
 
 /// <summary>Body of <c>PUT /v1/watchlist/items/{market}/{ticker}</c>. Both fields replace what is stored; leaving one out clears it.</summary>
 /// <param name="Notes">Notes, up to 2000 characters, or null.</param>
@@ -108,9 +121,23 @@ internal static class WatchlistEndpoints
         v1.MapGet("/watchlist", ListAsync)
             .WithName("GetWatchlist")
             .WithSummary("List the watchlist")
-            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller's portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
+            .WithDescription("The caller's stocks with the newest price, how current it is (priceStatus: current, stale with staleSince, pending, unavailable, or delisted with delistedAt when the stock no longer trades) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock's own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller's portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.")
             .WithTags(_tag)
             .Produces<WatchlistPageResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status304NotModified)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        v1.MapGet("/watchlist/sparklines", SparklinesAsync)
+            .WithName("GetWatchlistSparklines")
+            .WithSummary("Small price charts of the watchlist")
+            .WithDescription("For every stock on the caller's watchlist (or only those of one portfolio), the adjusted closes of its last stored trading days, oldest first, in a few statements whatever the number of stocks: the lines the table draws next to each row. days is 5 to 250 (default 30). A stock with no price yet has an empty line. The answer carries an ETag. Informational only, not financial advice.")
+            .WithTags(_tag)
+            .Produces<SparklinesResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status304NotModified)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -161,6 +188,16 @@ internal static class WatchlistEndpoints
             [.. page.Items.Select(ToResponse)], page.Total, page.Limit, page.Offset)));
     }
 
+    private static async Task<IResult> SparklinesAsync(ISender sender, CancellationToken cancellationToken, int days = 30, Guid? portfolio = null)
+    {
+        var result = await sender.Send(new GetSparklinesQuery(days, portfolio), cancellationToken);
+        return result.ToHttpResult(view => ConditionalResults.Json(new SparklinesResponse(
+            view.Days,
+            [.. view.Items.Select(line => new SparklineResponse(
+                new WatchlistStockResponse(line.Stock.Id, line.Stock.Market, line.Stock.Ticker, line.Stock.Name, line.Stock.Currency, line.Stock.AssetType),
+                line.Points))])));
+    }
+
     private static WatchlistEntryResponse ToResponse(WatchlistEntry entry) =>
         new(
             entry.Id,
@@ -172,7 +209,8 @@ internal static class WatchlistEndpoints
             entry.PriceStatus,
             entry.Price is null ? null : new PriceResponse(entry.Price.Value, entry.Price.Date, entry.Price.IsFinal),
             entry.StaleSince,
-            [.. entry.Windows.Select(w => new WindowResponse(w.Window, w.Change, w.BaselineDate, w.Reason))]);
+            [.. entry.Windows.Select(w => new WindowResponse(w.Window, w.Change, w.BaselineDate, w.Reason))],
+            entry.DelistedAt);
 
     private static async Task<IResult> PutAsync(string market, string ticker, PutWatchlistItemRequest? body, ISender sender, CancellationToken cancellationToken)
     {

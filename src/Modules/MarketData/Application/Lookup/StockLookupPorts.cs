@@ -55,7 +55,8 @@ public interface ISearchCache
 /// <param name="Currency">Trading currency.</param>
 /// <param name="AssetType">Kind of instrument.</param>
 /// <param name="IsActive">False once the instrument is delisted.</param>
-public sealed record CatalogListing(StockId Id, Mic Market, Ticker Ticker, string Name, CurrencyCode Currency, AssetType AssetType, bool IsActive);
+/// <param name="DelistedAt">When the instrument stopped trading, or <see langword="null"/> while it trades.</param>
+public sealed record CatalogListing(StockId Id, Mic Market, Ticker Ticker, string Name, CurrencyCode Currency, AssetType AssetType, bool IsActive, DateTimeOffset? DelistedAt = null);
 
 /// <summary>
 /// Puts a validated stock in the shared catalog. The implementation is idempotent on <c>(market, ticker)</c> and never changes a stock that

@@ -14,6 +14,9 @@ public static class PriceStatuses
 
     /// <summary>The stock has no price and loading it failed for good, so there is none to show until the cause is fixed.</summary>
     public const string Unavailable = "unavailable";
+
+    /// <summary>The stock no longer trades on its market (ADR-0039): the last known price is shown and does not go stale, and nothing new is loaded.</summary>
+    public const string Delisted = "delisted";
 }
 
 /// <summary>The newest stored bar of a stock: its close as traded, in the stock's currency (not the adjusted close the windows use).</summary>
@@ -35,7 +38,8 @@ public sealed record WindowSnapshot(string Window, decimal? Change, DateOnly? Ba
 /// <param name="Price">The newest stored bar, or <see langword="null"/> when there is none.</param>
 /// <param name="StaleSince">When the price went stale, or <see langword="null"/> unless <paramref name="PriceStatus"/> is stale.</param>
 /// <param name="Windows">Always the eight windows, in order.</param>
-public sealed record StockSnapshot(StockSummary Stock, string PriceStatus, PriceSnapshot? Price, DateTimeOffset? StaleSince, IReadOnlyList<WindowSnapshot> Windows);
+/// <param name="DelistedAt">When the stock stopped trading, when <paramref name="PriceStatus"/> is delisted.</param>
+public sealed record StockSnapshot(StockSummary Stock, string PriceStatus, PriceSnapshot? Price, DateTimeOffset? StaleSince, IReadOnlyList<WindowSnapshot> Windows, DateTimeOffset? DelistedAt = null);
 
 /// <summary>Read access to the shared catalog and market data for the modules that show stocks to a user (the watchlist, the portfolios).</summary>
 public interface IMarketSnapshots

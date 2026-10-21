@@ -309,13 +309,139 @@
         ]
       }
     },
+    "/v1/stocks/{market}/{ticker}/prices": {
+      "get": {
+        "tags": [
+          "Stocks"
+        ],
+        "summary": "Price history of a stock",
+        "description": "The stored days of a stock of the catalog over a range (1W, 1M, 3M, 6M, YTD, 1Y, 5Y or MAX; default 1Y), oldest first, each with the close as traded and the adjusted close (draw the adjusted one: it is continuous across splits and dividends). A range starts where the performance window of the same name does. The interval is day, week or month (a week or a month is shown by its last trading day); auto uses days up to a year, weeks for five years and months for all the history. A stock with no price yet answers an empty series with its status. The answer carries an ETag. Informational only, not financial advice.",
+        "operationId": "GetStockPrices",
+        "parameters": [
+          {
+            "name": "market",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticker",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceSeriesResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/watchlist": {
       "get": {
         "tags": [
           "Watchlist"
         ],
         "summary": "List the watchlist",
-        "description": "The caller\u0027s stocks with the newest price, how current it is (priceStatus, and staleSince when the last known price is shown) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock\u0027s own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller\u0027s portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.",
+        "description": "The caller\u0027s stocks with the newest price, how current it is (priceStatus: current, stale with staleSince, pending, unavailable, or delisted with delistedAt when the stock no longer trades) and the performance windows 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, computed from adjusted closes in the stock\u0027s own currency; a window without enough history carries a reason instead of a number. Filter by market, assetType, q (ticker or name), priceStatus and portfolio (the id of one of the caller\u0027s portfolios; 404 when it is not one of theirs); sort by ticker, name, market, createdAt, price or a window (a missing value sorts last); page with limit (1 to 100, default 50) and offset. The answer carries an ETag: send it back in If-None-Match to get 304 when nothing changed. Informational only, not financial advice.",
         "operationId": "GetWatchlist",
         "parameters": [
           {
@@ -411,6 +537,121 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WatchlistPageResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/watchlist/sparklines": {
+      "get": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Small price charts of the watchlist",
+        "description": "For every stock on the caller\u0027s watchlist (or only those of one portfolio), the adjusted closes of its last stored trading days, oldest first, in a few statements whatever the number of stocks: the lines the table draws next to each row. days is 5 to 250 (default 30). A stock with no price yet has an empty line. The answer carries an ETag. Informational only, not financial advice.",
+        "operationId": "GetWatchlistSparklines",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 30
+            }
+          },
+          {
+            "name": "portfolio",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparklinesResponse"
                 }
               }
             }
@@ -1316,7 +1557,7 @@
           "Portfolios"
         ],
         "summary": "How a portfolio did",
-        "description": "The group\u0027s equal-weighted average and median change over 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, with how many stocks have a number for each window and the stock that rose most and least, plus how many stocks have current, stale, pending or unavailable prices. A stock without a number for a window is left out of that window, never counted as zero. A portfolio holds no quantities, so these say how the stocks moved, not how a sum of money did. Informational only, not financial advice. Carries an ETag.",
+        "description": "The group\u0027s equal-weighted average and median change over 1D, 1W, 1M, 3M, 6M, YTD, 1Y and 5Y, with how many stocks have a number for each window and the stock that rose most and least, plus how many stocks have current, stale, pending, unavailable or delisted prices. A stock without a number for a window is left out of that window, never counted as zero. A portfolio holds no quantities, so these say how the stocks moved, not how a sum of money did. Informational only, not financial advice. Carries an ETag.",
         "operationId": "GetPortfolioMetrics",
         "parameters": [
           {
@@ -1850,7 +2091,7 @@
           "Calculator"
         ],
         "summary": "Calculate a partial purchase",
-        "description": "How many shares an amount buys, or what a number of shares costs, in the stock\u0027s currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker\u0027s rate, fees and minimum order sizes differ, and nothing here is financial advice.",
+        "description": "How many shares an amount buys, or what a number of shares costs, in the stock\u0027s currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale or the stock no longer trades) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. An optional feePercent (0 to 10) is the broker\u0027s commission as a percentage of the value of the shares: with amount, the amount is the total paid and the shares are bought with what is left after the commission; with shares, the commission is added to their cost; without it the commission is 0 and nothing changes. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker\u0027s rate, fees and minimum order sizes differ, and nothing here is financial advice.",
         "operationId": "CalculatePartialPurchase",
         "requestBody": {
           "content": {
@@ -2100,6 +2341,15 @@
             ],
             "description": "Number of shares to buy, up to six decimals (a decimal string).",
             "format": "decimal"
+          },
+          "feePercent": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The broker\u0027s commission as a percentage of the value of the shares, 0 to 10 (a decimal string; \u0060\u00221\u0022\u0060 is 1 %). Optional: without it the commission is 0. When given with \u0060amount\u0060, the amount is the total paid, commission included.",
+            "format": "decimal"
           }
         },
         "description": "Body of \u0060POST /v1/calculations/partial-purchase\u0060. Give a stock (\u0060market\u0060 and \u0060ticker\u0060) or a \u0060price\u0060 with its \u0060currency\u0060,\nand exactly one of \u0060amount\u0060 and \u0060shares\u0060. Decimals are strings."
@@ -2124,6 +2374,9 @@
           "sharesFraction",
           "amountNative",
           "amountGtq",
+          "feePercent",
+          "feeNative",
+          "feeGtq",
           "disclaimerKey"
         ],
         "type": "object",
@@ -2160,7 +2413,7 @@
               "null",
               "string"
             ],
-            "description": "\u0060current\u0060 or \u0060stale\u0060 (the last known close is used), when the price came from the catalog."
+            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known close is used) or \u0060delisted\u0060 (the stock no longer trades; its last close is used), when the price came from the catalog."
           },
           "staleSince": {
             "type": [
@@ -2231,13 +2484,31 @@
           "amountNative": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": "string",
-            "description": "The money spent in the stock\u0027s currency, rounded to its minor units.",
+            "description": "The total paid in the stock\u0027s currency, commission included, rounded to its minor units.",
             "format": "decimal"
           },
           "amountGtq": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": "string",
-            "description": "The money spent in quetzales, rounded to cents.",
+            "description": "The total paid in quetzales, commission included, rounded to cents.",
+            "format": "decimal"
+          },
+          "feePercent": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The commission assumed, as given; \u0060\u00220\u0022\u0060 when none was.",
+            "format": "decimal"
+          },
+          "feeNative": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The commission within \u0060amountNative\u0060, rounded to the minor units of the stock\u0027s currency.",
+            "format": "decimal"
+          },
+          "feeGtq": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The commission within \u0060amountGtq\u0060, rounded to cents.",
             "format": "decimal"
           },
           "disclaimerKey": {
@@ -2472,6 +2743,39 @@
         },
         "description": "A portfolio: a named group of the caller\u0027s watchlist stocks, kept for observation (never holdings)."
       },
+      "PricePointResponse": {
+        "required": [
+          "date",
+          "close",
+          "adjustedClose",
+          "isFinal"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The trading day (ISO-8601 date).",
+            "format": "date"
+          },
+          "close": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The close as traded (a decimal string).",
+            "format": "decimal"
+          },
+          "adjustedClose": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": "string",
+            "description": "The close adjusted for splits and dividends, the one to draw because it is continuous (a decimal string).",
+            "format": "decimal"
+          },
+          "isFinal": {
+            "type": "boolean",
+            "description": "False while the day may still change."
+          }
+        },
+        "description": "One stored day of a stock."
+      },
       "PriceResponse": {
         "required": [
           "value",
@@ -2498,12 +2802,95 @@
         },
         "description": "The newest stored bar of a stock."
       },
+      "PriceSeriesResponse": {
+        "required": [
+          "stock",
+          "range",
+          "interval",
+          "from",
+          "to",
+          "count",
+          "points",
+          "priceStatus",
+          "staleSince",
+          "delistedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "stock": {
+            "description": "The stock.",
+            "$ref": "#/components/schemas/WatchlistStockResponse"
+          },
+          "range": {
+            "type": "string",
+            "description": "The range asked for."
+          },
+          "interval": {
+            "type": "string",
+            "description": "The interval used: \u0060day\u0060, \u0060week\u0060 or \u0060month\u0060."
+          },
+          "from": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The first day the range covers, or null for all the history.",
+            "format": "date"
+          },
+          "to": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The day of the newest stored price, or null when there is none.",
+            "format": "date"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "How many points there are.",
+            "format": "int32"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PricePointResponse"
+            },
+            "description": "The days, oldest first; empty when the stock has no price in the range."
+          },
+          "priceStatus": {
+            "type": "string",
+            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known price is the newest), \u0060pending\u0060, \u0060unavailable\u0060 or \u0060delisted\u0060 (the stock no longer trades)."
+          },
+          "staleSince": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the newest price went stale (ISO-8601 UTC), when it did.",
+            "format": "date-time"
+          },
+          "delistedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the stock stopped trading (ISO-8601 UTC), only for \u0060delisted\u0060.",
+            "format": "date-time"
+          }
+        },
+        "description": "The price history of a stock over a range."
+      },
       "PriceStatusCountsResponse": {
         "required": [
           "current",
           "stale",
           "pending",
-          "unavailable"
+          "unavailable",
+          "delisted"
         ],
         "type": "object",
         "properties": {
@@ -2541,6 +2928,15 @@
               "string"
             ],
             "description": "No price and loading failed for good.",
+            "format": "int32"
+          },
+          "delisted": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "The stock no longer trades; its last known price is shown.",
             "format": "int32"
           }
         },
@@ -2648,6 +3044,50 @@
           }
         },
         "description": "Body of \u0060PUT /v1/portfolios/order\u0060."
+      },
+      "SparklineResponse": {
+        "required": [
+          "stock",
+          "points"
+        ],
+        "type": "object",
+        "properties": {
+          "stock": {
+            "description": "The stock.",
+            "$ref": "#/components/schemas/WatchlistStockResponse"
+          },
+          "points": {
+            "type": "array",
+            "description": "The adjusted closes of the last stored days, oldest first (decimal strings); empty while the stock has no price yet."
+          }
+        },
+        "description": "The recent shape of the price of one stock on the watchlist."
+      },
+      "SparklinesResponse": {
+        "required": [
+          "days",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "days": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "How many of the last stored trading days each line has.",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SparklineResponse"
+            },
+            "description": "One line per stock, ordered by ticker and market."
+          }
+        },
+        "description": "The small price charts of the watchlist."
       },
       "StockCandidateResponse": {
         "required": [
@@ -2766,7 +3206,8 @@
           "priceStatus",
           "price",
           "staleSince",
-          "windows"
+          "windows",
+          "delistedAt"
         ],
         "type": "object",
         "properties": {
@@ -2807,7 +3248,7 @@
           },
           "priceStatus": {
             "type": "string",
-            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known price is shown), \u0060pending\u0060 (no history yet) or \u0060unavailable\u0060 (loading failed for good)."
+            "description": "\u0060current\u0060, \u0060stale\u0060 (the last known price is shown), \u0060pending\u0060 (no history yet) or \u0060unavailable\u0060 (loading failed for good) or \u0060delisted\u0060 (the stock no longer trades; the last known price is shown)."
           },
           "price": {
             "oneOf": [
@@ -2834,6 +3275,14 @@
               "$ref": "#/components/schemas/WindowResponse"
             },
             "description": "The eight performance windows, in order."
+          },
+          "delistedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the stock stopped trading (ISO-8601 UTC), only for \u0060delisted\u0060.",
+            "format": "date-time"
           }
         },
         "description": "A stock on the caller\u0027s watchlist as the list shows it."

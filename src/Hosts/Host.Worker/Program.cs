@@ -35,4 +35,12 @@ builder.Services.AddSakerMongo(builder.Configuration);
 builder.Services.AddSakerRedis(builder.Configuration);
 builder.Services.AddHostedService<WorkerLifecycleService>();
 
+// "marketdata <change> ..." runs one change to the life of a listing and exits; the hosted services are never started (ADR-0039).
+if (args.Length > 0 && string.Equals(args[0], "marketdata", StringComparison.OrdinalIgnoreCase))
+{
+    using IHost tool = builder.Build();
+    return await MarketDataCommandLine.RunAsync(tool.Services, args[1..], CancellationToken.None);
+}
+
 await builder.Build().RunAsync();
+return 0;

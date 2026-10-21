@@ -131,6 +131,32 @@ public sealed class CalculationEndpointTests(TimescalePostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task ACommission_IsPartOfTheTotalPaid_AndShownApart()
+    {
+        (WatchlistRig.Rig rig, string token, _, _) = await StartAsync();
+
+        JsonElement invested = await OkAsync(rig, token, new { price = "600", currency = "USD", amount = "101", feePercent = "1" });
+        JsonElement bought = await OkAsync(rig, token, new { price = "50", currency = "USD", shares = "2", feePercent = "1" });
+
+        (Num(invested.GetProperty("feePercent")), Num(invested.GetProperty("amountNative")), Num(invested.GetProperty("feeNative")), Num(invested.GetProperty("amountGtq")), Num(invested.GetProperty("feeGtq")), Num(invested.GetProperty("sharesFraction")))
+            .Should().Be((1m, 101m, 1m, 782.75m, 7.75m, 0.166666m));
+        (Num(bought.GetProperty("amountNative")), Num(bought.GetProperty("feeNative")), Num(bought.GetProperty("amountGtq")), Num(bought.GetProperty("feeGtq")))
+            .Should().Be((101m, 1m, 782.75m, 7.75m));
+    }
+
+    [Fact]
+    public async Task WithoutACommission_ItIsZero_AndZeroGivesTheSameAnswer()
+    {
+        (WatchlistRig.Rig rig, string token, _, _) = await StartAsync();
+
+        JsonElement without = await OkAsync(rig, token, new { price = "600", currency = "USD", amount = "50" });
+        JsonElement zero = await OkAsync(rig, token, new { price = "600", currency = "USD", amount = "50", feePercent = "0" });
+
+        (Num(without.GetProperty("feePercent")), Num(without.GetProperty("feeNative")), Num(without.GetProperty("feeGtq"))).Should().Be((0m, 0m, 0m));
+        zero.GetRawText().Should().Be(without.GetRawText());
+    }
+
+    [Fact]
     public async Task APriceInCanadianDollars_GoesThroughTheDollar_ReturningEachStep()
     {
         (WatchlistRig.Rig rig, string token, _, _) = await StartAsync();
@@ -202,6 +228,9 @@ public sealed class CalculationEndpointTests(TimescalePostgresFixture postgres) 
     [InlineData("{\"price\":\"0.0000001\",\"currency\":\"USD\",\"amount\":\"5\"}")]
     [InlineData("{\"price\":600,\"currency\":\"USD\",\"amount\":\"5\"}")]
     [InlineData("{\"price\":\"abc\",\"currency\":\"USD\",\"amount\":\"5\"}")]
+    [InlineData("{\"price\":\"600\",\"currency\":\"USD\",\"amount\":\"5\",\"feePercent\":\"10.01\"}")]
+    [InlineData("{\"price\":\"600\",\"currency\":\"USD\",\"amount\":\"5\",\"feePercent\":\"-1\"}")]
+    [InlineData("{\"price\":\"600\",\"currency\":\"USD\",\"amount\":\"5\",\"feePercent\":1}")]
     [InlineData("not json")]
     public async Task ABadRequest_Is400_WithTheFieldsToFix_NeverA500(string body)
     {

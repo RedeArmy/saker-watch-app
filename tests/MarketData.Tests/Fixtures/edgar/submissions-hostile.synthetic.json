@@ -1,0 +1,7 @@
+{
+  "cik": "0000320193",
+  "name": "<script>alert('x')</script> Apple",
+  "tickers": ["AAPL"],
+  "exchanges": ["Nasdaq"],
+  "filings": { "recent": { "accessionNumber": [], "filingDate": [], "reportDate": [], "form": [], "primaryDocument": [] } }
+}

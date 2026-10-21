@@ -53,13 +53,14 @@ public sealed class MarketSnapshots(
         foreach (CatalogListing listing in listings)
         {
             latest.TryGetValue(listing.Id, out LatestBar? bar);
-            (string status, DateTimeOffset? staleSince) = StatusOf(listing, bar, failed.Contains(listing.Id), now, settle);
+            (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, bar, failed.Contains(listing.Id), listing.DelistedAt, now, settle);
             snapshots[listing.Id.Value] = new StockSnapshot(
                 Summary(listing),
                 status,
                 bar is null ? null : new PriceSnapshot(bar.Close, bar.Date, bar.IsFinal),
                 staleSince,
-                [.. reports[listing.Id].Windows.Select(Window)]);
+                [.. reports[listing.Id].Windows.Select(Window)],
+                listing.DelistedAt);
         }
 
         return snapshots;
@@ -96,17 +97,4 @@ public sealed class MarketSnapshots(
         PerformanceGap.HistoryGap => "history_gap",
         _ => "calendar_unavailable",
     };
-
-    // No price: pending, or unavailable once loading failed for good. A price: current, or stale since the session that settled after it.
-    private (string Status, DateTimeOffset? StaleSince) StatusOf(CatalogListing listing, LatestBar? bar, bool failed, DateTimeOffset now, TimeSpan settle)
-    {
-        if (bar is null)
-        {
-            return (failed ? PriceStatuses.Unavailable : PriceStatuses.Pending, null);
-        }
-
-        Result<IExchangeCalendar> calendar = calendars.TryGet(listing.Market);
-        DateTimeOffset? since = calendar.IsSuccess ? Freshness.StaleSince(calendar.Value, bar.Date, now, settle) : null;
-        return since is null ? (PriceStatuses.Current, null) : (PriceStatuses.Stale, since);
-    }
 }

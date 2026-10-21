@@ -87,6 +87,10 @@ public sealed class ListingIngestion(
     public static bool IsRetryable(Error error) =>
         ProviderErrors.Classify(error) is ProviderFailureKind.RateLimited or ProviderFailureKind.Transient;
 
+    /// <summary>Records a completed ingestion and clears any earlier failure and any count of days the provider did not know the symbol.</summary>
+    public Task RecordSuccessAsync(StockId id, DateTimeOffset now, CancellationToken cancellationToken) =>
+        state.RecordSuccessAsync(id, now, cancellationToken);
+
     /// <summary>Records a failure that retrying cannot fix against the listing, with its stable code.</summary>
     public Task RecordPermanentFailureAsync(StockId id, string code, DateTimeOffset now, CancellationToken cancellationToken) =>
         state.RecordFailureAsync(id, code, permanent: true, now, cancellationToken);

@@ -26,6 +26,27 @@ public sealed class StockRow
     public bool IsActive { get; set; } = true;
 
     public DateTimeOffset ListedAt { get; set; }
+
+    /// <summary>When the stock stopped trading on its market (ADR-0039); null while it trades. A delisted stock is also inactive.</summary>
+    public DateTimeOffset? DelistedAt { get; set; }
+}
+
+/// <summary>
+/// <c>marketdata.ticker_history</c>: a ticker a stock used to have (ADR-0039). A lookup by a retired ticker finds the stock it belonged to, so
+/// watchlists and links keep working after a symbol change; a ticker in use by a stock always wins over its history.
+/// </summary>
+public sealed class TickerHistoryRow
+{
+    public string MarketMic { get; set; } = string.Empty;
+
+    public string Ticker { get; set; } = string.Empty;
+
+    public Guid StockId { get; set; }
+
+    /// <summary>The day the stock stopped using this ticker.</summary>
+    public DateOnly ChangedOn { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>Allowed values of <see cref="StockRow.AssetType"/>.</summary>
@@ -136,6 +157,12 @@ public sealed class IngestionStateRow
     public DateTimeOffset? LastAttemptAt { get; set; }
 
     public string? FailureCode { get; set; }
+
+    /// <summary>On how many different days in a row the provider did not know the symbol; reset by any success (ADR-0039).</summary>
+    public int NotFoundDays { get; set; }
+
+    /// <summary>The last day the provider did not know the symbol, so one day counts once however many times it is tried.</summary>
+    public DateOnly? LastNotFoundOn { get; set; }
 }
 
 /// <summary>Allowed values of <see cref="IngestionStateRow.Status"/>.</summary>

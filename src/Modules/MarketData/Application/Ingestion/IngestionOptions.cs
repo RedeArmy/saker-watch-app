@@ -38,6 +38,13 @@ public sealed class IngestionOptions
     [Range(2, 60)]
     public int RefreshOverlapDays { get; set; } = 10;
 
+    /// <summary>
+    /// On how many different days in a row the provider must not know the symbol of a listing that had prices before it is taken to be delisted
+    /// (ADR-0039). One bad day is a provider hiccup; a week of them is a stock that left its market. Any success starts the count again.
+    /// </summary>
+    [Range(2, 60)]
+    public int DelistAfterNotFoundDays { get; set; } = 5;
+
     /// <summary>Relative difference in a stored adjusted close, beyond which the provider is taken to have rewritten the history.</summary>
     [Range(0.0000001, 0.1)]
     public double RewriteTolerance { get; set; } = 0.000001;

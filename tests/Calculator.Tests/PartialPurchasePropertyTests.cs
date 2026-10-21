@@ -20,6 +20,9 @@ public readonly record struct SharesValue(decimal Value);
 /// <summary>An exchange rate from dollars to quetzales-like values, inside the kit's range.</summary>
 public readonly record struct RateValue(decimal Value);
 
+/// <summary>A broker's commission in percent, from 0 to 10, with up to two decimals.</summary>
+public readonly record struct FeeValue(decimal Value);
+
 /// <summary>Generators of values that span the scales real inputs have, from fractions of a cent to millions.</summary>
 public static class CalculatorArbitraries
 {
@@ -39,6 +42,10 @@ public static class CalculatorArbitraries
     /// <summary>Shares from a millionth with up to six decimals.</summary>
     public static Arbitrary<SharesValue> Shares() =>
         Scaled(6, 0.000001m, 1_000_000m).Select(value => new SharesValue(value)).ToArbitrary();
+
+    /// <summary>Commissions from 0 to 10 percent.</summary>
+    public static Arbitrary<FeeValue> Fees() =>
+        Gen.Choose(0, 1000).Select(hundredths => new FeeValue(hundredths / 100m)).ToArbitrary();
 
     /// <summary>Rates from a hundred-millionth to a million.</summary>
     public static Arbitrary<RateValue> Rates() =>

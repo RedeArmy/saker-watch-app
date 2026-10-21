@@ -16,7 +16,8 @@ namespace SakerWatch.Hosts.Api.Api;
 /// <param name="Currency">Currency of the price (ISO 4217); only with <c>price</c>.</param>
 /// <param name="Amount">Money to invest, in the currency of the price (a decimal string).</param>
 /// <param name="Shares">Number of shares to buy, up to six decimals (a decimal string).</param>
-public sealed record PartialPurchaseRequest(string? Market, string? Ticker, decimal? Price, string? Currency, decimal? Amount, decimal? Shares);
+/// <param name="FeePercent">The broker's commission as a percentage of the value of the shares, 0 to 10 (a decimal string; <c>"1"</c> is 1 %). Optional: without it the commission is 0. When given with <c>amount</c>, the amount is the total paid, commission included.</param>
+public sealed record PartialPurchaseRequest(string? Market, string? Ticker, decimal? Price, string? Currency, decimal? Amount, decimal? Shares, decimal? FeePercent = null);
 
 /// <summary>One step of the exchange path.</summary>
 /// <param name="From">The currency the step starts from.</param>
@@ -32,7 +33,7 @@ public sealed record FxLegResponse(string From, string To, decimal Rate, DateOnl
 /// <param name="PriceSource"><c>catalog</c> (the newest close of the stock) or <c>manual</c> (the price given).</param>
 /// <param name="Stock">The catalog stock, when the price came from one.</param>
 /// <param name="PriceDate">The trading day of the close, when the price came from the catalog.</param>
-/// <param name="PriceStatus"><c>current</c> or <c>stale</c> (the last known close is used), when the price came from the catalog.</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known close is used) or <c>delisted</c> (the stock no longer trades; its last close is used), when the price came from the catalog.</param>
 /// <param name="StaleSince">When the close went stale (ISO-8601 UTC), when it did.</param>
 /// <param name="QuoteCurrency">The currency of the price and of <c>amountNative</c>.</param>
 /// <param name="PriceNative">The price of one share, as given or as traded (a decimal string).</param>
@@ -44,8 +45,11 @@ public sealed record FxLegResponse(string From, string To, decimal Rate, DateOnl
 /// <param name="FxLegs">The steps of the exchange path.</param>
 /// <param name="CostOneShareGtq">The price of one share in quetzales, rounded to cents.</param>
 /// <param name="SharesFraction">The shares, cut at six decimals towards zero (never rounded up).</param>
-/// <param name="AmountNative">The money spent in the stock's currency, rounded to its minor units.</param>
-/// <param name="AmountGtq">The money spent in quetzales, rounded to cents.</param>
+/// <param name="AmountNative">The total paid in the stock's currency, commission included, rounded to its minor units.</param>
+/// <param name="AmountGtq">The total paid in quetzales, commission included, rounded to cents.</param>
+/// <param name="FeePercent">The commission assumed, as given; <c>"0"</c> when none was.</param>
+/// <param name="FeeNative">The commission within <c>amountNative</c>, rounded to the minor units of the stock's currency.</param>
+/// <param name="FeeGtq">The commission within <c>amountGtq</c>, rounded to cents.</param>
 /// <param name="DisclaimerKey">Key of the notice to show: the rate is a reference and a broker's rate, fees and minimum order sizes differ.</param>
 public sealed record PartialPurchaseResponse(
     string Mode,
@@ -66,6 +70,9 @@ public sealed record PartialPurchaseResponse(
     decimal SharesFraction,
     decimal AmountNative,
     decimal AmountGtq,
+    decimal FeePercent,
+    decimal FeeNative,
+    decimal FeeGtq,
     string DisclaimerKey);
 
 /// <summary>Endpoints under <c>/v1/calculations</c>.</summary>
@@ -80,7 +87,7 @@ internal static class CalculationsEndpoints
         v1.MapPost("/calculations/partial-purchase", PartialPurchaseAsync)
             .WithName("CalculatePartialPurchase")
             .WithSummary("Calculate a partial purchase")
-            .WithDescription("How many shares an amount buys, or what a number of shares costs, in the stock's currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker's rate, fees and minimum order sizes differ, and nothing here is financial advice.")
+            .WithDescription("How many shares an amount buys, or what a number of shares costs, in the stock's currency and in quetzales. Give a stock of the catalog (market and ticker; its newest close is the price, flagged when it is stale or the stock no longer trades) or a price with its currency, and exactly one of amount (money to invest) or shares (up to six decimals). The rate is the Banco de Guatemala reference rate of the latest day published, directly or through USD, returned with its path, day and source. An optional feePercent (0 to 10) is the broker's commission as a percentage of the value of the shares: with amount, the amount is the total paid and the shares are bought with what is left after the commission; with shares, the commission is added to their cost; without it the commission is 0 and nothing changes. Money is rounded to the minor units of its currency (half to even) and shares are cut at six decimals, never rounded up. A calculation changes nothing: the request needs no Idempotency-Key. A reference only: a broker's rate, fees and minimum order sizes differ, and nothing here is financial advice.")
             .WithTags(_tag)
             .ExemptFromIdempotencyKey("A calculation is a pure computation over stored data: the same body always gives the same answer and nothing is changed.")
             .Accepts<PartialPurchaseRequest>("application/json")
@@ -96,7 +103,7 @@ internal static class CalculationsEndpoints
 
     private static async Task<IResult> PartialPurchaseAsync(PartialPurchaseRequest? body, ISender sender, CancellationToken cancellationToken)
     {
-        var query = new CalculatePartialPurchaseQuery(body?.Market, body?.Ticker, body?.Price, body?.Currency, body?.Amount, body?.Shares);
+        var query = new CalculatePartialPurchaseQuery(body?.Market, body?.Ticker, body?.Price, body?.Currency, body?.Amount, body?.Shares, body?.FeePercent);
         var result = await sender.Send(query, cancellationToken);
         return result.ToHttpResult(view => TypedResults.Ok(ToResponse(view)));
     }
@@ -130,6 +137,9 @@ internal static class CalculationsEndpoints
             purchase.Shares.Value,
             purchase.Amount.Amount,
             purchase.AmountConverted.Amount,
+            purchase.FeePercent.Value,
+            purchase.Fee.Amount,
+            purchase.FeeConverted.Amount,
             _disclaimerKey);
     }
 }

@@ -18,11 +18,12 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
 | `sakerwatch_auth_attempts_total` (counter) | outcome=success\|<refusal reason> (Malformed, InvalidSignature, UnknownKey, UnsupportedAlgorithm, Expired, NotYetValid, InvalidIssuer, InvalidAudience, MissingSubject, NotAnAccessToken, KeyDiscoveryFailed, Invalid) | access token validation; a spike of refusals or any `KeyDiscoveryFailed` is a symptom |
-| `sakerwatch_provider_calls_total` (counter) | provider, operation=search\|daily\|fx_daily, outcome=success\|ratelimited\|transient\|planrestricted\|symbolnotfound\|permanent | calls to external market data providers by outcome; a run of `ratelimited` means the free budget is spent, `planrestricted` means a market is routed to a plan that does not include it |
+| `sakerwatch_provider_calls_total` (counter) | provider, operation=search\|daily\|fx_daily\|tickers\|profile\|filings, outcome=success\|ratelimited\|transient\|planrestricted\|symbolnotfound\|permanent | calls to external market data providers by outcome; a run of `ratelimited` means the free budget is spent, `planrestricted` means a market is routed to a plan that does not include it |
 | `sakerwatch_marketdata_backfills_total` (counter) | outcome=completed\|waiting\|retry\|failed | backfills of a listing: `waiting` is a rate limit (a continuation was queued, no attempt used), `retry` is an outage that the queue will retry, `failed` is a permanent failure recorded in `marketdata.ingestion_state` |
 | `sakerwatch_marketdata_listings` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | market, state=fresh\|stale\|pending | ingestable listings by freshness: `stale` have missed a session that has settled, `pending` have no history yet. Per process: aggregate with `max` across worker replicas |
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
-| `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed | daily refreshes of a listing: `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
+| `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed\|not_found\|delisted | daily refreshes of a listing: `not_found` is a day the provider did not know the symbol (counted, not failed) and `delisted` is the day the count reached the limit (ADR-0039); `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
+| `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
 | `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog |
 | `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
@@ -99,6 +100,16 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |
 | 2112 | Information | `The adjusted history of {Market} {Ticker} was rewritten by the provider; a full reload is queued` | `RefreshStockHandler` |
 | 2113 | Warning | `Refresh of listing {StockId} failed for good with {Code}` | `RefreshStockHandler` |
+| 2601 | Warning | `The stock {Market} {Ticker} was marked delisted by {Source}` | `ListingLifecycle` |
+| 2602 | Information | `The stock {Market} {Ticker} is trading again; ingestion will try it from scratch` | `ListingLifecycle` |
+| 2603 | Information | `The stock {Market} {OldTicker} now has the ticker {NewTicker}; the old one is kept in its history` | `ListingLifecycle` |
+| 2604 | Information | `{Operation} of {Market} {Ticker} finished (changed: {Changed})` | `LifecycleCommandLine` |
+| 2605 | Warning | `{Operation} was refused with {Code}: {Reason}` | `LifecycleCommandLine` |
+| 2606 | Warning | `The request cannot be read: {Reason}` | `LifecycleCommandLine` |
+| 2607 | Error | `{Operation} failed and nothing was changed` (with the exception) | `LifecycleCommandLine` |
+| 2701 | Warning | `EDGAR {Operation}: {Dropped} of {Rows} rows were not valid and were dropped` | `EdgarProvider` |
+| 2702 | Warning | `EDGAR could not be reached ({ExceptionType})` | `EdgarProvider` |
+| 2703 | Warning | `The raw EDGAR response was not kept ({ExceptionType}); the call is not affected` | `EdgarProvider` |
 | 2121 | Information | `The daily market data refresh is disabled; no session will be scheduled` | `MarketDataScheduler` |
 | 2122 | Information | `Daily refresh of {Market} for {Day} queued` | `MarketDataScheduler` |
 | 2123 | Warning | `Could not queue the daily refresh of {Market}; it will be tried again shortly` (with exception) | `MarketDataScheduler` |

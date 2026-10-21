@@ -55,17 +55,32 @@ public sealed class StockTests
     }
 
     [Fact]
-    public void DeactivateAndReactivate_AreIdempotent()
+    public void Delist_MakesItInactiveAtThatMoment_AndDelistingAgainKeepsTheFirstOne()
     {
         Stock stock = Create().Value;
+        var first = new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
 
-        stock.Deactivate();
-        stock.Deactivate();
-        stock.IsActive.Should().BeFalse();
-        stock.Reactivate();
-        stock.Reactivate();
-        stock.IsActive.Should().BeTrue();
+        stock.Delist(first);
+        stock.Delist(first.AddDays(3));
+
+        (stock.IsActive, stock.DelistedAt).Should().Be((false, (DateTimeOffset?)first));
     }
+
+    [Fact]
+    public void Relist_BringsItBack_AndIsIdempotent()
+    {
+        Stock stock = Create().Value;
+        stock.Delist(new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero));
+
+        stock.Relist();
+        stock.Relist();
+
+        (stock.IsActive, stock.DelistedAt).Should().Be((true, (DateTimeOffset?)null));
+    }
+
+    [Fact]
+    public void ANewListing_IsActiveAndNotDelisted() =>
+        (Create().Value.IsActive, Create().Value.DelistedAt).Should().Be((true, (DateTimeOffset?)null));
 
     [Fact]
     public void TwoStocksWithTheSameId_AreTheSameEntity()

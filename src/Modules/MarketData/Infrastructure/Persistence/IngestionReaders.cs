@@ -29,24 +29,46 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
     /// <inheritdoc />
     public async Task<CatalogListing?> FindByKeyAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
-            "SELECT id, name, currency, asset_type, is_active FROM marketdata.stocks WHERE market_mic = @market AND ticker = @ticker",
-            session.Connection,
-            session.Transaction);
+        // A ticker in use by a stock always wins; only when no stock uses it is the history of retired tickers consulted (ADR-0039).
+        return await FindByKeyAsync(
+            "SELECT id, name, currency, asset_type, is_active, delisted_at, ticker FROM marketdata.stocks WHERE market_mic = @market AND ticker = @ticker",
+            market,
+            ticker,
+            cancellationToken)
+            ?? await FindByKeyAsync(
+                """
+                SELECT s.id, s.name, s.currency, s.asset_type, s.is_active, s.delisted_at, s.ticker
+                FROM marketdata.ticker_history h
+                JOIN marketdata.stocks s ON s.id = h.stock_id
+                WHERE h.market_mic = @market AND h.ticker = @ticker
+                """,
+                market,
+                ticker,
+                cancellationToken);
+    }
+
+    private async Task<CatalogListing?> FindByKeyAsync(string sql, Mic market, Ticker ticker, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, session.Connection, session.Transaction);
         command.Parameters.AddWithValue("market", market.Value);
         command.Parameters.AddWithValue("ticker", ticker.Value);
 
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? new CatalogListing(
-                StockId.Create(reader.GetGuid(0)),
-                market,
-                ticker,
-                reader.GetString(1),
-                CurrencyCode.Parse(reader.GetString(2)),
-                reader.GetString(3) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
-                reader.GetBoolean(4))
-            : null;
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        DateTimeOffset? delistedAt = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5);
+        return new CatalogListing(
+            StockId.Create(reader.GetGuid(0)),
+            market,
+            Ticker.Parse(reader.GetString(6)),
+            reader.GetString(1),
+            CurrencyCode.Parse(reader.GetString(2)),
+            reader.GetString(3) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
+            reader.GetBoolean(4),
+            delistedAt);
     }
 
     /// <inheritdoc />
@@ -57,7 +79,7 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
         foreach (StockId[] batch in ids.Distinct().Chunk(1000))
         {
             await using var command = new NpgsqlCommand(
-                "SELECT id, market_mic, ticker, name, currency, asset_type, is_active FROM marketdata.stocks WHERE id = ANY(@ids)",
+                "SELECT id, market_mic, ticker, name, currency, asset_type, is_active, delisted_at FROM marketdata.stocks WHERE id = ANY(@ids)",
                 session.Connection,
                 session.Transaction);
             command.Parameters.AddWithValue("ids", batch.Select(id => id.Value).ToArray());
@@ -72,7 +94,8 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
                     reader.GetString(3),
                     CurrencyCode.Parse(reader.GetString(4)),
                     reader.GetString(5) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
-                    reader.GetBoolean(6)));
+                    reader.GetBoolean(6),
+                    reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)));
             }
         }
 
@@ -130,7 +153,7 @@ public sealed class IngestionState(DbSession session) : IIngestionState
     private const string _success = """
         INSERT INTO marketdata.ingestion_state (stock_id, status, last_success_at, last_attempt_at, failure_code)
         VALUES (@stock, 'ok', @at, @at, NULL)
-        ON CONFLICT (stock_id) DO UPDATE SET status = 'ok', last_success_at = @at, last_attempt_at = @at, failure_code = NULL
+        ON CONFLICT (stock_id) DO UPDATE SET status = 'ok', last_success_at = @at, last_attempt_at = @at, failure_code = NULL, not_found_days = 0, last_not_found_on = NULL
         """;
 
     private const string _failure = """

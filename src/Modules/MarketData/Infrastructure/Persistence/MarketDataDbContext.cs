@@ -16,6 +16,9 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
     /// <summary>Provider symbol aliases.</summary>
     public DbSet<SymbolAliasRow> SymbolAliases => Set<SymbolAliasRow>();
 
+    /// <summary>The tickers stocks used to have.</summary>
+    public DbSet<TickerHistoryRow> TickerHistory => Set<TickerHistoryRow>();
+
     /// <summary>Splits, dividends, symbol changes and delistings.</summary>
     public DbSet<CorporateActionRow> CorporateActions => Set<CorporateActionRow>();
 
@@ -44,6 +47,7 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
                 t.HasCheckConstraint("ck_stocks_currency", "currency ~ '^[A-Z]{3}$'");
                 t.HasCheckConstraint("ck_stocks_name", "char_length(name) BETWEEN 1 AND 200");
                 t.HasCheckConstraint("ck_stocks_asset_type", "asset_type IN ('equity', 'etf', 'other')");
+                t.HasCheckConstraint("ck_stocks_delisted", "delisted_at IS NULL OR NOT is_active");
             });
             e.HasKey(x => x.Id);
             e.Property(x => x.MarketMic).HasMaxLength(4).IsFixedLength();
@@ -53,6 +57,16 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             e.Property(x => x.TimeZone).HasMaxLength(64);
             e.Property(x => x.AssetType).HasMaxLength(16);
             e.HasIndex(x => new { x.MarketMic, x.Ticker }).IsUnique();
+        });
+
+        modelBuilder.Entity<TickerHistoryRow>(e =>
+        {
+            e.ToTable("ticker_history", t => t.HasCheckConstraint("ck_ticker_history_ticker", "ticker ~ '^[A-Z0-9][A-Z0-9._-]{0,15}$'"));
+            e.HasKey(x => new { x.MarketMic, x.Ticker });
+            e.Property(x => x.MarketMic).HasMaxLength(4).IsFixedLength();
+            e.Property(x => x.Ticker).HasMaxLength(16);
+            e.HasOne<StockRow>().WithMany().HasForeignKey(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.StockId);
         });
 
         modelBuilder.Entity<SymbolAliasRow>(e =>
@@ -110,10 +124,12 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             {
                 t.HasCheckConstraint("ck_ingestion_state_status", "status IN ('pending', 'ok', 'failed')");
                 t.HasCheckConstraint("ck_ingestion_state_failure", "(status = 'failed') = (failure_code IS NOT NULL)");
+                t.HasCheckConstraint("ck_ingestion_state_not_found_days", "not_found_days >= 0");
             });
             e.HasKey(x => x.StockId);
             e.Property(x => x.Status).HasMaxLength(16);
             e.Property(x => x.FailureCode).HasMaxLength(64);
+            e.Property(x => x.NotFoundDays).HasDefaultValue(0);
             e.HasOne<StockRow>().WithOne().HasForeignKey<IngestionStateRow>(x => x.StockId).OnDelete(DeleteBehavior.Restrict);
         });
 
