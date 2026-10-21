@@ -83,7 +83,16 @@ public static class MarketDataServiceCollectionExtensions
 
         // What a list of stocks shows: the newest price, how current it is and the performance windows.
         services.AddOptions<PerformanceOptions>().Bind(configuration.GetSection(PerformanceOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
-        services.TryAddScoped<IPerformanceReader, PerformanceReader>();
+        services.AddOptions<PerformanceCacheOptions>().Bind(configuration.GetSection(PerformanceCacheOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddScoped<PerformanceReader>();
+        services.TryAddScoped<IIngestionStamps, IngestionStamps>();
+        services.TryAddSingleton<IPerformanceCache, RedisPerformanceCache>();
+        services.TryAddScoped<IPerformanceReader>(provider => new CachedPerformanceReader(
+            provider.GetRequiredService<PerformanceReader>(),
+            provider.GetRequiredService<IIngestionStamps>(),
+            provider.GetRequiredService<IPerformanceCache>(),
+            provider.GetRequiredService<IOptions<PerformanceOptions>>(),
+            provider.GetRequiredService<IOptions<PerformanceCacheOptions>>()));
         services.TryAddScoped<ILatestBars, LatestBars>();
         services.TryAddScoped<IIngestionStatuses, FailedIngestions>();
         services.TryAddScoped<IMarketSnapshots, MarketSnapshots>();

@@ -24,6 +24,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
 | `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed\|not_found\|delisted | daily refreshes of a listing: `not_found` is a day the provider did not know the symbol (counted, not failed) and `delisted` is the day the count reached the limit (ADR-0039); `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
 | `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
+| `sakerwatch_marketdata_perf_cache_total` (counter) | result=hit\|miss\|error | listings asked of the performance cache (ADR-0041): found, computed from the database, or a read or write Redis could not do |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
 | `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog |
 | `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
@@ -110,6 +111,8 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2701 | Warning | `EDGAR {Operation}: {Dropped} of {Rows} rows were not valid and were dropped` | `EdgarProvider` |
 | 2702 | Warning | `EDGAR could not be reached ({ExceptionType})` | `EdgarProvider` |
 | 2703 | Warning | `The raw EDGAR response was not kept ({ExceptionType}); the call is not affected` | `EdgarProvider` |
+| 2801 | Warning | `The performance cache could not be used ({ExceptionType}); the numbers come from the database` | `RedisPerformanceCache` |
+| 2802 | Warning | `A cached performance report could not be read and is computed again` | `RedisPerformanceCache` |
 | 2121 | Information | `The daily market data refresh is disabled; no session will be scheduled` | `MarketDataScheduler` |
 | 2122 | Information | `Daily refresh of {Market} for {Day} queued` | `MarketDataScheduler` |
 | 2123 | Warning | `Could not queue the daily refresh of {Market}; it will be tried again shortly` (with exception) | `MarketDataScheduler` |

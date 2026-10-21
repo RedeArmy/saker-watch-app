@@ -90,6 +90,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0038-price-history-and-sparklines.md | ADR 0038 | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0039-listing-lifecycle.md | ADR 0039 | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0040-company-profiles-and-filings.md | ADR 0040 | Eder | approved | 2 | 2026-10-21 |
+| docs/adr/0041-cache-of-the-daily-numbers.md | ADR 0041 | Eder | draft | 2 | 2026-10-21 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
