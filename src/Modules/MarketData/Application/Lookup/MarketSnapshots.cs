@@ -44,26 +44,45 @@ public sealed class MarketSnapshots(
 
         StockId[] found = [.. listings.Select(listing => listing.Id)];
         IReadOnlyDictionary<StockId, PerformanceReport> reports = await performance.ReadAsync(found, cancellationToken);
+        IReadOnlyDictionary<Guid, StockPrice> prices = await PricesOfAsync(listings, found, cancellationToken);
+
+        var snapshots = new Dictionary<Guid, StockSnapshot>(listings.Count);
+        foreach (StockId id in found)
+        {
+            StockPrice price = prices[id.Value];
+            snapshots[id.Value] = new StockSnapshot(price.Stock, price.PriceStatus, price.Price, price.StaleSince, [.. reports[id].Windows.Select(Window)], price.DelistedAt);
+        }
+
+        return snapshots;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stockIds);
+        IReadOnlyList<CatalogListing> listings = await catalog.FindManyAsync(ToIds(stockIds), cancellationToken);
+        return listings.Count == 0
+            ? new Dictionary<Guid, StockPrice>()
+            : await PricesOfAsync(listings, [.. listings.Select(listing => listing.Id)], cancellationToken);
+    }
+
+    // The one place a price and its status are decided, so a list and a calculation cannot disagree about either.
+    private async Task<IReadOnlyDictionary<Guid, StockPrice>> PricesOfAsync(IReadOnlyList<CatalogListing> listings, StockId[] found, CancellationToken cancellationToken)
+    {
         IReadOnlyDictionary<StockId, LatestBar> latest = await bars.ReadAsync(found, cancellationToken);
         IReadOnlySet<StockId> failed = await statuses.FailedAsync(found, cancellationToken);
 
         DateTimeOffset now = clock.GetUtcNow();
         TimeSpan settle = ingestion.Value.SettleDelay;
-        var snapshots = new Dictionary<Guid, StockSnapshot>(listings.Count);
+        var prices = new Dictionary<Guid, StockPrice>(listings.Count);
         foreach (CatalogListing listing in listings)
         {
             latest.TryGetValue(listing.Id, out LatestBar? bar);
             (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, bar, failed.Contains(listing.Id), listing.DelistedAt, now, settle);
-            snapshots[listing.Id.Value] = new StockSnapshot(
-                Summary(listing),
-                status,
-                bar is null ? null : new PriceSnapshot(bar.Close, bar.Date, bar.IsFinal),
-                staleSince,
-                [.. reports[listing.Id].Windows.Select(Window)],
-                listing.DelistedAt);
+            prices[listing.Id.Value] = new StockPrice(Summary(listing), status, bar is null ? null : new PriceSnapshot(bar.Close, bar.Date, bar.IsFinal), staleSince, listing.DelistedAt);
         }
 
-        return snapshots;
+        return prices;
     }
 
     private static StockId[] ToIds(IReadOnlyCollection<Guid> ids) => [.. ids.Distinct().Select(StockId.Create)];

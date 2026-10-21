@@ -226,4 +226,73 @@ public sealed class MarketSnapshotsTests
         found[other.Id.Value].AssetType.Should().Be("other");
         performance.Calls.Should().Be(0, "the catalog alone is enough to list names");
     }
+
+    [Fact]
+    public async Task Prices_DoNotReadTheWindows()
+    {
+        CatalogListing ko = Listing();
+        var friday = new DateOnly(2026, 10, 16);
+        var performance = new Performance(new() { [ko.Id] = Report(110m, friday) });
+        var bars = new Bars(new() { [ko.Id] = new LatestBar(friday, 440m, true) });
+
+        StockPrice price = (await Build(new Catalog(ko), performance, bars).PricesAsync([ko.Id.Value], CancellationToken.None))[ko.Id.Value];
+
+        price.Price!.Value.Should().Be(440m, "the raw close, as in the snapshot");
+        price.PriceStatus.Should().Be(PriceStatuses.Current);
+        performance.Calls.Should().Be(0, "a calculation needs one close, not the nine probes per listing of the windows");
+    }
+
+    [Fact]
+    public async Task Prices_GiveTheSamePriceAndStatusAsTheSnapshots_ForEveryKindOfListing()
+    {
+        var friday = new DateOnly(2026, 10, 16);
+        var thursday = new DateOnly(2026, 10, 15);
+        CatalogListing current = Listing("KO");
+        CatalogListing stale = Listing("PEP");
+        CatalogListing pending = Listing("MCD");
+        CatalogListing unavailable = Listing("IBM");
+        CatalogListing delisted = Listing("GE") with { IsActive = false, DelistedAt = _now.AddDays(-30) };
+        MarketSnapshots snapshots = Build(
+            new Catalog(current, stale, pending, unavailable, delisted),
+            new Performance([]),
+            new Bars(new()
+            {
+                [current.Id] = new LatestBar(friday, 440m, true),
+                [stale.Id] = new LatestBar(thursday, 150m, true),
+                [delisted.Id] = new LatestBar(thursday, 90m, true),
+            }),
+            new Failed(unavailable.Id, stale.Id));
+        Guid[] ids = [current.Id.Value, stale.Id.Value, pending.Id.Value, unavailable.Id.Value, delisted.Id.Value];
+
+        IReadOnlyDictionary<Guid, StockPrice> prices = await snapshots.PricesAsync(ids, CancellationToken.None);
+        IReadOnlyDictionary<Guid, StockSnapshot> full = await snapshots.SnapshotsAsync(ids, CancellationToken.None);
+
+        prices.Keys.Should().BeEquivalentTo(full.Keys);
+        foreach (Guid id in ids)
+        {
+            prices[id].Stock.Should().Be(full[id].Stock);
+            prices[id].PriceStatus.Should().Be(full[id].PriceStatus);
+            prices[id].Price.Should().Be(full[id].Price);
+            prices[id].StaleSince.Should().Be(full[id].StaleSince);
+            prices[id].DelistedAt.Should().Be(full[id].DelistedAt);
+        }
+
+        prices.Values.Select(price => price.PriceStatus).Should().BeEquivalentTo(
+            PriceStatuses.Current, PriceStatuses.Stale, PriceStatuses.Pending, PriceStatuses.Unavailable, PriceStatuses.Delisted);
+    }
+
+    [Fact]
+    public async Task Prices_LeaveOutAStockTheCatalogDoesNotHave_AndAnEmptyAskIsEmpty()
+    {
+        CatalogListing ko = Listing();
+        var bars = new Bars([]);
+        MarketSnapshots snapshots = Build(new Catalog(ko), new Performance([]), bars);
+
+        IReadOnlyDictionary<Guid, StockPrice> found = await snapshots.PricesAsync([ko.Id.Value, Guid.CreateVersion7()], CancellationToken.None);
+        IReadOnlyDictionary<Guid, StockPrice> none = await snapshots.PricesAsync([Guid.CreateVersion7()], CancellationToken.None);
+
+        found.Keys.Should().BeEquivalentTo([ko.Id.Value]);
+        none.Should().BeEmpty();
+        bars.Calls.Should().Be(1, "nothing is read for a request the catalog knows nothing about");
+    }
 }

@@ -42,6 +42,8 @@ public sealed class PortfolioUseCaseTests
             Task.FromResult<IReadOnlyDictionary<Guid, StockSummary>>(stocks.Where(s => stockIds.Contains(s.Id)).ToDictionary(s => s.Id));
 
         public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class Repository : IPortfolioRepository
@@ -450,6 +452,8 @@ public sealed class PortfolioUseCaseTests
             Calls.Add(stockIds.Count);
             return Task.FromResult<IReadOnlyDictionary<Guid, StockSnapshot>>(snapshots.Where(s => stockIds.Contains(s.Stock.Id)).ToDictionary(s => s.Stock.Id));
         }
+
+        public Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private static StockSnapshot Snap(StockSummary stock, string status, DateTimeOffset? staleSince, params (string Window, decimal? Change)[] changes)

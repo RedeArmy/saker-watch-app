@@ -41,6 +41,14 @@ public sealed record WindowSnapshot(string Window, decimal? Change, DateOnly? Ba
 /// <param name="DelistedAt">When the stock stopped trading, when <paramref name="PriceStatus"/> is delisted.</param>
 public sealed record StockSnapshot(StockSummary Stock, string PriceStatus, PriceSnapshot? Price, DateTimeOffset? StaleSince, IReadOnlyList<WindowSnapshot> Windows, DateTimeOffset? DelistedAt = null);
 
+/// <summary>A stock with its newest price and how current it is, without its performance windows.</summary>
+/// <param name="Stock">The catalog stock.</param>
+/// <param name="PriceStatus">One of <see cref="PriceStatuses"/>.</param>
+/// <param name="Price">The newest stored bar, or <see langword="null"/> when there is none.</param>
+/// <param name="StaleSince">When the price went stale, or <see langword="null"/> unless <paramref name="PriceStatus"/> is stale.</param>
+/// <param name="DelistedAt">When the stock stopped trading, when <paramref name="PriceStatus"/> is delisted.</param>
+public sealed record StockPrice(StockSummary Stock, string PriceStatus, PriceSnapshot? Price, DateTimeOffset? StaleSince, DateTimeOffset? DelistedAt = null);
+
 /// <summary>Read access to the shared catalog and market data for the modules that show stocks to a user (the watchlist, the portfolios).</summary>
 public interface IMarketSnapshots
 {
@@ -49,4 +57,10 @@ public interface IMarketSnapshots
 
     /// <summary>The snapshot of every stock among <paramref name="stockIds"/> that the catalog has, by id, in a few statements for all of them.</summary>
     Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The newest price and its status of every stock among <paramref name="stockIds"/> that the catalog has, by id, without the performance windows: for
+    /// a reader that needs one close (the calculator) and not the numbers of a list. Status and price are the very ones <see cref="SnapshotsAsync"/> gives.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken);
 }

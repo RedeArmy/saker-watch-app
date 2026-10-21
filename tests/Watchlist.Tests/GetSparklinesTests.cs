@@ -77,6 +77,8 @@ public sealed class GetSparklinesTests
             Task.FromResult<IReadOnlyDictionary<Guid, StockSummary>>(_known.Where(stock => stockIds.Contains(stock.Id)).ToDictionary(stock => stock.Id));
 
         public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class History : IPriceHistory

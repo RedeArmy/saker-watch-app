@@ -23,6 +23,7 @@ What must not happen: a user sees a number that the database would not give, or 
 - **A listing with no stamp** (never loaded) or with no price is not stored.
 - **Redis is never authoritative.** A Redis failure, a timeout or an unreadable entry is a miss: the numbers come from Postgres, one warning is logged (events 2801, 2802) and the metric `sakerwatch_marketdata_perf_cache_total{result=error}` counts it. The request never fails because of the cache.
 - **Settings** (`MarketData:Cache`): `Enabled` (default true) and `Ttl` (default 26 hours: a day plus a margin, so the last key of a listing outlives the next load). Off, every read goes to the database as before.
+- **The calculator does not read the windows.** It needs one close, so `IMarketSnapshots.PricesAsync` gives the price and its status (catalog, newest bar and ingestion state) without the performance reader. The status is decided by the same code as the snapshots (a test compares them for every kind of listing), so a calculation and a list cannot disagree about a price.
 - **The reader** is a decorator (`CachedPerformanceReader`) over the database reader behind the same `IPerformanceReader`, so the watchlist, the portfolios and the detail all get it and none of them changed.
 
 ## Consequences

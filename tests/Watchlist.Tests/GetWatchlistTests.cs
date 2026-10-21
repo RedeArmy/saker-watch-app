@@ -82,6 +82,8 @@ public sealed class GetWatchlistTests
             SnapshotCalls.Add(stockIds.Count);
             return Task.FromResult<IReadOnlyDictionary<Guid, StockSnapshot>>(_byId.Where(pair => stockIds.Contains(pair.Key)).ToDictionary());
         }
+
+        public Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private static StockSnapshot Snapshot(

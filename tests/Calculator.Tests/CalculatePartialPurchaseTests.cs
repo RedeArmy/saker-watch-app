@@ -32,10 +32,13 @@ public sealed class CalculatePartialPurchaseTests
     {
         public Task<IReadOnlyDictionary<Guid, StockSummary>> FindManyAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken)
+        // The calculator needs one close, not the performance windows: asking for the snapshots is a failure of the test.
+        public Task<IReadOnlyDictionary<Guid, StockSnapshot>> SnapshotsAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<Guid, StockPrice>> PricesAsync(IReadOnlyCollection<Guid> stockIds, CancellationToken cancellationToken)
         {
-            StockSnapshot[] known = snapshot is null ? [] : [snapshot];
-            return Task.FromResult<IReadOnlyDictionary<Guid, StockSnapshot>>(known.ToDictionary(found => found.Stock.Id));
+            StockPrice[] known = snapshot is null ? [] : [new StockPrice(snapshot.Stock, snapshot.PriceStatus, snapshot.Price, snapshot.StaleSince, snapshot.DelistedAt)];
+            return Task.FromResult<IReadOnlyDictionary<Guid, StockPrice>>(known.ToDictionary(found => found.Stock.Id));
         }
     }
 

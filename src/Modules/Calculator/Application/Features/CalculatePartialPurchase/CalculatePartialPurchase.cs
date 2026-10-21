@@ -172,8 +172,8 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
             return stock.Error!;
         }
 
-        IReadOnlyDictionary<Guid, StockSnapshot> snapshots = await market.SnapshotsAsync([stock.Value.Id], cancellationToken);
-        if (!snapshots.TryGetValue(stock.Value.Id, out StockSnapshot? snapshot) || snapshot.Price is null)
+        IReadOnlyDictionary<Guid, StockPrice> prices = await market.PricesAsync([stock.Value.Id], cancellationToken);
+        if (!prices.TryGetValue(stock.Value.Id, out StockPrice? found) || found.Price is null)
         {
             return Error.Unprocessable(PartialPurchaseErrors.PriceUnavailable, $"{stock.Value.Ticker} has no price yet. Try again later, or give a price.");
         }
@@ -185,9 +185,9 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
         }
 
         // The raw close, in the stock's own currency: the price a share trades at, and not the adjusted close the windows use.
-        Result<Money> closing = Money.Create(snapshot.Price.Value, currencyOfStock.Value);
+        Result<Money> closing = Money.Create(found.Price.Value, currencyOfStock.Value);
         return closing.IsSuccess
-            ? new PriceFound(closing.Value, stock.Value, snapshot.Price.Date, snapshot.PriceStatus, snapshot.StaleSince)
+            ? new PriceFound(closing.Value, stock.Value, found.Price.Date, found.PriceStatus, found.StaleSince)
             : closing.Error!;
     }
 
