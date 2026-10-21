@@ -1,6 +1,6 @@
 # ADR-0040: Company profiles and filings from the SEC (ports, a fake and an adapter that is off)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-20
 - **Deciders:** Eder
 

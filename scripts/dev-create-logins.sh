@@ -9,7 +9,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-compose=(docker compose -p saker-watch -f deploy/docker-compose.yml)
+# COMPOSE_PROJECT and COMPOSE_EXTRA_FILE let a throwaway stack (scripts/smoke-worker.sh) reuse this script without touching the dev one.
+compose=(docker compose -p "${COMPOSE_PROJECT:-saker-watch}" -f deploy/docker-compose.yml ${COMPOSE_EXTRA_FILE:+-f "$COMPOSE_EXTRA_FILE"})
 database="${MONGO_DATABASE:-saker}"
 
 for name in POSTGRES_PASSWORD MONGO_PASSWORD API_DB_PASSWORD WORKER_DB_PASSWORD MONGO_APP_PASSWORD; do

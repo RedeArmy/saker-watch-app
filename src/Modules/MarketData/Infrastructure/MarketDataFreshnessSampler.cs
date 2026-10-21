@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
@@ -119,7 +120,8 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
             try
             {
                 await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
-                IReadOnlyList<ListingLatest> listings = await scope.ServiceProvider.GetRequiredService<IFreshnessReader>().LatestPerListingAsync(market, cancellationToken);
+                IReadOnlyList<ListingLatest> listings = await ReadAsync(
+                    scope.ServiceProvider, () => scope.ServiceProvider.GetRequiredService<IFreshnessReader>().LatestPerListingAsync(market, cancellationToken), cancellationToken);
                 next[market.Value] = Measure(calendar.Value, listings, now, settle);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -136,6 +138,21 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
         await SampleFxAsync(now, cancellationToken);
     }
 
+    // The stores read through the scope's database session, whose connection exists only inside a unit of work; nothing here writes, so it is let go.
+    private static async Task<T> ReadAsync<T>(IServiceProvider services, Func<Task<T>> read, CancellationToken cancellationToken)
+    {
+        var unit = services.GetRequiredService<IUnitOfWork>();
+        await unit.BeginAsync(cancellationToken);
+        try
+        {
+            return await read();
+        }
+        finally
+        {
+            await unit.RollbackAsync(CancellationToken.None);
+        }
+    }
+
     // Skipped when the host registered no rate store. A failure keeps the last measurement.
     private async Task SampleFxAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -148,7 +165,7 @@ public sealed partial class MarketDataFreshnessSampler : BackgroundService
             }
 
             (CurrencyCode baseCurrency, CurrencyCode quote) = FxFreshness.Anchor;
-            DateOnly? latest = await store.LatestDateAsync(baseCurrency, quote, BanguatOptions.ProviderName, cancellationToken);
+            DateOnly? latest = await ReadAsync(scope.ServiceProvider, () => store.LatestDateAsync(baseCurrency, quote, BanguatOptions.ProviderName, cancellationToken), cancellationToken);
             double? age = latest is { } date ? FxFreshness.AgeDays(date, FxFreshness.TodayInGuatemala(now)) : null;
             lock (_gate)
             {
