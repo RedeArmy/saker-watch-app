@@ -12,12 +12,25 @@ root="$PWD"
 out="${1:-$(mktemp -d)}"
 mkdir -p "$out"
 failures=0
-log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$out/steps.log"; }
+log() {
+  echo "[$(date +%H:%M:%S)] $*" | tee -a "$out/steps.log"
+  return 0
+}
 check() { # check <what> <expected> <actual>
-  if [[ "$2" == "$3" ]]; then log "ok   $1"; else log "FAIL $1: expected '$2', got '$3'"; failures=$((failures + 1)); fi
+  local what="$1" expected="$2" actual="$3"
+  if [[ "$expected" == "$actual" ]]; then
+    log "ok   $what"
+  else
+    log "FAIL $what: expected '$expected', got '$actual'"
+    failures=$((failures + 1))
+  fi
+  return 0
 }
 
-rand() { head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24; }
+rand() {
+  head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24
+  return 0
+}
 export POSTGRES_PASSWORD="$(rand)" MONGO_PASSWORD="$(rand)" REDIS_PASSWORD="$(rand)"
 export API_DB_PASSWORD="$(rand)" WORKER_DB_PASSWORD="$(rand)" MONGO_APP_PASSWORD="$(rand)"
 export POSTGRES_PORT=55432 MONGO_PORT=57017 REDIS_PORT=56379
@@ -29,7 +42,11 @@ fi
 files+=(-f deploy/docker-compose.dev-ports.yml)
 compose=(docker compose -p saker-smoke "${files[@]}")
 
-cleanup() { log "tearing the smoke stack down (containers and its own volumes)"; "${compose[@]}" down -v >>"$out/compose.log" 2>&1; }
+cleanup() {
+  log "tearing the smoke stack down (containers and its own volumes)"
+  "${compose[@]}" down -v >>"$out/compose.log" 2>&1
+  return 0
+}
 trap cleanup EXIT
 
 log "starting postgres, mongo and redis"
@@ -43,33 +60,44 @@ done
 check "the three services are healthy" 3 "$healthy"
 [[ "$healthy" -ge 3 ]] || exit 1
 
-ConnectionStrings__PostgresAdmin="Host=127.0.0.1;Port=$POSTGRES_PORT;Database=saker;Username=saker_admin;Password=$POSTGRES_PASSWORD" \
-ConnectionStrings__MongoAdmin="mongodb://saker_admin:$MONGO_PASSWORD@127.0.0.1:$MONGO_PORT/?authSource=admin" \
+CONNECTIONSTRINGS__POSTGRESADMIN="Host=127.0.0.1;Port=$POSTGRES_PORT;Database=saker;Username=saker_admin;Password=$POSTGRES_PASSWORD" \
+CONNECTIONSTRINGS__MONGOADMIN="mongodb://saker_admin:$MONGO_PASSWORD@127.0.0.1:$MONGO_PORT/?authSource=admin" \
   dotnet run --no-build --project src/Hosts/Host.Migrator >"$out/migrator.log" 2>&1
 check "the migrator exits 0" 0 "$?"
 
 COMPOSE_PROJECT=saker-smoke COMPOSE_EXTRA_FILE="$([[ "${SMOKE_NOAVX:-0}" == "1" ]] && echo deploy/docker-compose.no-avx.yml)" bash scripts/dev-create-logins.sh >"$out/logins.log" 2>&1
 check "the runtime logins are created" 0 "$?"
 
-export ConnectionStrings__Postgres="Host=127.0.0.1;Port=$POSTGRES_PORT;Database=saker;Username=saker_worker;Password=$WORKER_DB_PASSWORD"
-export ConnectionStrings__Mongo="mongodb://saker_app:$MONGO_APP_PASSWORD@127.0.0.1:$MONGO_PORT/saker"
-export ConnectionStrings__Redis="127.0.0.1:$REDIS_PORT,password=$REDIS_PASSWORD"
-export Audit__ActorPepper="$(head -c 32 /dev/urandom | base64)"
+export CONNECTIONSTRINGS__POSTGRES="Host=127.0.0.1;Port=$POSTGRES_PORT;Database=saker;Username=saker_worker;Password=$WORKER_DB_PASSWORD"
+export CONNECTIONSTRINGS__MONGO="mongodb://saker_app:$MONGO_APP_PASSWORD@127.0.0.1:$MONGO_PORT/saker"
+export CONNECTIONSTRINGS__REDIS="127.0.0.1:$REDIS_PORT,password=$REDIS_PASSWORD"
+export AUDIT__ACTORPEPPER="$(head -c 32 /dev/urandom | base64)"
 export DOTNET_ENVIRONMENT=Production
 
 log "running the worker for 25 seconds"
 timeout -s TERM 25 dotnet run --no-build --project src/Hosts/Host.Worker >"$out/worker.log" 2>&1
 check "the worker was still running when it was stopped (124)" 124 "$?"
-has() { grep -q "$1" "$out/worker.log" && echo yes || echo no; }
+has() { # has <text>: does the worker log contain it
+  local text="$1"
+  grep -q "$text" "$out/worker.log" && echo yes || echo no
+  return 0
+}
 check "the worker logged its start (9201)" yes "$(has '"Name":"WorkerStarted"')"
 check "the worker logged a graceful stop (9202)" yes "$(has '"Name":"WorkerStopping"')"
 check "no warning or error in the worker log (but the dry-run notice of Production)" 0 "$(grep -E '"@l":"(Warning|Error|Fatal)"' "$out/worker.log" | grep -vc DryRunOutsideDevelopment)"
 
-psql_admin() { "${compose[@]}" exec -T postgres psql -U saker_admin -d saker -v ON_ERROR_STOP=1 -At "$@"; }
+psql_admin() {
+  "${compose[@]}" exec -T postgres psql -U saker_admin -d saker -v ON_ERROR_STOP=1 -At "$@"
+  return $?
+}
 psql_admin -c "INSERT INTO marketdata.stocks (id, market_mic, ticker, name, currency, time_zone, asset_type, is_active, listed_at) VALUES (gen_random_uuid(), 'XNAS', 'OLDT', 'Old Ticker Inc.', 'USD', 'America/New_York', 'equity', true, now())" >>"$out/steps.log" 2>&1
 psql_admin -c "INSERT INTO marketdata.symbol_aliases (provider, provider_mic, provider_symbol, stock_id, created_at) SELECT 'twelvedata', 'XNAS', 'OLDT', id, now() FROM marketdata.stocks WHERE ticker = 'OLDT'" >>"$out/steps.log" 2>&1
 
-cli() { dotnet run --no-build --project src/Hosts/Host.Worker -- marketdata "$@" >>"$out/cli.log" 2>&1; echo $?; }
+cli() { # prints the exit code of the operator command
+  dotnet run --no-build --project src/Hosts/Host.Worker -- marketdata "$@" >>"$out/cli.log" 2>&1
+  echo $?
+  return 0
+}
 check "an unreadable command exits 2" 2 "$(cli explode)"
 check "an unknown stock exits 1" 1 "$(cli delist XNAS NOPE)"
 check "rename exits 0" 0 "$(cli rename XNAS OLDT NEWT --on 2026-10-01)"
