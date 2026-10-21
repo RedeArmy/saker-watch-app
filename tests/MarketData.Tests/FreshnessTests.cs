@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Application.Fx;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
@@ -77,11 +78,41 @@ public sealed class FreshnessTests
             fail ? throw new InvalidOperationException("database not ready") : Task.FromResult(latest);
     }
 
+    private sealed class ReadUnit : IUnitOfWork
+    {
+        public int Begun { get; private set; }
+
+        public int Committed { get; private set; }
+
+        public int RolledBack { get; private set; }
+
+        public Task BeginAsync(CancellationToken cancellationToken)
+        {
+            Begun++;
+            return Task.CompletedTask;
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken)
+        {
+            Committed++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken)
+        {
+            RolledBack++;
+            return Task.CompletedTask;
+        }
+    }
+
     private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, DateTimeOffset now, params string[] markets) => Sampler(reader, null, now, markets);
 
-    private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, IFxRateStore? rates, DateTimeOffset now, params string[] markets)
+    private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, IFxRateStore? rates, DateTimeOffset now, params string[] markets) =>
+        Sampler(reader, rates, new ReadUnit(), now, markets);
+
+    private static MarketDataFreshnessSampler Sampler(IFreshnessReader reader, IFxRateStore? rates, ReadUnit unit, DateTimeOffset now, params string[] markets)
     {
-        var services = new ServiceCollection().AddSingleton(reader);
+        var services = new ServiceCollection().AddSingleton(reader).AddSingleton<IUnitOfWork>(unit);
         if (rates is not null)
         {
             services.AddSingleton(rates);
@@ -148,6 +179,22 @@ public sealed class FreshnessTests
         await broken.SampleAsync(CancellationToken.None);
 
         broken.GetSnapshot().Should().BeEmpty("nothing was ever measured, and the failure did not throw");
+    }
+
+    [Fact]
+    public async Task Sample_ReadsInsideAUnitOfWork_AndLetsItGoWhetherTheReadWorkedOrNot()
+    {
+        var now = new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+        var unit = new ReadUnit();
+        var rates = new FakeRates(new DateOnly(2026, 10, 16));
+
+        // The real stores read through a connection that only exists inside a unit of work; without one every sample failed in production.
+        await Sampler(new FakeReader(new() { ["XNAS"] = [Listing(new DateOnly(2026, 10, 16))] }), rates, unit, now, "XNAS").SampleAsync(CancellationToken.None);
+        await Sampler(new FakeReader([], fail: true), new FakeRates(null, fail: true), unit, now, "XNAS").SampleAsync(CancellationToken.None);
+
+        unit.Begun.Should().Be(4, "each of the two samples reads a market and the exchange rate");
+        unit.RolledBack.Should().Be(4);
+        unit.Committed.Should().Be(0);
     }
 
     [Fact]
