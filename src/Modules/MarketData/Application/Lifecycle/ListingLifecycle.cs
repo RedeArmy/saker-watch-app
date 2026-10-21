@@ -39,12 +39,18 @@ public interface IListingLifecycleStore
     /// Gives the stock a new ticker, keeps the old one in its history, moves the provider symbols that carried the old ticker to
     /// <paramref name="providerSymbol"/> and records the corporate action.
     /// </summary>
-    Task<RenameOutcome> RenameAsync(
-        StockId stock, Mic market, Ticker oldTicker, Ticker newTicker, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken);
+    Task<RenameOutcome> RenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken);
 
     /// <summary>Counts <paramref name="day"/> as a day the provider did not know the symbol (once per day however many times it is tried) and returns the days in a row.</summary>
     Task<int> NoteSymbolNotFoundAsync(StockId stock, DateOnly day, DateTimeOffset at, CancellationToken cancellationToken);
 }
+
+/// <summary>A stock that changes its ticker within its market.</summary>
+/// <param name="Stock">The stock; it keeps its identity.</param>
+/// <param name="Market">The canonical market.</param>
+/// <param name="Old">The ticker it has now.</param>
+/// <param name="New">The ticker it will have.</param>
+public sealed record TickerChange(StockId Stock, Mic Market, Ticker Old, Ticker New);
 
 /// <summary>The outcome of a change to the life of a listing, for the operator.</summary>
 /// <param name="Market">The canonical market.</param>
@@ -174,7 +180,7 @@ public sealed partial class ListingLifecycle(
 
         DateTimeOffset now = clock.GetUtcNow();
         RenameOutcome outcome = await store.RenameAsync(
-            listing.Id, listing.Market, old.Value, fresh.Value, on ?? DateOnly.FromDateTime(now.UtcDateTime), (providerSymbol ?? fresh.Value.Value).Trim(), now, cancellationToken);
+            new TickerChange(listing.Id, listing.Market, old.Value, fresh.Value), on ?? DateOnly.FromDateTime(now.UtcDateTime), (providerSymbol ?? fresh.Value.Value).Trim(), now, cancellationToken);
         Count(_rename, outcome == RenameOutcome.Done ? _done : _rejected);
         return outcome switch
         {

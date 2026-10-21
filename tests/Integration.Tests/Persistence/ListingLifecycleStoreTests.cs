@@ -45,7 +45,7 @@ public sealed class ListingLifecycleStoreTests(TimescalePostgresFixture postgres
         InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).DelistAsync(id, _now, new DateOnly(2026, 10, 1), source, CancellationToken.None));
 
     private static Task<RenameOutcome> RenameAsync(MigratedDatabase db, StockId id, string from, string to) =>
-        InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).RenameAsync(id, _market, Ticker.Parse(from), Ticker.Parse(to), new DateOnly(2026, 10, 1), to, _now, CancellationToken.None));
+        InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).RenameAsync(new TickerChange(id, _market, Ticker.Parse(from), Ticker.Parse(to)), new DateOnly(2026, 10, 1), to, _now, CancellationToken.None));
 
     [Fact]
     public async Task Delist_MarksTheStockInactiveWithTheMoment_RecordsTheAction_AndDoingItAgainChangesNothing()

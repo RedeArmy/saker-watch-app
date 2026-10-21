@@ -39,7 +39,7 @@ public sealed class LifecycleCommandLineTests
 
         public Task<bool> RelistAsync(StockId stock, DateTimeOffset at, CancellationToken cancellationToken) => Task.FromResult(true);
 
-        public Task<RenameOutcome> RenameAsync(StockId stock, Mic market, Ticker oldTicker, Ticker newTicker, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken) =>
+        public Task<RenameOutcome> RenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken) =>
             Task.FromResult(RenameOutcome.Done);
 
         public Task<int> NoteSymbolNotFoundAsync(StockId stock, DateOnly day, DateTimeOffset at, CancellationToken cancellationToken) => Task.FromResult(1);

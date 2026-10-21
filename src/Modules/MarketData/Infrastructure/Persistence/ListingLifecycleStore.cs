@@ -14,6 +14,8 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence;
 /// <param name="session">The scope's database session.</param>
 public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycleStore
 {
+    private const string _market = "market";
+
     /// <inheritdoc />
     public async Task<bool> DelistAsync(StockId stock, DateTimeOffset at, DateOnly on, string source, CancellationToken cancellationToken)
     {
@@ -51,13 +53,15 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
     }
 
     /// <inheritdoc />
-    public async Task<RenameOutcome> RenameAsync(
-        StockId stock, Mic market, Ticker oldTicker, Ticker newTicker, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
+    public async Task<RenameOutcome> RenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(change);
+        (StockId stock, Mic market, Ticker oldTicker, Ticker newTicker) = change;
+
         object? taken = await ScalarAsync(
             "SELECT 1 FROM marketdata.stocks WHERE market_mic = @market AND ticker = @new AND id <> @id",
             cancellationToken,
-            ("market", market.Value), ("new", newTicker.Value), ("id", stock.Value));
+            (_market, market.Value), ("new", newTicker.Value), ("id", stock.Value));
         if (taken is not null)
         {
             return RenameOutcome.TickerTaken;
@@ -70,7 +74,7 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
             int renamed = await ExecuteAsync(
                 "UPDATE marketdata.stocks SET ticker = @new WHERE id = @id AND market_mic = @market AND ticker = @old",
                 cancellationToken,
-                ("market", market.Value), ("old", oldTicker.Value), ("new", newTicker.Value), ("id", stock.Value));
+                (_market, market.Value), ("old", oldTicker.Value), ("new", newTicker.Value), ("id", stock.Value));
             if (renamed == 0)
             {
                 return RenameOutcome.StockNotFound;
@@ -80,7 +84,7 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
             await ExecuteAsync(
                 "DELETE FROM marketdata.ticker_history WHERE market_mic = @market AND ticker = @new",
                 cancellationToken,
-                ("market", market.Value), ("new", newTicker.Value));
+                (_market, market.Value), ("new", newTicker.Value));
             await ExecuteAsync(
                 """
                 INSERT INTO marketdata.ticker_history (market_mic, ticker, stock_id, changed_on, created_at)
@@ -88,7 +92,7 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
                 ON CONFLICT (market_mic, ticker) DO UPDATE SET stock_id = EXCLUDED.stock_id, changed_on = EXCLUDED.changed_on
                 """,
                 cancellationToken,
-                ("market", market.Value), ("old", oldTicker.Value), ("id", stock.Value), ("on", on), ("at", at.ToUniversalTime()));
+                (_market, market.Value), ("old", oldTicker.Value), ("id", stock.Value), ("on", on), ("at", at.ToUniversalTime()));
 
             // The provider calls the stock by its new symbol from now on; a symbol that was not the old ticker is the operator's to change.
             await ExecuteAsync(

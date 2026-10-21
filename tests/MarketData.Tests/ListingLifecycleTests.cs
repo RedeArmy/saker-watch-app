@@ -58,9 +58,9 @@ public sealed class ListingLifecycleTests
             return Task.FromResult(RelistChanges);
         }
 
-        public Task<RenameOutcome> RenameAsync(StockId stock, Mic market, Ticker oldTicker, Ticker newTicker, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
+        public Task<RenameOutcome> RenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
         {
-            Calls.Add($"rename {oldTicker}>{newTicker} {on:yyyy-MM-dd} {providerSymbol}");
+            Calls.Add($"rename {change.Old}>{change.New} {on:yyyy-MM-dd} {providerSymbol}");
             return Task.FromResult(Rename);
         }
 

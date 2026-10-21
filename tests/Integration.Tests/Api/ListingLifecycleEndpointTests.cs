@@ -10,6 +10,7 @@ using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Identity;
 using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Lifecycle;
 using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
@@ -144,7 +145,7 @@ public sealed class ListingLifecycleEndpointTests(TimescalePostgresFixture postg
         (WatchlistRig.Rig rig, string token, _) = await StartAsync();
         Guid apple = await AppleAsync(rig);
         int providerCalls = rig.Provider.Calls;
-        (await AsWorkerAsync(rig, store => store.RenameAsync(StockId.Create(apple), Mic.Parse("XNAS"), Ticker.Parse("AAPL"), Ticker.Parse("APLE"), new DateOnly(2026, 10, 1), "APLE", DateTimeOffset.UtcNow, CancellationToken.None)))
+        (await AsWorkerAsync(rig, store => store.RenameAsync(new TickerChange(StockId.Create(apple), Mic.Parse("XNAS"), Ticker.Parse("AAPL"), Ticker.Parse("APLE")), new DateOnly(2026, 10, 1), "APLE", DateTimeOffset.UtcNow, CancellationToken.None)))
             .Should().Be(SakerWatch.MarketData.Application.Lifecycle.RenameOutcome.Done);
 
         JsonElement list = await OkAsync(rig, token, "/v1/watchlist");

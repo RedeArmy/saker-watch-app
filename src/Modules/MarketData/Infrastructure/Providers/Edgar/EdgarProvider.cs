@@ -381,25 +381,7 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
                 return ProviderErrors.InvalidResponse(Name);
             }
 
-            var found = new List<Filing>();
-            int dropped = 0;
-            for (int i = 0; i < rows; i++)
-            {
-                Filing? filing = BuildFiling(request.Cik, numbers[i], formsColumn[i], filedOn[i], i < reportedOn.Length ? reportedOn[i] : default, i < documents.Length ? documents[i] : default);
-                if (filing is null)
-                {
-                    dropped++;
-                }
-                else if ((forms.Length == 0 || forms.Contains(filing.Form, StringComparer.OrdinalIgnoreCase)) && (request.Since is null || filing.FilingDate >= request.Since))
-                {
-                    found.Add(filing);
-                }
-            }
-
-            if (dropped > 0)
-            {
-                LogRowsDropped(_filings, dropped, rows);
-            }
+            List<Filing> found = Collect(request, forms, (numbers, formsColumn, filedOn, reportedOn, documents), rows);
 
             return Result.Success<IReadOnlyList<Filing>>([.. found
                 .OrderByDescending(filing => filing.FilingDate)
@@ -411,6 +393,40 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
             return ProviderErrors.InvalidResponse(Name);
         }
     }
+
+    private List<Filing> Collect(FilingsRequest request, string[] forms, (JsonElement[] Numbers, JsonElement[] Forms, JsonElement[] FiledOn, JsonElement[] ReportedOn, JsonElement[] Documents) columns, int rows)
+    {
+        var found = new List<Filing>();
+        int dropped = 0;
+        for (int i = 0; i < rows; i++)
+        {
+            Filing? filing = BuildFiling(
+                request.Cik,
+                columns.Numbers[i],
+                columns.Forms[i],
+                columns.FiledOn[i],
+                i < columns.ReportedOn.Length ? columns.ReportedOn[i] : default,
+                i < columns.Documents.Length ? columns.Documents[i] : default);
+            if (filing is null)
+            {
+                dropped++;
+            }
+            else if (Wanted(filing, request, forms))
+            {
+                found.Add(filing);
+            }
+        }
+
+        if (dropped > 0)
+        {
+            LogRowsDropped(_filings, dropped, rows);
+        }
+
+        return found;
+    }
+
+    private static bool Wanted(Filing filing, FilingsRequest request, string[] forms) =>
+        (forms.Length == 0 || forms.Contains(filing.Form, StringComparer.OrdinalIgnoreCase)) && (request.Since is null || filing.FilingDate >= request.Since);
 
     private static bool HasColumns(JsonElement recent, params string[] properties) =>
         properties.All(property => recent.TryGetProperty(property, out JsonElement column) && column.ValueKind == JsonValueKind.Array);

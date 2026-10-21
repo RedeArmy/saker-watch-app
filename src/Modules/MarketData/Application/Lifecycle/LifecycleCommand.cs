@@ -41,6 +41,39 @@ public sealed record LifecycleCommand(LifecycleOperation Operation, string Marke
     {
         ArgumentNullException.ThrowIfNull(args);
 
+        Result<(List<string> Positional, DateOnly? On, string? ProviderSymbol)> read = ReadOptions(args);
+        if (!read.IsSuccess)
+        {
+            return read.Error!;
+        }
+
+        (List<string> positional, DateOnly? on, string? providerSymbol) = read.Value;
+        if (positional.Count == 0 || !Enum.TryParse(positional[0], ignoreCase: true, out LifecycleOperation operation) || !Enum.IsDefined(operation))
+        {
+            return Bad("The first argument is delist, relist or rename.");
+        }
+
+        int expected = operation == LifecycleOperation.Rename ? 4 : 3;
+        if (positional.Count != expected)
+        {
+            return Bad($"{operation} takes {expected - 1} values.");
+        }
+
+        if (operation != LifecycleOperation.Rename && providerSymbol is not null)
+        {
+            return Bad("--provider-symbol is only for rename.");
+        }
+
+        if (operation == LifecycleOperation.Relist && on is not null)
+        {
+            return Bad("--on is not for relist.");
+        }
+
+        return new LifecycleCommand(operation, positional[1], positional[2], operation == LifecycleOperation.Rename ? positional[3] : null, on, providerSymbol);
+    }
+
+    private static Result<(List<string> Positional, DateOnly? On, string? ProviderSymbol)> ReadOptions(IReadOnlyList<string> args)
+    {
         var positional = new List<string>();
         DateOnly? on = null;
         string? providerSymbol = null;
@@ -75,28 +108,7 @@ public sealed record LifecycleCommand(LifecycleOperation Operation, string Marke
             }
         }
 
-        if (positional.Count == 0 || !Enum.TryParse(positional[0], ignoreCase: true, out LifecycleOperation operation) || !Enum.IsDefined(operation))
-        {
-            return Bad("The first argument is delist, relist or rename.");
-        }
-
-        int expected = operation == LifecycleOperation.Rename ? 4 : 3;
-        if (positional.Count != expected)
-        {
-            return Bad($"{operation} takes {expected - 1} values.");
-        }
-
-        if (operation != LifecycleOperation.Rename && providerSymbol is not null)
-        {
-            return Bad("--provider-symbol is only for rename.");
-        }
-
-        if (operation == LifecycleOperation.Relist && on is not null)
-        {
-            return Bad("--on is not for relist.");
-        }
-
-        return new LifecycleCommand(operation, positional[1], positional[2], operation == LifecycleOperation.Rename ? positional[3] : null, on, providerSymbol);
+        return (positional, on, providerSymbol);
     }
 
     private static Error Bad(string reason) => Error.Validation(UsageCode, $"{reason} {Usage}");
