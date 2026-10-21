@@ -194,7 +194,7 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
 
     private async Task<Result<IReadOnlyDictionary<string, Cik>>> TickerMapAsync(CancellationToken cancellationToken)
     {
-        TimeSpan keep = TimeSpan.FromHours(_options.Value.TickerMapHours);
+        var keep = TimeSpan.FromHours(_options.Value.TickerMapHours);
         if (_map is { } known && _clock.GetUtcNow() - _mapLoadedAt < keep)
         {
             return Result.Success(known);
@@ -238,7 +238,7 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(body, _json);
+            using var document = JsonDocument.Parse(body, _json);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return ProviderErrors.InvalidResponse(Name);
@@ -305,7 +305,7 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(body, _json);
+            using var document = JsonDocument.Parse(body, _json);
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || Bounded(root, "name", _maxNameLength) is not { } name)
             {
@@ -351,7 +351,7 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(body, _json);
+            using var document = JsonDocument.Parse(body, _json);
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object
                 || !root.TryGetProperty("filings", out JsonElement filings)

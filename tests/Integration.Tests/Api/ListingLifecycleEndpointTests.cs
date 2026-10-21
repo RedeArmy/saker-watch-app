@@ -130,7 +130,7 @@ public sealed class ListingLifecycleEndpointTests(TimescalePostgresFixture postg
     public async Task ARelistedStock_IsCurrentAgain()
     {
         (WatchlistRig.Rig rig, string token, _) = await StartAsync();
-        StockId apple = StockId.Create(await AppleAsync(rig));
+        var apple = StockId.Create(await AppleAsync(rig));
         await AsWorkerAsync(rig, store => store.DelistAsync(apple, DateTimeOffset.UtcNow, new DateOnly(2026, 10, 1), "operator", CancellationToken.None));
         await AsWorkerAsync(rig, store => store.RelistAsync(apple, DateTimeOffset.UtcNow, CancellationToken.None));
 

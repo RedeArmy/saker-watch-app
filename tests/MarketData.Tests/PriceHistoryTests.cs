@@ -51,14 +51,20 @@ public sealed class PriceHistoryTests
 
     private sealed class Latest(LatestBar? bar) : ILatestBars
     {
-        public Task<IReadOnlyDictionary<StockId, LatestBar>> ReadAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyDictionary<StockId, LatestBar>>(bar is null ? new Dictionary<StockId, LatestBar>() : new Dictionary<StockId, LatestBar> { [_apple] = bar });
+        public Task<IReadOnlyDictionary<StockId, LatestBar>> ReadAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken)
+        {
+            LatestBar[] known = bar is null ? [] : [bar];
+            return Task.FromResult<IReadOnlyDictionary<StockId, LatestBar>>(known.ToDictionary(_ => _apple));
+        }
     }
 
     private sealed class Failures(bool failed) : IIngestionStatuses
     {
-        public Task<IReadOnlySet<StockId>> FailedAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlySet<StockId>>(failed ? new HashSet<StockId> { _apple } : new HashSet<StockId>());
+        public Task<IReadOnlySet<StockId>> FailedAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken)
+        {
+            HashSet<StockId> ids = failed ? [_apple] : [];
+            return Task.FromResult<IReadOnlySet<StockId>>(ids);
+        }
     }
 
     private static SeriesBar Bar(int month, int day, decimal close) => new(new DateOnly(2026, month, day), close * 2, close, IsFinal: true);

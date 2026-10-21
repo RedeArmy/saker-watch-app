@@ -120,7 +120,7 @@ public sealed class GetSparklinesTests
     [Fact]
     public async Task ThePortfolioFilter_KeepsOnlyItsStocks_AndAnotherUsersPortfolioIsNotFound()
     {
-        Guid portfolio = Guid.CreateVersion7();
+        var portfolio = Guid.CreateVersion7();
         var items = new Items(_apple, _coke, _pending);
         var history = new History();
 
