@@ -57,6 +57,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
+| scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0016-observability-and-traceability.md | ADR 0016 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | approved | 0 | 2026-10-12 |
 | docs/observability/README.md | Observability catalog | Eder | draft | 1 | 2026-10-12 |
