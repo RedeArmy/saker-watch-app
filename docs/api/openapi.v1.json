@@ -2290,8 +2290,7 @@
           "price",
           "currency",
           "amount",
-          "shares",
-          "feePercent"
+          "shares"
         ],
         "type": "object",
         "properties": {

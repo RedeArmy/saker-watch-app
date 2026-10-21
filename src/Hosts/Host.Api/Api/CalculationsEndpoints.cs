@@ -17,7 +17,7 @@ namespace SakerWatch.Hosts.Api.Api;
 /// <param name="Amount">Money to invest, in the currency of the price (a decimal string).</param>
 /// <param name="Shares">Number of shares to buy, up to six decimals (a decimal string).</param>
 /// <param name="FeePercent">The broker's commission as a percentage of the value of the shares, 0 to 10 (a decimal string; <c>"1"</c> is 1 %). Optional: without it the commission is 0. When given with <c>amount</c>, the amount is the total paid, commission included.</param>
-public sealed record PartialPurchaseRequest(string? Market, string? Ticker, decimal? Price, string? Currency, decimal? Amount, decimal? Shares, decimal? FeePercent);
+public sealed record PartialPurchaseRequest(string? Market, string? Ticker, decimal? Price, string? Currency, decimal? Amount, decimal? Shares, decimal? FeePercent = null);
 
 /// <summary>One step of the exchange path.</summary>
 /// <param name="From">The currency the step starts from.</param>
