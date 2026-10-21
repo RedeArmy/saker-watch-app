@@ -58,6 +58,11 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
+| scripts/run-k6.sh | Load baseline of the Phase 2 read paths on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
+| scripts/load/idp.py | Stand-in identity provider for the load test | Eder | approved | 2 | 2026-10-21 |
+| scripts/load/seed.sql | Load test data: 500 listings, six years of prices | Eder | approved | 2 | 2026-10-21 |
+| scripts/load/summarize.py | k6 summaries as markdown tables | Eder | approved | 2 | 2026-10-21 |
+| tests/load/baseline.js | k6 scenarios of the Phase 2 read paths | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0016-observability-and-traceability.md | ADR 0016 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | approved | 0 | 2026-10-12 |
 | docs/observability/README.md | Observability catalog | Eder | draft | 1 | 2026-10-12 |
@@ -92,6 +97,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0040-company-profiles-and-filings.md | ADR 0040 | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0041-cache-of-the-daily-numbers.md | ADR 0041 | Eder | draft | 2 | 2026-10-21 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
+| docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | draft | 2 | 2026-10-21 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | draft | 1 | 2026-10-12 |
