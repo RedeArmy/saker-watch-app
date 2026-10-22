@@ -11,11 +11,11 @@ import { Trend } from 'k6/metrics';
 
 const base = __ENV.K6_BASE_URL;
 const tokens = (__ENV.K6_TOKENS || '').split(',').filter((t) => t.length > 0);
-const seconds = parseInt(__ENV.K6_PHASE_SECONDS || '30', 10);
+const seconds = Number.parseInt(__ENV.K6_PHASE_SECONDS || '30', 10);
 const enforce = __ENV.K6_ENFORCE === '1';
 const stocks = 500;
 const portfolioStocks = 100;
-const vus = parseInt(__ENV.K6_VUS || '4', 10);
+const vus = Number.parseInt(__ENV.K6_VUS || '4', 10);
 
 const scenarioNames = ['watchlist_by_ticker', 'watchlist_by_performance', 'sparklines', 'portfolio_metrics', 'calculator'];
 
@@ -41,7 +41,7 @@ export const options = {
 const settled = new Trend('settled_ms');
 
 function headers(token, extra = {}) {
-  return { headers: Object.assign({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, extra) };
+  return { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...extra } };
 }
 
 function ticker(n) {
@@ -100,7 +100,7 @@ function pick(data) {
 }
 
 function get(url, token, name) {
-  const response = http.get(url, Object.assign(headers(token), { tags: { name } }));
+  const response = http.get(url, { ...headers(token), tags: { name } });
   check(response, { [`${name} answered 200`]: (r) => r.status === 200 });
   settled.add(response.timings.duration);
   return response;
@@ -126,10 +126,11 @@ export function portfolio_metrics(data) {
 
 export function calculator(data) {
   const { token } = pick(data);
-  const n = 1 + Math.floor(Math.random() * stocks);
+  // Every virtual user walks the catalog with a different stride, so the stocks asked for are spread without any random number.
+  const n = 1 + ((__VU * 7919 + __ITER * 104729) % stocks);
   const response = http.post(
     `${base}/v1/calculations/partial-purchase`,
     JSON.stringify({ market: 'XNAS', ticker: ticker(n), amount: '100' }),
-    Object.assign(headers(token), { tags: { name: 'POST /v1/calculations/partial-purchase' } }));
+    { ...headers(token), tags: { name: 'POST /v1/calculations/partial-purchase' } });
   check(response, { 'calculator answered 200': (r) => r.status === 200 });
 }

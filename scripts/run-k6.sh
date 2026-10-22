@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Load baseline of the Phase 2 read paths (milestone 2.8): the performance cache on, and then off, on one throwaway stack.
 # It builds its own compose project (saker-load: other ports, random passwords, removed at the end), applies the migrations, seeds 500
-# listings with six years of prices (scripts/load/seed.sql), starts the API with a stand-in identity provider (scripts/load/idp.py, a key
-# made for this run only) and runs tests/load/baseline.js with k6 from a pinned image. The dev stack and your secrets are never touched.
+# listings with six years of prices (scripts/load/seed.sql), starts the API with a stand-in identity provider (scripts/load/idp.py: a key and a TLS certificate made for this run only, which the API is told to trust) and runs tests/load/baseline.js with k6 from a pinned image. The dev stack and your secrets are never touched.
 #   bash scripts/run-k6.sh [output-dir]       (default: a new temporary directory; the k6 summaries and the logs stay there)
 # Needs docker, python3, openssl and a built solution. On a CPU without AVX set LOAD_NOAVX=1. K6_ENFORCE=1 fails the run when the
 # budgets of ADR-0033 are crossed. The numbers belong to the machine they were taken on: k6, the API and the databases share it.
@@ -12,11 +11,13 @@ out="${1:-$(mktemp -d)}"
 mkdir -p "$out"
 chmod 700 "$out"
 k6_image="grafana/k6@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d"   # grafana/k6:1.3.0
-authority="http://127.0.0.1:58081/o/load"
+authority="https://127.0.0.1:58081/o/load"
 audience="saker-load-api"
 api_url="http://127.0.0.1:58090"
 api_pid=""
 idp_pid=""
+idp_name="run-$$-$RANDOM"
+repo="$PWD"
 
 log() {
   echo "[$(date +%H:%M:%S)] $*" | tee -a "$out/steps.log"
@@ -51,6 +52,7 @@ stop_api() {
 cleanup() {
   stop_api
   [[ -n "$idp_pid" ]] && kill -TERM "$idp_pid" 2>/dev/null
+  python3 -I "$repo/scripts/load/idp.py" clean "$idp_name"
   log "tearing the load stack down (containers and its own volumes)"
   "${compose[@]}" down -v >>"$out/compose.log" 2>&1
   return 0
@@ -82,8 +84,9 @@ log "building the API (Release)"
 dotnet build -c Release --nologo -v q src/Hosts/Host.Api >"$out/build.log" 2>&1 || { log "the build failed"; tail -5 "$out/build.log"; exit 1; }
 
 log "starting the stand-in identity provider"
-python3 -I scripts/load/idp.py init "$out/idp" "$authority" "$audience" || { log "idp init failed"; exit 1; }
-python3 -I scripts/load/idp.py serve "$out/idp" 58081 >"$out/idp.log" 2>&1 &
+python3 -I scripts/load/idp.py init "$idp_name" "$authority" "$audience" || { log "idp init failed"; exit 1; }
+idp_cert="$(python3 -I scripts/load/idp.py cert "$idp_name")"
+python3 -I scripts/load/idp.py serve "$idp_name" 58081 >"$out/idp.log" 2>&1 &
 idp_pid=$!
 
 run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the user ids>
@@ -93,7 +96,7 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
   CONNECTIONSTRINGS__POSTGRES="Host=127.0.0.1;Port=$POSTGRES_PORT;Database=saker;Username=saker_api;Password=$API_DB_PASSWORD" \
   CONNECTIONSTRINGS__MONGO="mongodb://saker_app:$MONGO_APP_PASSWORD@127.0.0.1:$MONGO_PORT/saker" \
   CONNECTIONSTRINGS__REDIS="127.0.0.1:$REDIS_PORT,password=$REDIS_PASSWORD" \
-  CLAVARIS__AUTHORITY="$authority" CLAVARIS__AUDIENCE="$audience" CLAVARIS__REQUIREHTTPSMETADATA=false \
+  CLAVARIS__AUTHORITY="$authority" CLAVARIS__AUDIENCE="$audience" SSL_CERT_FILE="$idp_cert" \
   RATELIMITING__PERMITLIMIT=100000 RATELIMITING__EXPENSIVEPERMITLIMIT=100000 RATELIMITING__PREAUTHENTICATIONPERMITLIMIT=1000000 \
   AUDIT__ACTORPEPPER="$(head -c 32 /dev/urandom | base64)" MARKETDATA__CACHE__ENABLED="$cache" \
     dotnet src/Hosts/Host.Api/bin/Release/net10.0/SakerWatch.Hosts.Api.dll >"$out/api-$label.log" 2>&1 &
@@ -107,7 +110,7 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
 
   for index in 1 2 3 4 5; do
     sub="00000000-0000-0000-0000-000000000${prefix}${index}0"
-    tokens="${tokens:+$tokens,}$(python3 -I scripts/load/idp.py token "$out/idp" "$sub")"
+    tokens="${tokens:+$tokens,}$(python3 -I scripts/load/idp.py token "$idp_name" "$sub")"
   done
   log "running k6 ($label)"
   docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/tests/load:/scripts:ro" -v "$out:/out" \
@@ -122,5 +125,5 @@ run_mode cache-on true a
 run_mode cache-off false b
 
 log "results"
-K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" python3 -I scripts/load/summarize.py "performance cache on=$out/summary-cache-on.json" "performance cache off=$out/summary-cache-off.json" | tee -a "$out/results.md"
+(cd "$out" && K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" python3 -I "$repo/scripts/load/summarize.py" "performance cache on=summary-cache-on.json" "performance cache off=summary-cache-off.json") | tee -a "$out/results.md"
 log "logs and summaries are in $out"
