@@ -22,11 +22,14 @@ public static class SakerLogging
     /// <param name="serviceName">Logical service name (for example <c>saker-api</c>).</param>
     /// <param name="writeToConsole">False in tests that attach their own sink.</param>
     /// <param name="otlpEndpoint">When set, logs are also exported over OTLP/gRPC (with trace context) to the Collector.</param>
+    /// <param name="additionalSinks">Other sinks of the host. They are added behind the scrubbing sink like the console and OTLP ones: a sink added
+    /// with <c>WriteTo</c> after this call would receive the exception of an event unscrubbed (use <see cref="WriteToScrubbed"/> there).</param>
     public static LoggerConfiguration ApplySakerDefaults(
         this LoggerConfiguration configuration,
         string serviceName,
         bool writeToConsole = true,
-        string? otlpEndpoint = null)
+        string? otlpEndpoint = null,
+        Action<LoggerSinkConfiguration>? additionalSinks = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
@@ -42,8 +45,7 @@ public static class SakerLogging
             .Enrich.With<RedactionEnricher>();
 
         // Every sink sits behind the scrubbing sink: the exception of an event is text the enricher cannot reach.
-        return configured.WriteTo.Sink(LoggerSinkConfiguration.Wrap(
-            inner => new ScrubbingSink(inner),
+        return configured.WriteToScrubbed(
             sinks =>
             {
                 if (writeToConsole)
@@ -65,6 +67,22 @@ public static class SakerLogging
                         options.ResourceAttributes = new Dictionary<string, object> { ["service.name"] = serviceName };
                     });
                 }
-            }));
+
+                additionalSinks?.Invoke(sinks);
+            });
+    }
+
+    /// <summary>
+    /// Adds sinks behind the scrubbing sink: they receive the exception of every event with credentials and emails removed (ADR-0016). Use it
+    /// instead of <c>WriteTo</c> for any sink added after <see cref="ApplySakerDefaults"/>; an architecture test refuses <c>WriteTo</c> elsewhere.
+    /// </summary>
+    /// <param name="configuration">Logger configuration to extend.</param>
+    /// <param name="configureSinks">Adds the sinks to wrap.</param>
+    public static LoggerConfiguration WriteToScrubbed(this LoggerConfiguration configuration, Action<LoggerSinkConfiguration> configureSinks)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(configureSinks);
+
+        return configuration.WriteTo.Sink(LoggerSinkConfiguration.Wrap(inner => new ScrubbingSink(inner), configureSinks));
     }
 }

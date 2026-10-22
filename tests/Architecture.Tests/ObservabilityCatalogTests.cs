@@ -58,4 +58,19 @@ public sealed partial class ObservabilityCatalogTests
         inCode.Should().NotBeEmpty();
         inCode.Where(name => !catalog.Contains($"`{name}`", StringComparison.Ordinal)).Should().BeEmpty("a new metric is registered in docs/observability/README.md");
     }
+
+    [Fact]
+    public void LogSinks_AreAddedOnlyBehindTheScrubbingSink()
+    {
+        // A sink added with WriteTo receives the exception of an event as it is: the one place that adds sinks wraps them (ADR-0016).
+        string[] offenders =
+        [.. Directory.EnumerateFiles(Path.Combine(Root(), "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.EndsWith("SakerLogging.cs", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(path).Contains(".WriteTo.", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(Root(), path))];
+
+        offenders.Should().BeEmpty("sinks are added with ApplySakerDefaults(additionalSinks) or WriteToScrubbed, so the scrubbing sink is in front of them");
+    }
 }

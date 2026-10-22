@@ -106,6 +106,24 @@ public sealed class RedactionTests
     }
 
     [Fact]
+    public void AnAdditionalSinkOfTheDefaults_AndOneAddedWithWriteToScrubbed_BothReceiveAScrubbedException()
+    {
+        var viaDefaults = new CollectingSink();
+        var viaExtension = new CollectingSink();
+        using Logger logger = new LoggerConfiguration()
+            .ApplySakerDefaults("saker-test", writeToConsole: false, additionalSinks: sinks => sinks.Sink(viaDefaults))
+            .WriteToScrubbed(sinks => sinks.Sink(viaExtension))
+            .CreateLogger();
+
+        logger.Error(new InvalidOperationException("Host=db;Password=pa ss word;Database=saker"), "Database call failed");
+
+        foreach (CollectingSink sink in new[] { viaDefaults, viaExtension })
+        {
+            sink.Events.Single().Exception!.ToString().Should().NotContain("pa ss word").And.Contain("Host=db");
+        }
+    }
+
+    [Fact]
     public void AnEventWithoutAnException_PassesThroughUntouched()
     {
         var collected = new CollectingSink();

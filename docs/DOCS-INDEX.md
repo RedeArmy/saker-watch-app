@@ -106,6 +106,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0044-provider-and-registration-hardening.md | ADR 0044 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0045-catalog-write-hardening.md | ADR 0045 | Eder | approved | 2 | 2026-10-22 |
+| docs/adr/0046-pre-authentication-limiter-charges-refused-requests.md | ADR 0046 | Eder | draft | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |

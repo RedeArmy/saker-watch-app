@@ -52,7 +52,8 @@ public static partial class SensitiveText
 
         if (result.Contains('=', StringComparison.Ordinal) || result.Contains(':', StringComparison.Ordinal))
         {
-            result = SecretPairPattern().Replace(result, "$1" + Mask);
+            result = EqualsPairPattern().Replace(result, "$1" + Mask);
+            result = ColonPairPattern().Replace(result, "$1" + Mask);
         }
 
         if (includeEmails && result.Contains('@', StringComparison.Ordinal))
@@ -69,9 +70,16 @@ public static partial class SensitiveText
     [GeneratedRegex(@"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex AuthSchemePattern();
 
-    // name=value or name: value for names that end in a secret word; the value runs to the next separator or quote.
-    [GeneratedRegex(@"(\b[A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|apikey|api_key|authorization|connectionstring)[""']?\s*[=:]\s*)(?:""[^""]*""|'[^']*'|[^;,\s""']+)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex SecretPairPattern();
+    // name=value for names that end in a secret word. An unquoted value runs to the next ; or , or the end of the line, spaces included: that is
+    // how a connection string or a settings dump writes it, and a password can hold a space. It may hide more than the secret (the words after it
+    // up to the separator), which is the safe side of the mistake.
+    [GeneratedRegex(@"(\b[A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|apikey|api_key|authorization|connectionstring)[""']?\s*=\s*)(?:""[^""]*""|'[^']*'|[^;,\r\n""']+)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex EqualsPairPattern();
+
+    // name: value, as in prose and headers ("token: abc expired"): the unquoted value is one word, so the sentence around it is kept. A value with
+    // spaces has to be quoted to be masked whole.
+    [GeneratedRegex(@"(\b[A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|apikey|api_key|authorization|connectionstring)[""']?\s*:\s*)(?:""[^""]*""|'[^']*'|[^;,\s""']+)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex ColonPairPattern();
 
     [GeneratedRegex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex EmailPattern();
