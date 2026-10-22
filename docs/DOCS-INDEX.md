@@ -32,7 +32,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | approved | 2 | 2026-10-22 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | approved | 5 | 2026-10-22 |
-| docs/runbooks/restore.md | Runbook restore | Eder | stub | 5 | 2026-10-12 |
+| docs/runbooks/restore.md | Runbook restore | Eder | draft | 5 | 2026-10-22 |
 | docs/runbooks/key-rotation.md | Runbook key-rotation | Eder | stub | 5 | 2026-10-12 |
 | README.md | Local setup (10 minutes) | Eder | approved | 0 | 2026-10-12 |
 | CONTRIBUTING.md | Contribution guide | Eder | approved | 0 | 2026-10-12 |
@@ -61,6 +61,9 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
+| scripts/dev-backup.sh | Backup of the PostgreSQL and MongoDB databases of a compose stack | Eder | approved | 2 | 2026-10-22 |
+| scripts/dev-restore.sh | Restore of a backup into new databases, never over existing ones | Eder | approved | 2 | 2026-10-22 |
+| scripts/restore-drill.sh | Restore drill on a throwaway stack | Eder | approved | 2 | 2026-10-22 |
 | scripts/run-k6.sh | Load baseline of the Phase 2 read paths on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | scripts/load/idp.py | Stand-in identity provider for the load test | Eder | approved | 2 | 2026-10-21 |
 | scripts/load/seed.sql | Load test data: 500 listings, six years of prices | Eder | approved | 2 | 2026-10-21 |
@@ -102,6 +105,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0042-exchange-rate-guard.md | ADR 0042 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0044-provider-and-registration-hardening.md | ADR 0044 | Eder | approved | 2 | 2026-10-22 |
+| docs/adr/0045-catalog-write-hardening.md | ADR 0045 | Eder | draft | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |
