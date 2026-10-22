@@ -20,6 +20,9 @@ public sealed record BackfillStockJob(Guid StockId, int Waits = 0)
     /// <summary>The deterministic job key of a listing's first backfill.</summary>
     public static string KeyFor(StockId stock) => $"marketdata.backfill:{stock.Value:N}";
 
+    /// <summary>The job key of the daily attempt to load a listing that still has no history, after its first backfill ended without any.</summary>
+    public static string RetryKeyFor(StockId stock, DateOnly day) => $"marketdata.backfill-retry:{stock.Value:N}:{day:yyyyMMdd}";
+
     /// <summary>
     /// The job key of a full reload because the provider rewrote the adjusted history (a dividend or a split). It carries the day, so a listing
     /// is reloaded at most once a day and the earlier, finished backfill does not block it.
@@ -122,6 +125,13 @@ public sealed partial class BackfillStockHandler(
             throw new IngestionRetryException(error.Code);
         }
 
+        if (ListingIngestion.IsProviderFault(error))
+        {
+            _backfills.Add(1, Outcome("provider_fault"));
+            LogBackfillProviderFault(id.Value, error.Code);
+            return;
+        }
+
         await ingestion.RecordPermanentFailureAsync(id, error.Code, now, cancellationToken);
         _backfills.Add(1, Outcome("failed"));
         LogBackfillFailed(id.Value, error.Code);
@@ -129,6 +139,9 @@ public sealed partial class BackfillStockHandler(
 
     [LoggerMessage(EventId = 2101, Level = LogLevel.Information, Message = "Backfill of {Market} {Ticker} wrote {Rows} daily rows ({Unmatched} days were in only one of the two series)")]
     private partial void LogBackfillCompleted(string market, string ticker, int rows, int unmatched);
+
+    [LoggerMessage(EventId = 2104, Level = LogLevel.Warning, Message = "Backfill of listing {StockId} met a provider fault ({Code}); the listing is not marked and the next daily refresh queues the load again")]
+    private partial void LogBackfillProviderFault(Guid stockId, string code);
 
     [LoggerMessage(EventId = 2102, Level = LogLevel.Warning, Message = "Backfill of listing {StockId} failed for good with {Code}; it is not retried until the cause is fixed")]
     private partial void LogBackfillFailed(Guid stockId, string code);

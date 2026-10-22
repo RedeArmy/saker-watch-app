@@ -302,7 +302,18 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         }
 
         BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
-        return decision.Granted ? null : ProviderErrors.RateLimited(Name, decision.RetryAfter);
+        if (decision.Granted)
+        {
+            return null;
+        }
+
+        // The call will not be sent, so the allowance reserved for it goes back; otherwise every wait would eat the day's allowance.
+        if (lane == CallLane.OnDemand)
+        {
+            await _budget.ReleaseAsync(Name + OnDemandBudgetSuffix, credits, cancellationToken);
+        }
+
+        return ProviderErrors.RateLimited(Name, decision.RetryAfter);
     }
 
     private Result<ProviderResponse> Interpret(HttpResponseMessage response, string body, string symbol)

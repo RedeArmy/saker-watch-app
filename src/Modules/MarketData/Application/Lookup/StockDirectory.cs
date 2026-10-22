@@ -276,7 +276,7 @@ public sealed partial class StockDirectory(
         StockId id;
         try
         {
-            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
+            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol.Trim()), now, cancellationToken);
         }
         catch (ProviderListingTakenException)
         {

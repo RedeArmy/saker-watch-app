@@ -79,7 +79,7 @@ public sealed partial class RefreshStockHandler(
 {
     private static readonly Counter<long> _refreshes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_refreshes_total",
-        description: "Daily refreshes of a listing by outcome (completed, backfill_queued, reload_queued, waiting, retry, failed, not_found, delisted).");
+        description: "Daily refreshes of a listing by outcome (completed, backfill_queued, reload_queued, waiting, retry, failed, provider_fault, not_found, delisted).");
 
     private static readonly Counter<long> _rows = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_price_rows_total",
@@ -102,7 +102,7 @@ public sealed partial class RefreshStockHandler(
 
         if (await prices.LatestAsync(id, cancellationToken) is not { } latest)
         {
-            await followUps.QueueBackfillAsync(id, cancellationToken);
+            await followUps.QueueBackfillAsync(id, payload.Day, cancellationToken);
             Count("backfill_queued");
             return;
         }
@@ -118,18 +118,19 @@ public sealed partial class RefreshStockHandler(
         IReadOnlyDictionary<DateOnly, decimal> stored = await prices.FinalAdjustedClosesAsync(id, from, cancellationToken);
         bool rewritten = merged.Value.Points.Any(point => stored.TryGetValue(point.Raw.Date, out decimal old) && HasChanged(old, point.AdjustedClose, settings.RewriteTolerance));
 
-        int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
-        await ingestion.RecordSuccessAsync(id, now, cancellationToken);
-        _rows.Add(written, new KeyValuePair<string, object?>("operation", "refresh"));
-
         if (rewritten)
         {
+            // Nothing is written: the last days at the new scale beside older rows at the old one would make every window wrong. The reload
+            // replaces the whole series, and if it dies tomorrow's refresh sees the rewrite again and queues another.
             await followUps.QueueReloadAsync(id, payload.Day, cancellationToken);
             Count("reload_queued");
             LogHistoryRewritten(listing.Value.Stock.Market.Value, listing.Value.Stock.Ticker.Value);
             return;
         }
 
+        int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
+        await ingestion.RecordSuccessAsync(id, now, cancellationToken);
+        _rows.Add(written, new KeyValuePair<string, object?>("operation", "refresh"));
         Count("completed");
     }
 
@@ -168,6 +169,14 @@ public sealed partial class RefreshStockHandler(
             return;
         }
 
+        // A refused key or a plan that lacks the market hits every listing: the listing stays as it is and tomorrow's refresh asks again.
+        if (ListingIngestion.IsProviderFault(error))
+        {
+            Count("provider_fault");
+            LogProviderFault(id.Value, error.Code);
+            return;
+        }
+
         await ingestion.RecordPermanentFailureAsync(id, error.Code, now, cancellationToken);
         Count("failed");
         LogRefreshFailed(id.Value, error.Code);
@@ -175,6 +184,9 @@ public sealed partial class RefreshStockHandler(
 
     [LoggerMessage(EventId = 2112, Level = LogLevel.Information, Message = "The adjusted history of {Market} {Ticker} was rewritten by the provider; a full reload is queued")]
     private partial void LogHistoryRewritten(string market, string ticker);
+
+    [LoggerMessage(EventId = 2114, Level = LogLevel.Warning, Message = "Refresh of listing {StockId} met a provider fault ({Code}); the listing is not marked and the next refresh asks again")]
+    private partial void LogProviderFault(Guid stockId, string code);
 
     [LoggerMessage(EventId = 2113, Level = LogLevel.Warning, Message = "Refresh of listing {StockId} failed for good with {Code}")]
     private partial void LogRefreshFailed(Guid stockId, string code);

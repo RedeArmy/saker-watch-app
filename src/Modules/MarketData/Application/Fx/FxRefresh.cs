@@ -39,7 +39,7 @@ public sealed partial class FxRefreshHandler(
 {
     private static readonly Counter<long> _refreshes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_fx_refreshes_total",
-        description: "Daily exchange rate refreshes by outcome (completed, retry, failed).");
+        description: "Daily exchange rate refreshes by outcome (completed, refused, retry, failed).");
 
     private static readonly Counter<long> _refused = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_fx_rejected_total",
@@ -78,13 +78,11 @@ public sealed partial class FxRefreshHandler(
         }
 
         FxScreening vetted = await ScreenAsync(baseCurrency.Value, quote.Value, rates.Value, cancellationToken);
-        int written = await store.UpsertAsync(vetted.Accepted, clock.GetUtcNow(), cancellationToken);
-        _rows.Add(written);
-        Count("completed");
-        LogRefreshed(payload.Base, payload.Quote, written);
+        DateTimeOffset now = clock.GetUtcNow();
+        // The refused rates are kept first: if this step fails, the retry screens the same input again and nothing was half stored.
         if (vetted.Rejected.Count > 0)
         {
-            await screening.RejectAsync(vetted.Rejected, clock.GetUtcNow(), cancellationToken);
+            await screening.RejectAsync(vetted.Rejected, now, cancellationToken);
             foreach (IGrouping<string, RejectedFxRate> reason in vetted.Rejected.GroupBy(rejected => rejected.Reason))
             {
                 _refused.Add(reason.Count(), new KeyValuePair<string, object?>("reason", reason.Key));
@@ -92,6 +90,19 @@ public sealed partial class FxRefreshHandler(
 
             LogRefused(payload.Base, payload.Quote, vetted.Rejected.Count, string.Join(',', vetted.Rejected.Select(rejected => rejected.Reason).Distinct()));
         }
+
+        int written = await store.UpsertAsync(vetted.Accepted, now, cancellationToken);
+        _rows.Add(written);
+
+        // Nothing believed out of what the bank gave is not a refresh that completed: the rate in use stays the one of an earlier day.
+        if (vetted.Accepted.Count == 0 && vetted.Rejected.Count > 0)
+        {
+            Count("refused");
+            return;
+        }
+
+        Count("completed");
+        LogRefreshed(payload.Base, payload.Quote, written);
     }
 
     // A rate the bank gives is believed only inside its band and within the daily limit of the days around it (ADR-0042). The rates already stored

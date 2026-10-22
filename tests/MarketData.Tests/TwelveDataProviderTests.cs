@@ -47,6 +47,14 @@ public sealed class TwelveDataProviderTests
 
         public List<(string Provider, BudgetLimits Limits, int Credits)> Spent { get; } = [];
 
+        public List<(string Provider, int Credits)> Released { get; } = [];
+
+        public Task ReleaseAsync(string provider, int credits, CancellationToken cancellationToken)
+        {
+            Released.Add((provider, credits));
+            return Task.CompletedTask;
+        }
+
         public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken)
         {
             Spent.Add((provider, limits, credits));
@@ -404,6 +412,30 @@ public sealed class TwelveDataProviderTests
         budget.Spent.Select(spent => spent.Provider).Should().Equal("twelvedata_ondemand");
         ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
         ProviderErrors.RetryAfter(result.Error!).Should().Be(TimeSpan.FromHours(3), "the job waits for the allowance of the next day and does not burn its attempts");
+    }
+
+    [Fact]
+    public async Task AnOnDemandCall_WhenThePlansBudgetRefuses_GivesTheAllowanceBack()
+    {
+        var budget = new ScriptedBudget(BudgetDecision.Allowed, new BudgetDecision(false, TimeSpan.FromSeconds(30)));
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily() with { Lane = CallLane.OnDemand }, CancellationToken.None);
+
+        handler.Requests.Should().BeEmpty();
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
+        budget.Released.Should().Equal(("twelvedata_ondemand", 1));
+    }
+
+    [Fact]
+    public async Task AScheduledCall_ThatThePlansBudgetRefuses_ReleasesNothing()
+    {
+        var budget = new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromSeconds(30)));
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily() with { Lane = CallLane.Scheduled }, CancellationToken.None);
+
+        budget.Released.Should().BeEmpty();
     }
 
     [Fact]

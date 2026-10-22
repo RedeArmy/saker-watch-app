@@ -22,4 +22,10 @@ public interface IProviderCallBudget
 {
     /// <summary>Reserves <paramref name="credits"/> of <paramref name="provider"/>'s budget, or says how long to wait.</summary>
     Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gives back credits reserved for a call that was then never sent (a second budget refused it). The default does nothing, for a budget
+    /// that cannot take credits back.
+    /// </summary>
+    Task ReleaseAsync(string provider, int credits, CancellationToken cancellationToken) => Task.CompletedTask;
 }

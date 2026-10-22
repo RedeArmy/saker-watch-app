@@ -102,6 +102,39 @@ public sealed class FxRefreshTests
     }
 
     [Fact]
+    public async Task Refresh_WhenEveryRateIsRefused_KeepsThemApart_StoresNone_AndIsNotCountedAsCompleted()
+    {
+        var outcomes = new List<string>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "sakerwatch_marketdata_fx_refreshes_total")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            foreach (KeyValuePair<string, object?> tag in tags)
+            {
+                if (tag.Key == "outcome")
+                {
+                    outcomes.Add((string)tag.Value!);
+                }
+            }
+        });
+        listener.Start();
+        var misplacedDecimal = FxRate.Create(_usd, _gtq, new DateOnly(2026, 10, 17), 76m, "banguat").Value;
+        var store = new Store();
+
+        await RunAsync(new Provider((_, _) => Rates(misplacedDecimal)), store);
+
+        store.Written.Should().BeEmpty();
+        store.Rejected.Should().ContainSingle().Which.Reason.Should().Be(FxRejectionReasons.OutOfBand);
+        outcomes.Should().Contain("refused").And.NotContain("completed");
+    }
+
+    [Fact]
     public async Task Refresh_AnEmptyAnswer_IsFine()
     {
         var store = new Store();

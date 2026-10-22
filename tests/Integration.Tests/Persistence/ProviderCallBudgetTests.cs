@@ -54,6 +54,22 @@ public sealed class ProviderCallBudgetTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReleasedCredits_AreAvailableAgain_AndTheCounterNeverGoesBelowZero()
+    {
+        FakeTimeProvider clock = Clock();
+        RedisProviderCallBudget budget = Budget(clock);
+        var limits = new BudgetLimits(PerMinute: 8, PerDay: 2);
+        await budget.TryAcquireAsync("p-release", limits, 2, CancellationToken.None);
+        (await budget.TryAcquireAsync("p-release", limits, 1, CancellationToken.None)).Granted.Should().BeFalse();
+
+        await budget.ReleaseAsync("p-release", 1, CancellationToken.None);
+        await budget.ReleaseAsync("p-release", 5, CancellationToken.None);
+
+        (await budget.TryAcquireAsync("p-release", limits, 2, CancellationToken.None)).Granted.Should().BeTrue("the counters stopped at zero and two credits fit again");
+        (await budget.TryAcquireAsync("p-release", limits, 1, CancellationToken.None)).Granted.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task TheMinuteBudget_IsRestoredWhenTheNextMinuteStarts()
     {
         FakeTimeProvider clock = Clock();

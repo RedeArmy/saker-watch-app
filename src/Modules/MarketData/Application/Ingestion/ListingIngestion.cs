@@ -87,6 +87,18 @@ public sealed class ListingIngestion(
     public static bool IsRetryable(Error error) =>
         ProviderErrors.Classify(error) is ProviderFailureKind.RateLimited or ProviderFailureKind.Transient;
 
+    /// <summary>
+    /// True for a failure whose cause is the provider account or its answer and not the listing: a refused key, an answer that cannot be understood,
+    /// a plan that lacks the market. It hits every listing alike and ends when the cause is fixed, so it must not be recorded against any of them:
+    /// a listing marked failed is left out of every later refresh and nothing would put it back.
+    /// </summary>
+    public static bool IsProviderFault(Error error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return error.Code is ProviderErrors.UnauthorizedCode or ProviderErrors.InvalidResponseCode
+            || ProviderErrors.Classify(error) == ProviderFailureKind.PlanRestricted;
+    }
+
     /// <summary>Records a completed ingestion and clears any earlier failure and any count of days the provider did not know the symbol.</summary>
     public Task RecordSuccessAsync(StockId id, DateTimeOffset now, CancellationToken cancellationToken) =>
         state.RecordSuccessAsync(id, now, cancellationToken);

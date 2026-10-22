@@ -29,3 +29,5 @@ A market data job (a history load, a daily refresh) that finds the provider's ca
 
 ## Handler outlives its lease or its transaction
 A job that waits on external I/O for longer than the worker login's `idle_in_transaction_session_timeout` loses its connection and retries until dead (ADR-0022, "keep the unit of work short"). Fix the handler (fetch before the transaction) rather than raising the timeout.
+
+A refused API key, an answer the adapter cannot understand or a plan without the market (`outcome="provider_fault"`, log events 2104 and 2114) is not recorded against the listing: the listing is not marked `failed` and the next daily refresh asks again (a listing with no history is queued for a new load, once a day). Fix the key or the plan; nothing needs requeueing by hand.

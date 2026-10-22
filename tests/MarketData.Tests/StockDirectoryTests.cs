@@ -382,6 +382,16 @@ public sealed class StockDirectoryTests
     }
 
     [Fact]
+    public async Task Ensure_ASymbolTheProviderGivesWithSpaces_IsRegisteredTrimmed_BecauseTheStoredAliasForbidsSpaces()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL ")));
+
+        (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).IsSuccess.Should().BeTrue();
+
+        rig.Registry.Registered.Should().ContainSingle().Which.Key.Should().Be(new ProviderListingKey("XNGS", "AAPL"));
+    }
+
+    [Fact]
     public async Task Ensure_WhenAnotherRequestRegisteredItFirst_UsesTheIdThatWon()
     {
         var winner = Guid.CreateVersion7();

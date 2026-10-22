@@ -193,7 +193,6 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
 
     [Theory]
     [InlineData("SymbolNotFound")]
-    [InlineData("PlanRestricted")]
     [InlineData("Permanent")]
     public async Task Backfill_AFailureRetryingCannotFix_IsRecordedWithItsCode_AndTheJobEnds(string failure)
     {
@@ -201,14 +200,28 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
         world.Provider.FailNext(failure switch
         {
             "SymbolNotFound" => ProviderErrors.SymbolNotFound("fake", "AAPL"),
-            "PlanRestricted" => ProviderErrors.PlanRestricted("fake"),
-            _ => ProviderErrors.InvalidResponse("fake"),
+            _ => Error.Failure("marketdata.provider.listing_problem", "A problem of this listing."),
         });
 
         await RunAsync(world);
 
         (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("failed");
         (await world.Admin.ScalarAsync<string>("SELECT failure_code FROM marketdata.ingestion_state")).Should().StartWith("marketdata.provider.");
+        (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.price_daily")).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(ProviderErrors.UnauthorizedCode)]
+    [InlineData(ProviderErrors.InvalidResponseCode)]
+    [InlineData(ProviderErrors.PlanRestrictedCode)]
+    public async Task Backfill_AFaultOfTheProviderAccount_IsNotRecordedAgainstTheListing(string code)
+    {
+        World world = await SetUpAsync(postgres);
+        world.Provider.FailNext(Error.Failure(code, "fault"));
+
+        await RunAsync(world);
+
+        (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.ingestion_state")).Should().Be(0, "a listing marked failed is left out of every later refresh");
         (await world.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.price_daily")).Should().Be(0);
     }
 
@@ -249,7 +262,7 @@ public sealed class BackfillStockTests(TimescalePostgresFixture postgres) : ICla
     public async Task Backfill_AfterAPermanentFailureIsFixed_ClearsTheFailure()
     {
         World world = await SetUpAsync(postgres);
-        world.Provider.FailNext(ProviderErrors.PlanRestricted("fake"));
+        world.Provider.FailNext(ProviderErrors.SymbolNotFound("fake", "AAPL"));
         await RunAsync(world);
 
         await RunAsync(world);

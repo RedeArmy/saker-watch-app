@@ -38,7 +38,8 @@ public sealed record FxScreening(IReadOnlyList<FxRate> Accepted, IReadOnlyList<R
 /// "not an official source", and every quetzal figure of the product comes from one number: a misplaced decimal must not become a price. A rate
 /// is refused when it is outside the band of its pair, when it differs by more than the daily limit from the rate before it (the newest earlier
 /// one that is stored or was just accepted), or when it would replace the stored rate of the same day with one that differs by more than the limit.
-/// A small correction of a day is allowed. Pure: no I/O.
+/// A small correction of a day is allowed. A jump is believed once the next day confirms it (stays within the limit of it): the level really moved.
+/// Pure: no I/O.
 /// </summary>
 public static class FxRateGuard
 {
@@ -57,9 +58,16 @@ public static class FxRateGuard
 
         var accepted = new List<FxRate>(incoming.Count);
         var rejected = new List<RejectedFxRate>();
-        foreach (FxRate rate in incoming.OrderBy(r => r.AsOfDate))
+        List<FxRate> ordered = [.. incoming.OrderBy(r => r.AsOfDate)];
+        for (int index = 0; index < ordered.Count; index++)
         {
+            FxRate rate = ordered[index];
             string? reason = ReasonToRefuse(rate, known, settings);
+            if (reason == FxRejectionReasons.Jump && IsConfirmedByNextDay(rate, index + 1 < ordered.Count ? ordered[index + 1] : null, settings))
+            {
+                reason = null;
+            }
+
             if (reason is null)
             {
                 accepted.Add(rate);
@@ -89,6 +97,15 @@ public static class FxRateGuard
         decimal? before = Before(known, rate.AsOfDate);
         return before is { } previous && Moved(previous, rate.Rate) > settings.MaxDailyChange ? FxRejectionReasons.Jump : null;
     }
+
+    // A real change of level shows on the next day too, while a misplaced decimal does not repeat: a jump that the following day stays within the
+    // daily limit of (and inside the band) is believed. Without this, one refused jump would make every later day look like a jump from the old rate.
+    private static bool IsConfirmedByNextDay(FxRate jump, FxRate? next, FxGuardSettings settings) =>
+        next is not null
+        && next.Base == jump.Base
+        && next.Quote == jump.Quote
+        && Moved(jump.Rate, next.Rate) <= settings.MaxDailyChange
+        && (!settings.Bands.TryGetValue(next.Base.Value + next.Quote.Value, out FxBand? band) || (next.Rate >= band.Min && next.Rate <= band.Max));
 
     private static decimal? Before(SortedList<DateOnly, decimal> known, DateOnly date)
     {

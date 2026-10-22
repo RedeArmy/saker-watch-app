@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Application.Jobs;
+using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
@@ -84,7 +85,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
 
         world.Provider.Calls.Should().Be(0);
         (string key, object payload, JobEnqueueOptions? options) = world.Jobs.Queued.Should().ContainSingle().Subject;
-        key.Should().Be(BackfillStockJob.KeyFor(world.Id));
+        key.Should().Be(BackfillStockJob.RetryKeyFor(world.Id, new DateOnly(2026, 10, 15)), "the first backfill's key is taken for good once queued, even when that job died");
         payload.Should().Be(new BackfillStockJob(world.Id.Value));
         options!.MaxAttempts.Should().Be(8);
         (await RowsAsync(world)).Should().Be(0);
@@ -138,7 +139,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
     }
 
     [Fact]
-    public async Task Refresh_WhenTheProviderRewroteTheAdjustedHistory_QueuesAFullReload_AndStoresTheFreshOverlap()
+    public async Task Refresh_WhenTheProviderRewroteTheAdjustedHistory_QueuesAFullReload_AndWritesNothingUntilItRuns()
     {
         World world = await SetUpAsync(postgres);
         await BackfillAsync(world);
@@ -152,7 +153,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         key.Should().Be(BackfillStockJob.ReloadKeyFor(world.Id, new DateOnly(2026, 10, 16)));
         payload.Should().Be(new BackfillStockJob(world.Id.Value));
         decimal after = await world.Admin.ScalarAsync<decimal>("SELECT adjusted_close FROM marketdata.price_daily WHERE trade_date = '2026-10-13'");
-        after.Should().BeApproximately(before * 0.99m, 0.0001m, "the overlap days already carry the new adjusted close");
+        after.Should().Be(before, "writing the overlap alone would leave two scales in one series until the reload runs");
         (await world.Admin.ScalarAsync<decimal>("SELECT close FROM marketdata.price_daily WHERE trade_date = '2026-10-13'")).Should().Be(before, "the raw close never changes");
     }
 
@@ -173,7 +174,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
         World world = await SetUpAsync(postgres);
         await BackfillAsync(world);
         world.Time.Advance(TimeSpan.FromHours(36));
-        world.Provider.FailNext(retryable ? ProviderErrors.Unavailable("fake") : ProviderErrors.PlanRestricted("fake"));
+        world.Provider.FailNext(retryable ? ProviderErrors.Unavailable("fake") : Error.Failure("fake.listing_problem", "A problem of this listing."));
 
         Func<Task> act = () => RefreshAsync(world, new DateOnly(2026, 10, 16));
 
@@ -186,6 +187,23 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
             await act();
             (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("failed");
         }
+    }
+
+    [Theory]
+    [InlineData(ProviderErrors.UnauthorizedCode)]
+    [InlineData(ProviderErrors.InvalidResponseCode)]
+    [InlineData(ProviderErrors.PlanRestrictedCode)]
+    public async Task Refresh_AFaultOfTheProviderAccount_IsNotRecordedAgainstTheListing_SoTomorrowAsksAgain(string code)
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Time.Advance(TimeSpan.FromHours(36));
+        world.Provider.FailNext(Error.Failure(code, "fault"));
+
+        await RefreshAsync(world, new DateOnly(2026, 10, 16));
+
+        (await world.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("ok", "the listing keeps the state its last success left");
+        world.Jobs.Queued.Should().BeEmpty();
     }
 
     [Fact]

@@ -50,9 +50,16 @@ public sealed partial class FollowUpJobs(IJobEnqueuer jobs, IOptions<IngestionOp
         return true;
     }
 
-    /// <summary>Queues the backfill of a listing that has no history yet. Asking twice queues it once.</summary>
+    /// <summary>Queues the first backfill of a listing that has no history yet. Asking twice queues it once.</summary>
     public Task<bool> QueueBackfillAsync(StockId id, CancellationToken cancellationToken) =>
         jobs.EnqueueAsync(BackfillStockJob.KeyFor(id), new BackfillStockJob(id.Value), new JobEnqueueOptions(MaxAttempts: options.Value.BackfillMaxAttempts), cancellationToken);
+
+    /// <summary>
+    /// Queues the backfill of a listing that still has no history on <paramref name="day"/>, once a day. The first backfill's key is taken for good
+    /// once it was queued (a dead job keeps it), so a listing whose first load died would otherwise stay empty for ever.
+    /// </summary>
+    public Task<bool> QueueBackfillAsync(StockId id, DateOnly day, CancellationToken cancellationToken) =>
+        jobs.EnqueueAsync(BackfillStockJob.RetryKeyFor(id, day), new BackfillStockJob(id.Value), new JobEnqueueOptions(MaxAttempts: options.Value.BackfillMaxAttempts), cancellationToken);
 
     /// <summary>Queues a full reload of a listing whose adjusted history was rewritten, once per day of detection.</summary>
     public Task<bool> QueueReloadAsync(StockId id, DateOnly day, CancellationToken cancellationToken) =>
