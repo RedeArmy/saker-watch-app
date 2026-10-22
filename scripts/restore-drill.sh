@@ -134,6 +134,10 @@ bash scripts/dev-restore.sh "$out/backup" "$target" >>"$out/restore.log" 2>&1
 check "a second restore into the same name is refused, so nothing is overwritten" 1 "$?"
 bash scripts/dev-restore.sh "$out/backup" saker >>"$out/restore.log" 2>&1
 check "a restore over the live database is refused" 1 "$?"
+mongo_eval 'db.getSiblingDB("saker_leftover").leftovers.insertOne({a: 1}).acknowledged' >/dev/null
+bash scripts/dev-restore.sh "$out/backup" saker_leftover >>"$out/restore.log" 2>&1
+check "a restore into a MongoDB database that already has collections is refused" 1 "$?"
+check "and it created nothing in PostgreSQL on the way" 0 "$(psql_in postgres "SELECT count(*) FROM pg_database WHERE datname = 'saker_leftover'")"
 
 check "the restored rows are the same" "$before_postgres" "$(psql_in "$target" "$fingerprint_sql")"
 check "the live database still has them" "$before_postgres" "$(psql_in saker "$fingerprint_sql")"

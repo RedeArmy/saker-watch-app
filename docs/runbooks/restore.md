@@ -1,7 +1,7 @@
 # Runbook — backup and restore
 
 - **Purpose:** how to back up the datastores before a change, restore them into new databases, put the copy in service, and prove that it works (a drill). Written for the compose stack; the deployed host, the schedule, off-host storage and the recovery targets are completed in Phase 5.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 5 (the procedure and its drill exist since Phase 2)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 5 (the procedure and its drill exist since Phase 2)
 
 ## What is backed up
 | Store | How | Why |
@@ -28,19 +28,19 @@ It checks nothing about the state of the stack: stop the writers (API and worker
 ```
 POSTGRES_PASSWORD=... MONGO_PASSWORD=... bash scripts/dev-restore.sh <backup-directory> [target-name]     # default target: saker_restored
 ```
-- It verifies the checksums first and **never drops, truncates or overwrites anything**: it refuses to run when the PostgreSQL database already exists, and it refuses the name of a live database.
+- It verifies the checksums first and **never drops, truncates or overwrites anything**: it refuses to run when the PostgreSQL database already exists or the MongoDB database of that name already has collections (before it creates anything), and it refuses the names `saker`, `postgres` and `admin`.
 - PostgreSQL goes to the new database `<target-name>` (TimescaleDB in its restore mode, `api_role` and `worker_role` created if the server lacks them); MongoDB goes to a database of the same name. The login roles (`saker_api`, `saker_worker`, `saker_app`) are cluster objects and are not in the dump: on a fresh server run `scripts/dev-create-logins.sh` afterwards.
 
 ## 3. Check the copy, then put it in service
 1. Look at it before trusting it: row counts of the tables you care about, `SELECT max(trade_date) FROM marketdata.price_daily`, the migration history (`SELECT * FROM marketdata.__ef_migrations_history`), the grants (`\dp marketdata.*`) and the policies (`SELECT * FROM pg_policies WHERE schemaname = 'watchlist'`).
 2. Run the migrator against the copy (`ConnectionStrings__PostgresAdmin` with `Database=<target-name>`): on a good copy it applies nothing.
-3. Stop the API and the worker. Then either point them at the copy (`ConnectionStrings__Postgres` with `Database=<target-name>`, and `Mongo:Database` for MongoDB) or, after the operator has decided to give up the old databases, rename them by hand (`ALTER DATABASE saker RENAME TO saker_old; ALTER DATABASE saker_restored RENAME TO saker;`). Keep the old ones until the new ones have run for a day. This step is deliberately not a script.
+3. Stop the API and the worker. Then point them at the copy: `ConnectionStrings__Postgres` with `Database=<target-name>` and `Mongo:Database=<target-name>`. For PostgreSQL the alternative, once the operator has decided to give up the old database, is to rename by hand (`ALTER DATABASE saker RENAME TO saker_old; ALTER DATABASE saker_restored RENAME TO saker;`, which needs no open sessions, so the hosts and your own connections must be closed); MongoDB cannot rename a database, so it is always the setting. Keep the old databases until the new ones have run for a day. This step is deliberately not a script.
 4. Start the worker, then the API; `/health/ready` must be 200. The performance cache fills itself.
 
 ## 4. The drill
-`DRILL_NOAVX=1 bash scripts/restore-drill.sh` (leave the variable out on a CPU with AVX) builds a throwaway stack, migrates it, puts data in both stores, backs it up, restores it into a new database and checks that the copy has the same rows (a fingerprint over the catalog, prices, rates and the watchlist), the same migration history, the hypertable, the grants (the API role reads the catalog and cannot read the rejected rates), the row-level security policies, the security-definer functions and the MongoDB collections and documents; that a second restore into the same name and a restore over the live database are refused; and that the migrator finds nothing to apply on the copy. It prints `ALL OK`, or one `FAIL` line per check, and removes everything it made except its output directory. Run it after a change to the migrations, to the scripts or to the images of the datastores.
+`DRILL_NOAVX=1 bash scripts/restore-drill.sh` (leave the variable out on a CPU with AVX) builds a throwaway stack, migrates it, puts data in both stores, backs it up, restores it into a new database and checks that the copy has the same rows (a fingerprint over the catalog, prices, rates and the watchlist), the same migration history, the hypertable, the grants (the API role reads the catalog and cannot read the rejected rates), the row-level security policies, the security-definer functions and the MongoDB collections and documents; that a second restore into the same name, a restore over the live database and a restore into a MongoDB database that already has collections are refused (and the last one creates nothing in PostgreSQL); and that the migrator finds nothing to apply on the copy. It prints `ALL OK`, or one `FAIL` line per check, and removes everything it made except its output directory. Run it after a change to the migrations, to the scripts or to the images of the datastores.
 
-First run: 2026-10-22, `ALL OK`.
+Runs: 2026-10-22, `ALL OK` (the third time with the MongoDB leftover case). Python is not needed; docker and a built solution are.
 
 ## Not covered yet (Phase 5)
 The deployed host (Oracle arm64): where the backups go and how they are encrypted and kept off the host, the schedule, the retention of backups, the recovery point and time objectives, point-in-time recovery, and a drill on the real host. Until then a backup is taken by hand before every deployment that migrates.

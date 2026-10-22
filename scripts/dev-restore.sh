@@ -39,6 +39,19 @@ if [[ "$(psql_admin postgres "SELECT count(*) FROM pg_database WHERE datname = '
   exit 1
 fi
 
+mongo_collections() { # mongo_collections <database>: how many collections it has (0 when it does not exist)
+  local database="$1"
+  export MONGO_PASSWORD
+  "${compose[@]}" exec -T -e MONGO_PASSWORD -e DATABASE="$database" mongo sh -c \
+    'cmd=$(command -v mongosh || command -v mongo); "$cmd" --quiet --username saker_admin --password "$MONGO_PASSWORD" --authenticationDatabase admin --eval "db.getSiblingDB(\"$DATABASE\").getCollectionNames().length" | tail -1'
+  return $?
+}
+
+if [[ "$(mongo_collections "$target")" != "0" ]]; then
+  echo "ERROR: the MongoDB database $target already has collections; choose another name" >&2
+  exit 1
+fi
+
 echo "PostgreSQL -> $target ..."
 psql_admin postgres "CREATE DATABASE $target OWNER saker_admin"
 psql_admin "$target" "CREATE EXTENSION IF NOT EXISTS timescaledb"
