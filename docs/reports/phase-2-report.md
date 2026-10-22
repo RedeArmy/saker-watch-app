@@ -105,10 +105,26 @@ Threat-model deltas the audit asked for are in `docs/threat-model/threat-model-v
 
 Could not verify without a running database, as the reviewer says: real lock times, `create_hypertable` with the foreign key on the exact Timescale image in production, that the deployed roles are `NOBYPASSRLS` and not owners, and the Mongo index build on a production-size collection. The integration suite covers the first three on the test container.
 
+### migration-reviewer, second review (complete, 2026-10-22)
+A fresh review of the eleven migrations, including `CreateFxRatesRejected` and the tests added after the first review. Verdict: approve with changes; no critical or high finding, and none of the seven earlier dispositions needed reopening. No applied migration was edited (only new files, plus the snapshot and one registration line in `V0001`).
+
+| # | Finding | Disposition |
+|---|---|---|
+| M1 | `fx_rates.rate` is `numeric(20,10)` (below 1e10, 10 decimals) while the domain accepts 1e-12 to 1e12: a rate of a pair without a band at or above 1e10 overflows (22003) and one below 5e-11 violates the check; the whole batch fails and the job retries forever. `fx_rates_rejected` (30,12) covers the domain exactly | **Open, needs a decision.** Proposed: a forward migration that widens `fx_rates.rate` to `numeric(30,12)` (small table, compatible with the previous app version) and a store test with the extremes of the range; or lower the domain range to what the column holds |
+| M2 | The restore runbook is a stub; migrations are forward-only, so a backup is the only way back | **Accepted risk until Phase 5** (it is a Phase 5 gate item). The skeleton now records what is decided: a backup before the migrator, the previous image must keep working on the new schema (every Phase 2 migration is additive), fix forward or restore |
+| L1 | `symbol_aliases` columns and `stocks.time_zone` have no format check, and `register_stock` lets `api_role` write them | **Open, needs a decision.** Proposed: a forward migration with a charset and length check on the three alias columns and a check on `time_zone`; defence in depth, not exploitable today |
+| L2 | `register_stock` hides an alias conflict: when the provider key already belongs to another stock nothing is inserted but the function returns the new id, leaving a stock with no alias (its first load then fails with `no_alias`, visible but late) | **Open, needs a decision.** Proposed: `CREATE OR REPLACE FUNCTION` that stops on a cross-stock conflict, with the application mapping it, and a test for it |
+| L3 | The ceiling triggers fire before `ON CONFLICT DO NOTHING`, so a re-add at the ceiling is a 23514 | **Accepted.** The application looks the item up first (`FindByStockAsync`) and edits it, so the ceiling is reached only for a new stock; the race of two identical adds at the ceiling answers "limit" instead of "already there", which is harmless |
+| L4 | `fx_rates_rejected` is not in the retention table | **Fixed**: indefinite, a few rows per pair per day at most, purged by the operator as admin |
+| I1 | `watchlist.tracked_stock_ids()` has no caller | **Documented** in the data model: ingestion refreshes every active listing; the function waits for the analysis scheduler (Phase 4). The report does not claim the worker uses it |
+| I2 | The user-owned-table test keys on a column named `user_id` | Accepted; a user-owned table must use that name (a convention) |
+| I3 | `NotFoundShareAsync` scans the market once per call | Accepted: it runs only when a listing reaches the limit of days; negligible at hundreds of listings |
+| I4, I5 | No upgrade test for five additive migrations; checks without `NOT VALID` on small tables | Accepted (the empty-database tests cover them; the tables are small catalogs) |
+
+Verified meanwhile because the reviewer could not run a database: the first row of a new year opens a chunk of `price_daily` and the worker can write it, the API can read it and cannot write it (`PriceDaily_ANewYearlyChunk_...`). Still unverified without a real deployment: the cost of the queries on production-size tables, a Mongo index build on a populated collection, the restore, and the pre-migration state of the Oracle host.
+
 ### code-reviewer
 Pending.
-
-The migration `CreateFxRatesRejected` (ADR-0042) was added after the migration review: it is a new shared table with grants for the worker only, no user data, and `migration-reviewer` should look at it again with the rest.
 
 ### Other checks
 What was done during the phase is not a substitute for the formal reviews, but it found real defects, each fixed with a test: a review of the whole 2.7 branch and a second one of the follow-ups (a provider symbol already taken is a refusal, a list of filings must have its essential columns, a ticker must be distinct, the operator command never leaves the process with an exception); the freshness sampler that read without an open connection; a new required property that would have broken the OpenAPI contract for existing clients (caught by the CI `oasdiff` job); and the remote-script scan of CI, which a `curl` in a command substitution of the load script would have failed. Mutation checks were run on the cache, the price-only read, the fee rule and the lifecycle.
