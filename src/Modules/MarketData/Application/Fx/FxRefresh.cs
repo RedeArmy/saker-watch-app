@@ -31,13 +31,19 @@ public sealed record FxRefreshJob(string Base, string Quote, DateOnly Day)
 public sealed partial class FxRefreshHandler(
     IFxRateProvider provider,
     IFxRateStore store,
+    IFxRateScreening screening,
     IOptions<IngestionOptions> options,
+    IOptions<FxGuardOptions> guard,
     TimeProvider clock,
     ILogger<FxRefreshHandler> logger) : IJobHandler<FxRefreshJob>
 {
     private static readonly Counter<long> _refreshes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_fx_refreshes_total",
         description: "Daily exchange rate refreshes by outcome (completed, retry, failed).");
+
+    private static readonly Counter<long> _refused = SakerTelemetry.Meter.CreateCounter<long>(
+        "sakerwatch_marketdata_fx_rejected_total",
+        description: "Exchange rates kept apart instead of stored, by reason (out_of_band, jump, rewrite).");
 
     private static readonly Counter<long> _rows = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_fx_rows_total",
@@ -71,10 +77,35 @@ public sealed partial class FxRefreshHandler(
             return;
         }
 
-        int written = await store.UpsertAsync(rates.Value, clock.GetUtcNow(), cancellationToken);
+        FxScreening vetted = await ScreenAsync(baseCurrency.Value, quote.Value, rates.Value, cancellationToken);
+        int written = await store.UpsertAsync(vetted.Accepted, clock.GetUtcNow(), cancellationToken);
         _rows.Add(written);
         Count("completed");
         LogRefreshed(payload.Base, payload.Quote, written);
+        if (vetted.Rejected.Count > 0)
+        {
+            await screening.RejectAsync(vetted.Rejected, clock.GetUtcNow(), cancellationToken);
+            foreach (IGrouping<string, RejectedFxRate> reason in vetted.Rejected.GroupBy(rejected => rejected.Reason))
+            {
+                _refused.Add(reason.Count(), new KeyValuePair<string, object?>("reason", reason.Key));
+            }
+
+            LogRefused(payload.Base, payload.Quote, vetted.Rejected.Count, string.Join(',', vetted.Rejected.Select(rejected => rejected.Reason).Distinct()));
+        }
+    }
+
+    // A rate the bank gives is believed only inside its band and within the daily limit of the days around it (ADR-0042). The rates already stored
+    // for the days asked, and the week before them, are what it is compared with.
+    private async Task<FxScreening> ScreenAsync(CurrencyCode baseCurrency, CurrencyCode quote, IReadOnlyList<FxRate> rates, CancellationToken cancellationToken)
+    {
+        if (rates.Count == 0)
+        {
+            return new FxScreening(rates, []);
+        }
+
+        DateOnly first = rates.Min(rate => rate.AsOfDate), last = rates.Max(rate => rate.AsOfDate);
+        IReadOnlyList<FxRate> stored = await screening.StoredAsync(baseCurrency, quote, provider.Name, first.AddDays(-7), last, cancellationToken);
+        return FxRateGuard.Screen(rates, stored, guard.Value.ToSettings());
     }
 
     private static void Count(string outcome) => _refreshes.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
@@ -93,6 +124,9 @@ public sealed partial class FxRefreshHandler(
 
     [LoggerMessage(EventId = 2301, Level = LogLevel.Information, Message = "Exchange rates {Base}/{Quote} refreshed: {Rows} rows written")]
     private partial void LogRefreshed(string @base, string quote, int rows);
+
+    [LoggerMessage(EventId = 2303, Level = LogLevel.Warning, Message = "{Rows} exchange rates {Base}/{Quote} were not believed ({Reasons}) and were kept apart in marketdata.fx_rates_rejected; they are not used")]
+    private partial void LogRefused(string @base, string quote, int rows, string reasons);
 
     [LoggerMessage(EventId = 2302, Level = LogLevel.Warning, Message = "Refresh of the exchange rates {Base}/{Quote} failed for good with {Code}; the next day asks again")]
     private partial void LogFailed(string @base, string quote, string code);

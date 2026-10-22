@@ -31,6 +31,9 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
     /// <summary>Daily exchange rates.</summary>
     public DbSet<FxRateRow> FxRates => Set<FxRateRow>();
 
+    /// <summary>Exchange rates the guard did not believe.</summary>
+    public DbSet<FxRateRejectedRow> FxRatesRejected => Set<FxRateRejectedRow>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -146,6 +149,23 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             e.Property(x => x.Quote).HasMaxLength(3).IsFixedLength();
             e.Property(x => x.Source).HasMaxLength(32);
             e.Property(x => x.Rate).HasPrecision(20, 10);
+        });
+
+        modelBuilder.Entity<FxRateRejectedRow>(e =>
+        {
+            e.ToTable("fx_rates_rejected", t =>
+            {
+                t.HasCheckConstraint("ck_fx_rates_rejected_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+                t.HasCheckConstraint("ck_fx_rates_rejected_source", "source ~ '^[a-z0-9_]{1,32}$'");
+                t.HasCheckConstraint("ck_fx_rates_rejected_reason", "reason IN ('out_of_band', 'jump', 'rewrite')");
+            });
+            e.HasKey(x => new { x.Base, x.Quote, x.AsOfDate, x.Source });
+            e.Property(x => x.Base).HasMaxLength(3).IsFixedLength();
+            e.Property(x => x.Quote).HasMaxLength(3).IsFixedLength();
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.Reason).HasMaxLength(16);
+            // Wider than fx_rates: what is refused may be absurd, and keeping it must not fail for its size.
+            e.Property(x => x.Rate).HasPrecision(30, 12);
         });
 
         modelBuilder.UseSnakeCaseNames();

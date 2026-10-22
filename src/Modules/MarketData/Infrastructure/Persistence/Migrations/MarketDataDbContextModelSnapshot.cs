@@ -89,6 +89,57 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.FxRateRejectedRow", b =>
+                {
+                    b.Property<string>("Base")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("base")
+                        .IsFixedLength();
+
+                    b.Property<string>("Quote")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("quote")
+                        .IsFixedLength();
+
+                    b.Property<DateOnly>("AsOfDate")
+                        .HasColumnType("date")
+                        .HasColumnName("as_of_date");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(30, 12)
+                        .HasColumnType("numeric(30,12)")
+                        .HasColumnName("rate");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("SeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("seen_at");
+
+                    b.HasKey("Base", "Quote", "AsOfDate", "Source")
+                        .HasName("pk_fx_rates_rejected");
+
+                    b.ToTable("fx_rates_rejected", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_fx_rates_rejected_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+
+                            t.HasCheckConstraint("ck_fx_rates_rejected_reason", "reason IN ('out_of_band', 'jump', 'rewrite')");
+
+                            t.HasCheckConstraint("ck_fx_rates_rejected_source", "source ~ '^[a-z0-9_]{1,32}$'");
+                        });
+                });
+
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.FxRateRow", b =>
                 {
                     b.Property<string>("Base")

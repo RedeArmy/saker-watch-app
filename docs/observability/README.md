@@ -25,6 +25,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed\|not_found\|delisted | daily refreshes of a listing: `not_found` is a day the provider did not know the symbol (counted, not failed) and `delisted` is the day the count reached the limit (ADR-0039); `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
 | `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
 | `sakerwatch_marketdata_perf_cache_total` (counter) | result=hit\|miss\|error | listings asked of the performance cache (ADR-0041): found, computed from the database, or a read or write Redis could not do |
+| `sakerwatch_marketdata_fx_rejected_total` (counter) | reason=out_of_band\|jump\|rewrite | exchange rates kept apart instead of stored (ADR-0042) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
 | `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog |
 | `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
@@ -98,6 +99,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2503 | Warning | `The search cache could not be used ({ExceptionType}); the search goes to the provider` | `RedisSearchCache` |
 | 2301 | Information | `Exchange rates {Base}/{Quote} refreshed: {Rows} rows written` | `FxRefreshHandler` |
 | 2302 | Warning | `Refresh of the exchange rates {Base}/{Quote} failed for good with {Code}; the next day asks again` | `FxRefreshHandler` |
+| 2303 | Warning | `{Rows} exchange rates {Base}/{Quote} were not believed ({Reasons}) and were kept apart in marketdata.fx_rates_rejected; they are not used` | `FxRefreshHandler` |
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |
 | 2112 | Information | `The adjusted history of {Market} {Ticker} was rewritten by the provider; a full reload is queued` | `RefreshStockHandler` |
 | 2113 | Warning | `Refresh of listing {StockId} failed for good with {Code}` | `RefreshStockHandler` |

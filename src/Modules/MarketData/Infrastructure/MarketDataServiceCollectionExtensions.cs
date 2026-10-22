@@ -146,6 +146,9 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddScoped<ListingIngestion>();
         services.TryAddScoped<FollowUpJobs>();
         services.TryAddScoped<IPriceStore, PriceStore>();
+        services.AddOptions<FxGuardOptions>().Bind(configuration.GetSection(FxGuardOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FxGuardOptions>, FxGuardOptionsValidator>());
+        services.TryAddScoped<IFxRateScreening, FxRateScreening>();
         services.TryAddScoped<ISymbolAliases, SymbolAliases>();
         services.TryAddScoped<IIngestionState, IngestionState>();
         services.TryAddScoped<IListingLifecycleStore, ListingLifecycleStore>();

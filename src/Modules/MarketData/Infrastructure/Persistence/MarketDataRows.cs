@@ -193,3 +193,24 @@ public sealed class FxRateRow
 
     public DateTimeOffset IngestedAt { get; set; }
 }
+
+/// <summary>
+/// A daily exchange rate the guard did not believe (ADR-0042): kept apart with the reason and never served. One row per pair, day and source; a
+/// new refusal of the same day replaces the previous one.
+/// </summary>
+public sealed class FxRateRejectedRow
+{
+    public string Base { get; set; } = string.Empty;
+
+    public string Quote { get; set; } = string.Empty;
+
+    public DateOnly AsOfDate { get; set; }
+
+    public string Source { get; set; } = string.Empty;
+
+    public decimal Rate { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+
+    public DateTimeOffset SeenAt { get; set; }
+}

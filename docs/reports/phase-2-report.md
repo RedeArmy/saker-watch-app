@@ -75,7 +75,7 @@ Added: 0027 market data providers and licensing, 0028 FX source and conversion p
 | # | Finding | Disposition |
 |---|---|---|
 | M1 | One user can drain the shared Twelve Data daily quota by registering unknown tickers (10 a minute each costs a backfill credit; 800 a day), and the daily refresh has no reserved lane | **Open, needs the owner's decision.** Proposed: a reserved share of the daily budget for the scheduled refresh, a separate capped allowance for on-demand backfills, and a per-user daily cap on new registrations. T38 now says "partly mitigated" |
-| M2 | The exchange rate has no plausibility or jump guard (only `rate > 0`), and a corrected value rewrites a day without a trace | **Open, needs the owner's decision.** Proposed: a configurable band per pair and a day-to-day limit above which the row is quarantined and logged. T40 now says "partly mitigated" |
+| M2 | The exchange rate has no plausibility or jump guard (only `rate > 0`), and a corrected value rewrites a day without a trace | **Fixed (ADR-0042, proposed)**: a band per pair (USD/GTQ 5 to 12), a 3 % limit of change per day and a refusal to replace a stored day with a very different rate; a refused rate is kept in `marketdata.fx_rates_rejected`, logged (2303) and counted, never served; runbook `fx-rates`; unit, integration and mutation checks. T40 is now "mitigated" |
 | L1 | Automatic delisting depends on substring matching of the provider's error text | Open, low: it needs five different days in a row and `relist` undoes it. Proposed: classify only the documented code or HTTP 404, and ignore a day on which a large share of a market answers "not found". Recorded in T49 |
 | L2 | Provider names are stored with only a length check | **Fixed**: control, format (bidirectional, zero-width), separator characters and angle brackets are dropped in `Stock`; tests. A database check constraint would need a new migration and is not added |
 | L3 | A note with a NUL (or other control character) makes the write fail with a 500 | **Fixed**: refused with `watchlist.item.notes_invalid` (line breaks and tabs stay); tests |
@@ -93,7 +93,7 @@ Threat-model deltas the audit asked for are in `docs/threat-model/threat-model-v
 ### migration-reviewer
 | # | Finding | Disposition |
 |---|---|---|
-| 1 | High: `ENABLE` but not `FORCE ROW LEVEL SECURITY` on the three watchlist tables (the same in Identity and Platform); `tracked_stock_ids()` relies on the owner being exempt | **Open, needs the owner's decision** (project-wide). Not exploitable today: the runtime logins are `NOBYPASSRLS` members of the roles and not the owner. Proposed: record it in ADR-0010 as accepted (the owner is exempt and the runtime never connects as the owner), with a test that asserts both, instead of a policy per table for the function |
+| 1 | High: `ENABLE` but not `FORCE ROW LEVEL SECURITY` on the three watchlist tables (the same in Identity and Platform); `tracked_stock_ids()` relies on the owner being exempt | **Resolved as a decision (ADR-0010)**: the owner is the migrator's login and no runtime login is or belongs to it; `FORCE` would also bind the function that reads across users. Two tests keep it safe: `RuntimeLogins_OwnNothing_AndCannotBypassRowLevelSecurity` and one that fails when a table the API can read or change holds a `user_id` without a policy |
 | 2 | `MigrationsAreForwardOnlyTests` did not scan the Watchlist migrations | **Fixed** (the `Down` bodies do throw) |
 | 3 | `ModelSnapshotTests` had no Watchlist case | **Fixed** |
 | 4 | No seeded upgrade test for `AddListingLifecycle`, the Watchlist security step, or the real Mongo V1 to V2 | **Fixed**: three tests that seed rows at the previous version, upgrade and check the rows and the new rules |
@@ -107,6 +107,8 @@ Could not verify without a running database, as the reviewer says: real lock tim
 
 ### code-reviewer
 Pending.
+
+The migration `CreateFxRatesRejected` (ADR-0042) was added after the migration review: it is a new shared table with grants for the worker only, no user data, and `migration-reviewer` should look at it again with the rest.
 
 ### Other checks
 What was done during the phase is not a substitute for the formal reviews, but it found real defects, each fixed with a test: a review of the whole 2.7 branch and a second one of the follow-ups (a provider symbol already taken is a refusal, a list of filings must have its essential columns, a ticker must be distinct, the operator command never leaves the process with an exception); the freshness sampler that read without an open connection; a new required property that would have broken the OpenAPI contract for existing clients (caught by the CI `oasdiff` job); and the remote-script scan of CI, which a `curl` in a command substitution of the load script would have failed. Mutation checks were run on the cache, the price-only read, the fee rule and the lifecycle.
