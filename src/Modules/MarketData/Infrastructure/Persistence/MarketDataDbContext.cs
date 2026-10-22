@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SakerWatch.BuildingBlocks.Persistence.Conventions;
 
 namespace SakerWatch.MarketData.Infrastructure.Persistence;
@@ -146,35 +147,42 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
         {
             e.ToTable("fx_rates", t =>
             {
-                t.HasCheckConstraint("ck_fx_rates_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+                RateChecks(t, "fx_rates");
                 t.HasCheckConstraint("ck_fx_rates_rate", "rate > 0");
-                t.HasCheckConstraint("ck_fx_rates_source", "source ~ '^[a-z0-9_]{1,32}$'");
             });
-            e.HasKey(x => new { x.Base, x.Quote, x.AsOfDate, x.Source });
-            e.Property(x => x.Base).HasMaxLength(3).IsFixedLength();
-            e.Property(x => x.Quote).HasMaxLength(3).IsFixedLength();
-            e.Property(x => x.Source).HasMaxLength(32);
-            // As wide as the domain allows a rate to be (1e-12 to 1e12), so no accepted rate can overflow the column.
-            e.Property(x => x.Rate).HasPrecision(30, 12);
+            RateColumns(e);
         });
 
         modelBuilder.Entity<FxRateRejectedRow>(e =>
         {
             e.ToTable("fx_rates_rejected", t =>
             {
-                t.HasCheckConstraint("ck_fx_rates_rejected_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
-                t.HasCheckConstraint("ck_fx_rates_rejected_source", "source ~ '^[a-z0-9_]{1,32}$'");
+                RateChecks(t, "fx_rates_rejected");
                 t.HasCheckConstraint("ck_fx_rates_rejected_reason", "reason IN ('out_of_band', 'jump', 'rewrite')");
             });
-            e.HasKey(x => new { x.Base, x.Quote, x.AsOfDate, x.Source });
-            e.Property(x => x.Base).HasMaxLength(3).IsFixedLength();
-            e.Property(x => x.Quote).HasMaxLength(3).IsFixedLength();
-            e.Property(x => x.Source).HasMaxLength(32);
+            RateColumns(e);
             e.Property(x => x.Reason).HasMaxLength(16);
-            // Wider than fx_rates: what is refused may be absurd, and keeping it must not fail for its size.
-            e.Property(x => x.Rate).HasPrecision(30, 12);
         });
 
         modelBuilder.UseSnakeCaseNames();
+    }
+
+    // The table of exchange rates and the table of the rates that were refused share their key, their currency and source columns, and the rate.
+    private static void RateColumns<T>(EntityTypeBuilder<T> e)
+        where T : class
+    {
+        e.HasKey("Base", "Quote", "AsOfDate", "Source");
+        e.Property<string>("Base").HasMaxLength(3).IsFixedLength();
+        e.Property<string>("Quote").HasMaxLength(3).IsFixedLength();
+        e.Property<string>("Source").HasMaxLength(32);
+        // As wide as the domain allows a rate to be (1e-12 to 1e12), so no accepted rate, and no refused absurd one, can overflow the column.
+        e.Property<decimal>("Rate").HasPrecision(30, 12);
+    }
+
+    private static void RateChecks<T>(TableBuilder<T> table, string name)
+        where T : class
+    {
+        table.HasCheckConstraint($"ck_{name}_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+        table.HasCheckConstraint($"ck_{name}_source", "source ~ '^[a-z0-9_]{1,32}$'");
     }
 }
