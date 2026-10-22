@@ -1,6 +1,6 @@
 # ADR-0044: Hardening of automatic delisting, of the registration write and of the provider retries
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 
