@@ -125,9 +125,16 @@ public sealed class Stock : AggregateRoot<StockId>
 
     private static string? NormalizeName(string? name)
     {
-        string trimmed = (name ?? string.Empty).Trim();
+        // The name is the provider's text, kept once for every user: control, bidirectional and zero-width characters and markup are dropped.
+        string trimmed = string.Concat((name ?? string.Empty).Where(IsNameCharacter)).Trim();
         return trimmed.Length is >= 1 and <= MaxNameLength ? trimmed : null;
     }
+
+    private static bool IsNameCharacter(char c) =>
+        c is not ('<' or '>')
+        && char.GetUnicodeCategory(c) is not (System.Globalization.UnicodeCategory.Control or System.Globalization.UnicodeCategory.Format
+            or System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator
+            or System.Globalization.UnicodeCategory.OtherNotAssigned);
 
     private static bool IsKnownTimeZone(string? timeZoneId)
     {

@@ -157,6 +157,26 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     }
 
     [Fact]
+    public async Task UpgradeFromVersionOne_KeepsTheStoredPayloadsAndBuildsTheRequestIndex()
+    {
+        IMongoDatabase db = mongo.NewDatabase();
+        await RunnerFor(db).RunAsync([MongoMigrations.All[0]], null, CancellationToken.None);
+        await db.GetCollection<BsonDocument>("provider_payloads").InsertOneAsync(new BsonDocument
+        {
+            { "schemaVersion", 1 },
+            { "createdAt", DateTime.UtcNow },
+            { "provider", "twelvedata" },
+            { "request", new BsonDocument { { "mic", "XNAS" }, { "symbol", "AAPL" } } },
+        });
+
+        int applied = await RunnerFor(db).RunAsync(MongoMigrations.All, null, CancellationToken.None);
+
+        applied.Should().Be(MongoMigrations.All.Count - 1);
+        (await db.GetCollection<BsonDocument>("provider_payloads").CountDocumentsAsync(new BsonDocument())).Should().Be(1);
+        (await IndexesOf(db, "provider_payloads")).Should().Contain(i => i["name"] == "ix_provider_request");
+    }
+
+    [Fact]
     public async Task ParallelMigrators_ApplyEachMigrationExactlyOnce()
     {
         IMongoDatabase db = mongo.NewDatabase();

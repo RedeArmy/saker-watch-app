@@ -71,16 +71,16 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
     /// <inheritdoc />
     public string Name => EdgarOptions.ProviderName;
 
-    [GeneratedRegex(@"^\d{10}-\d{2}-\d{6}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^\d{10}-\d{2}-\d{6}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex AccessionPattern();
 
-    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._\-]{0,99}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._\-]{0,99}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex DocumentPattern();
 
-    [GeneratedRegex(@"^\d{4}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^\d{4}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex FourDigits();
 
-    [GeneratedRegex(@"^[\p{L}\p{N} .,&'()\-/]{1,200}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[\p{L}\p{N} .,&'()\-/]{1,200}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex Text();
 
     /// <inheritdoc />

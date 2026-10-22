@@ -90,4 +90,10 @@ public sealed class EdgarOptionsTests
 
         read.Should().Throw<OptionsValidationException>().WithMessage("*contact address*");
     }
+
+    [Theory]
+    [InlineData("SakerWatch you@example.com\n")]
+    [InlineData("SakerWatch you@example.com\r\nX-Injected: 1")]
+    public void WhenOn_AnIdentityWithALineBreakIsRefused_EvenAtTheEnd(string agent) =>
+        Validate(new EdgarOptions { Enabled = true, UserAgent = agent }).Succeeded.Should().BeFalse();
 }

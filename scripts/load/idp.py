@@ -6,7 +6,7 @@ documents and signing RS256 tokens with the matching key is all a load test need
 temporary directory and is never written anywhere else. Python standard library plus the openssl command only.
 
   idp.py init  DIR AUTHORITY AUDIENCE   create the key, discovery and jwks documents under DIR
-  idp.py serve DIR PORT                 serve DIR on 127.0.0.1:PORT (the path of AUTHORITY is the path under DIR)
+  idp.py serve DIR PORT                 serve DIR/public on 127.0.0.1:PORT (the path of AUTHORITY is the path under it); the key is not served
   idp.py token DIR SUBJECT              print an access token for SUBJECT, valid for an hour
 """
 import base64
@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 KEY_ID = "load-1"
+PUBLIC = "public"
 
 
 def b64url(data: bytes) -> str:
@@ -33,10 +34,13 @@ def openssl(*args: str, data: bytes | None = None) -> bytes:
 
 def init(directory: Path, authority: str, audience: str) -> None:
     directory.mkdir(parents=True, exist_ok=True)
+    directory.chmod(0o700)
     key = directory / "key.pem"
     openssl("genrsa", "-out", str(key), "2048")
+    key.chmod(0o600)
     modulus = openssl("rsa", "-in", str(key), "-noout", "-modulus").decode().strip().split("=", 1)[1]
-    base = directory / urlparse(authority).path.strip("/")
+    # Only the public documents are served: the key and the settings stay beside them, not inside.
+    base = directory / PUBLIC / urlparse(authority).path.strip("/")
     (base / ".well-known").mkdir(parents=True, exist_ok=True)
     (base / ".well-known" / "openid-configuration").write_text(json.dumps({
         "issuer": authority,
@@ -65,7 +69,7 @@ def token(directory: Path, subject: str) -> str:
 
 
 def serve(directory: Path, port: int) -> None:
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory))
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory / PUBLIC))
     http.server.ThreadingHTTPServer(("127.0.0.1", port), handler).serve_forever()
 
 

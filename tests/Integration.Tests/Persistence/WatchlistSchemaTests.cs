@@ -408,4 +408,26 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
 
         return ids;
     }
+
+    [Fact]
+    public async Task UpgradeFromTheFirstVersion_KeepsEveryRow_AndStartsToIsolateThemByUser()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        await MigrationSteps.PlatformStep(admin).RunAsync(CancellationToken.None);
+        var step = MigrationSteps.WatchlistStep(admin);
+        await step.MigrateToAsync("CreateWatchlist", CancellationToken.None);
+        Guid ana = Guid.CreateVersion7(), ben = Guid.CreateVersion7(), portfolio = Guid.CreateVersion7(), item = Guid.CreateVersion7();
+        await admin.ExecuteAsync(_insertItem, Item(item, ana));
+        await admin.ExecuteAsync(_insertItem, Item(Guid.CreateVersion7(), ben));
+        await admin.ExecuteAsync(_insertPortfolio, Portfolio(portfolio, ana));
+        await admin.ExecuteAsync(_insertMember, ("portfolio", portfolio), ("item", item), ("user", ana));
+
+        await step.RunAsync(CancellationToken.None);
+
+        string api = await TimescalePostgresFixture.CreateRoleLoginAsync(admin, "api_role");
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.watchlist_items")).Should().Be(2, "the upgrade keeps what was there");
+        (await api.AsUserScalarAsync<long>(ana, "SELECT count(*) FROM watchlist.watchlist_items")).Should().Be(1);
+        (await api.AsUserScalarAsync<long>(ben, "SELECT count(*) FROM watchlist.portfolios")).Should().Be(0);
+        (await api.AsUserScalarAsync<long>(ana, "SELECT count(*) FROM watchlist.portfolio_items")).Should().Be(1);
+    }
 }

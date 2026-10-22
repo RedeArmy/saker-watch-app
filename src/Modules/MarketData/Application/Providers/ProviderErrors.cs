@@ -82,7 +82,10 @@ public static class ProviderErrors
         };
     }
 
-    /// <summary>How long the provider asked to wait, when the error carries it.</summary>
+    // What a provider asks for is passed on to our own callers (a 429 with Retry-After), so a hostile or buggy value is capped.
+    private const double _maxRetryAfterSeconds = 300;
+
+    /// <summary>How long the provider asked to wait, when the error carries it; at most five minutes.</summary>
     public static TimeSpan? RetryAfter(Error error)
     {
         ArgumentNullException.ThrowIfNull(error);
@@ -91,7 +94,7 @@ public static class ProviderErrors
             && values.Length == 1
             && double.TryParse(values[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds)
             && seconds >= 0
-                ? TimeSpan.FromSeconds(seconds)
+                ? TimeSpan.FromSeconds(Math.Min(seconds, _maxRetryAfterSeconds))
                 : null;
     }
 

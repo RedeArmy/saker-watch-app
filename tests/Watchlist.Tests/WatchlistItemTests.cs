@@ -129,4 +129,15 @@ public sealed class WatchlistItemTests
 
         WatchlistItemId.Create(guid).ToString().Should().Be(guid.ToString("D"));
     }
+
+    [Theory]
+    [InlineData("a\0b")]
+    [InlineData("a\u001Bb")]
+    [InlineData("a\u0085b")]
+    public void NormalizeNotes_WithAControlCharacter_IsRefused(string notes) =>
+        WatchlistItem.NormalizeNotes(notes).Error!.Code.Should().Be("watchlist.item.notes_invalid");
+
+    [Fact]
+    public void NormalizeNotes_KeepsLineBreaksAndTabs() =>
+        WatchlistItem.NormalizeNotes("uno\r\n\tdos").Value.Should().Be("uno\r\n\tdos");
 }

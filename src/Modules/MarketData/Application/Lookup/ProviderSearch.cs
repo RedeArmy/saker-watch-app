@@ -15,6 +15,9 @@ public sealed partial class ProviderSearch(IProviderCallBudget budget, ISearchCa
 {
     private const string _searchSuffix = "_search";
 
+    // What a provider answers is kept in Redis; a hostile or broken one cannot make it keep more than a page of candidates.
+    private const int _maxCachedRows = 50;
+
     /// <summary>Most candidates a search returns.</summary>
     public int MaxResults => lookup.Value.MaxResults;
 
@@ -44,7 +47,7 @@ public sealed partial class ProviderSearch(IProviderCallBudget budget, ISearchCa
                 : Error.Unavailable(StockDirectory.ProviderUnavailableCode, "The market data provider cannot answer for now. Try again later.", 30);
         }
 
-        CachedListing[] listings = [.. response.Value.Select(listing => new CachedListing(listing.Key.ProviderMic, listing.Key.Symbol, listing.Name, listing.Currency, listing.AssetType))];
+        CachedListing[] listings = [.. response.Value.Take(_maxCachedRows).Select(listing => new CachedListing(listing.Key.ProviderMic, listing.Key.Symbol, listing.Name, listing.Currency, listing.AssetType))];
         if (settings.CacheMinutes > 0)
         {
             await cache.SetAsync(provider.Name, text, listings, TimeSpan.FromMinutes(settings.CacheMinutes), cancellationToken);

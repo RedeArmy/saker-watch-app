@@ -78,8 +78,14 @@ public sealed class WatchlistItem : AggregateRoot<WatchlistItemId>
     public static Result<string?> NormalizeNotes(string? notes)
     {
         string? trimmed = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
-        return trimmed is { Length: > MaxNotesLength }
-            ? Error.Validation("watchlist.item.notes_too_long", $"Notes have at most {MaxNotesLength} characters.")
+        if (trimmed is { Length: > MaxNotesLength })
+        {
+            return Error.Validation("watchlist.item.notes_too_long", $"Notes have at most {MaxNotesLength} characters.");
+        }
+
+        // A NUL cannot be stored in text and the other control characters only garble a screen; line breaks and tabs are what a note has.
+        return trimmed is not null && trimmed.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t'))
+            ? Error.Validation("watchlist.item.notes_invalid", "Notes cannot contain control characters.")
             : Result.Success(trimmed);
     }
 

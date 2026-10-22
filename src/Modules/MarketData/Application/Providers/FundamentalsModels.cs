@@ -73,7 +73,7 @@ public static partial class FilingRules
     /// <summary>Code of the failure for a form type that is not one.</summary>
     public const string FormInvalidCode = "marketdata.filings.form_invalid";
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9 /\-]{0,11}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9 /\-]{0,11}\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial System.Text.RegularExpressions.Regex FormPattern();
 
     /// <summary>True for a form type as the registry writes it: letters, digits, spaces, '-' and '/', up to twelve characters.</summary>

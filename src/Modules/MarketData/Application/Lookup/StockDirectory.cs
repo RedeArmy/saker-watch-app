@@ -56,7 +56,7 @@ public sealed partial class StockDirectory(
         description: "Stock searches and registrations by operation and outcome.");
 
     // Letters, digits, spaces and the few marks tickers and names use. The text goes to a provider as a URL parameter and to a cache as a key.
-    [GeneratedRegex(@"^[\p{L}\p{N} .&_\-]{1,40}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[\p{L}\p{N} .&_\-]{1,40}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex QueryPattern();
 
     /// <inheritdoc />

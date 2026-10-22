@@ -222,6 +222,25 @@ public sealed class MarketDataSchemaTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task UpgradeFromRegisterStock_KeepsTheListingsAndStartsTheCountOfUnknownDaysAtZero()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        await MigrationSteps.PlatformStep(admin).RunAsync(CancellationToken.None);
+        var step = MigrationSteps.MarketDataStep(admin);
+        await step.MigrateToAsync("RegisterStock", CancellationToken.None);
+        var id = Guid.CreateVersion7();
+        await admin.ExecuteAsync(_insertStock, Stock(id));
+        await admin.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status, last_success_at) VALUES (@id, 'ok', now())", ("id", id));
+
+        await step.RunAsync(CancellationToken.None);
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks WHERE delisted_at IS NULL")).Should().Be(1);
+        (await admin.ScalarAsync<int>("SELECT not_found_days FROM marketdata.ingestion_state WHERE stock_id = @id", ("id", id))).Should().Be(0);
+        (await admin.ScalarAsync<bool>("SELECT to_regclass('marketdata.ticker_history') IS NOT NULL")).Should().BeTrue();
+        await ExpectAsync(() => admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET not_found_days = -1 WHERE stock_id = @id", ("id", id)), "23514");
+    }
+
+    [Fact]
     public async Task IngestionState_OneRowPerListing_AFailureNeedsItsCode_AndTheGrantsAreTheCatalogOnes()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

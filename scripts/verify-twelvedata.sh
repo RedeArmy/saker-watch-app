@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-off check of the Twelve Data free plan for ADR-0027. Reads the key from the environment (TwelveData__ApiKey), sends it in the
-# Authorization header (never in a URL) and writes the raw responses to the output directory. Uses about 13 of the 800 daily credits.
+# Authorization header (never in a URL, and never in the arguments of curl, where `ps` would show it: it goes through a config file descriptor) and writes the raw responses to the output directory. Uses about 13 of the 800 daily credits.
 # Usage: bash scripts/verify-twelvedata.sh <output-dir>
 set -u
 out="${1:?usage: verify-twelvedata.sh <output-dir>}"
@@ -11,7 +11,7 @@ base="https://api.twelvedata.com"
 get() { # name, path-with-query
   local name="$1" path="$2"
   curl -sS --max-time 30 -D "$out/$name.headers" -o "$out/$name.json" \
-    -H "Authorization: apikey ${TwelveData__ApiKey}" "$base$path" \
+    -K <(printf 'header = "Authorization: apikey %s"\n' "${TwelveData__ApiKey}") "$base$path" \
     -w "%{http_code}\n" > "$out/$name.status" 2>"$out/$name.err" || true
   # headers can carry cookies; keep only the status line and the rate-limit related ones
   grep -iE '^(HTTP|x-ratelimit|retry-after|api-credits|content-type)' "$out/$name.headers" > "$out/$name.h" 2>/dev/null || true

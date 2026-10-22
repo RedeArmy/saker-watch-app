@@ -46,4 +46,8 @@ public sealed class ProviderErrorsTests
         ProviderErrors.PlanRestricted("twelvedata").Message.Should().Contain("twelvedata");
         ProviderErrors.SymbolNotFound("twelvedata", "ZZZ").Message.Should().Contain("ZZZ");
     }
+
+    [Fact]
+    public void RetryAfter_IsCappedAtFiveMinutes_SoAProvidersWaitCannotBecomeOurs() =>
+        ProviderErrors.RetryAfter(new Error("c", "m", ErrorType.Failure, new Dictionary<string, string[]> { ["retry_after_seconds"] = ["86400"] })).Should().Be(TimeSpan.FromMinutes(5));
 }

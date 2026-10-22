@@ -10,7 +10,7 @@ set -u
 cd "$(dirname "$0")/.."
 out="${1:-$(mktemp -d)}"
 mkdir -p "$out"
-chmod 777 "$out"
+chmod 700 "$out"
 k6_image="grafana/k6@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d"   # grafana/k6:1.3.0
 authority="http://127.0.0.1:58081/o/load"
 audience="saker-load-api"
@@ -110,7 +110,7 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
     tokens="${tokens:+$tokens,}$(python3 -I scripts/load/idp.py token "$out/idp" "$sub")"
   done
   log "running k6 ($label)"
-  docker run --rm --network host -v "$PWD/tests/load:/scripts:ro" -v "$out:/out" \
+  docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/tests/load:/scripts:ro" -v "$out:/out" \
     -e K6_BASE_URL="$api_url" -e K6_TOKENS="$tokens" -e K6_ENFORCE="${K6_ENFORCE:-0}" -e K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" \
     "$k6_image" run --quiet --summary-export="/out/summary-$label.json" /scripts/baseline.js >"$out/k6-$label.log" 2>&1
   log "k6 ($label) exit code: $?"
