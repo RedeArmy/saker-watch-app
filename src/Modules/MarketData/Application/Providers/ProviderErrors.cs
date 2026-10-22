@@ -82,10 +82,10 @@ public static class ProviderErrors
         };
     }
 
-    // What a provider asks for is passed on to our own callers (a 429 with Retry-After), so a hostile or buggy value is capped.
-    private const double _maxRetryAfterSeconds = 300;
+    // Nothing waits longer than a day: the budgets reset every UTC day. A hostile or buggy value (a provider answering with years) is capped there.
+    private const double _maxRetryAfterSeconds = 86_400;
 
-    /// <summary>How long the provider asked to wait, when the error carries it; at most five minutes.</summary>
+    /// <summary>How long the provider (or our own budget) asked to wait, when the error carries it; at most one day.</summary>
     public static TimeSpan? RetryAfter(Error error)
     {
         ArgumentNullException.ThrowIfNull(error);

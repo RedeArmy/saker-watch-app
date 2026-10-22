@@ -31,6 +31,13 @@ public sealed class TwelveDataOptions
     /// <summary>Credits per UTC day the plan allows. The free Basic plan allows 800; paid plans have no daily cap, so set a large number.</summary>
     [Range(1, 100000000)]
     public int CreditsPerDay { get; set; } = 800;
+
+    /// <summary>
+    /// Credits per UTC day that loading the history of new stocks may spend (ADR-0043), out of <see cref="CreditsPerDay"/>; the rest is kept for the
+    /// daily refresh. A history costs two credits, so 200 are 100 new stocks a day.
+    /// </summary>
+    [Range(0, 100000000)]
+    public int OnDemandCreditsPerDay { get; set; } = 200;
 }
 
 /// <summary>Requires the API key when at least one market is routed to Twelve Data, so a host without a key still starts when it does not use it.</summary>
@@ -46,6 +53,11 @@ public sealed class TwelveDataOptionsValidator(IOptions<MarketDataProvidersOptio
         if (routed && string.IsNullOrWhiteSpace(options.ApiKey))
         {
             return ValidateOptionsResult.Fail("TwelveData:ApiKey is required because a market is routed to twelvedata (set it as an environment variable, a user secret or a Docker secret).");
+        }
+
+        if (options.OnDemandCreditsPerDay > options.CreditsPerDay)
+        {
+            return ValidateOptionsResult.Fail("TwelveData:OnDemandCreditsPerDay is a share of TwelveData:CreditsPerDay and cannot be larger.");
         }
 
         return Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out Uri? uri) && uri.Scheme == Uri.UriSchemeHttps

@@ -356,6 +356,56 @@ public sealed class TwelveDataProviderTests
     }
 
     [Fact]
+    public async Task AnOnDemandCall_SpendsTheAllowanceOfItsOwnFirst_AndThenThePlansBudget()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily() with { Lane = CallLane.OnDemand }, CancellationToken.None);
+
+        budget.Spent.Should().Equal(
+            ("twelvedata_ondemand", new BudgetLimits(8, 200), 1),
+            ("twelvedata", new BudgetLimits(8, 800), 1));
+    }
+
+    [Fact]
+    public async Task AScheduledCall_NeverTouchesTheOnDemandAllowance()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily() with { Lane = CallLane.Scheduled }, CancellationToken.None);
+
+        budget.Spent.Select(spent => spent.Provider).Should().Equal("twelvedata");
+    }
+
+    [Fact]
+    public async Task AnOnDemandCall_WhenTheAllowanceIsSpent_IsNeverSent_AndLeavesThePlansBudgetAlone()
+    {
+        var budget = new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromHours(3)));
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily() with { Lane = CallLane.OnDemand }, CancellationToken.None);
+
+        handler.Requests.Should().BeEmpty();
+        budget.Spent.Select(spent => spent.Provider).Should().Equal("twelvedata_ondemand");
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
+        ProviderErrors.RetryAfter(result.Error!).Should().Be(TimeSpan.FromHours(3), "the job waits for the allowance of the next day and does not burn its attempts");
+    }
+
+    [Theory]
+    [InlineData(200, 800, true)]
+    [InlineData(800, 800, true)]
+    [InlineData(0, 800, true)]
+    [InlineData(801, 800, false)]
+    public void Options_TheOnDemandAllowanceIsAShareOfTheDay(int onDemand, int perDay, bool valid)
+    {
+        var options = new TwelveDataOptions { ApiKey = _key, OnDemandCreditsPerDay = onDemand, CreditsPerDay = perDay };
+
+        new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded.Should().Be(valid);
+    }
+
+    [Fact]
     public async Task AFailedTimeSeriesCall_StillSpendsItsCredit_BecauseTheProviderChargesIt()
     {
         var budget = new ScriptedBudget();

@@ -29,6 +29,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/runbooks/listing-lifecycle.md | Runbook listing-lifecycle | Eder | draft | 2 | 2026-10-20 |
 | docs/runbooks/cache.md | Runbook cache of the daily numbers | Eder | draft | 2 | 2026-10-21 |
 | docs/runbooks/fx-rates.md | Runbook exchange rate guard | Eder | draft | 2 | 2026-10-22 |
+| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | draft | 2 | 2026-10-22 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | draft | 5 | 2026-10-15 |
 | docs/runbooks/restore.md | Runbook restore | Eder | stub | 5 | 2026-10-12 |
@@ -99,6 +100,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0040-company-profiles-and-filings.md | ADR 0040 | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0041-cache-of-the-daily-numbers.md | ADR 0041 | Eder | draft | 2 | 2026-10-21 |
 | docs/adr/0042-exchange-rate-guard.md | ADR 0042 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | draft | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | draft | 2 | 2026-10-21 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |

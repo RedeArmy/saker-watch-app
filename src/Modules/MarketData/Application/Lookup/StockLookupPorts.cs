@@ -27,6 +27,13 @@ public sealed class StockLookupOptions
     /// <summary>Most candidates a search returns.</summary>
     [Range(1, 50)]
     public int MaxResults { get; set; } = 20;
+
+    /// <summary>
+    /// New stocks one user may put in the shared catalog per UTC day (ADR-0043). Each one queues a history load that spends the provider's daily
+    /// credits, which every user shares. A stock already in the catalog does not count.
+    /// </summary>
+    [Range(1, 10_000)]
+    public int RegistrationsPerUserPerDay { get; set; } = 20;
 }
 
 /// <summary>A listing found at a provider, kept as the cache stores it: the provider's own code and symbol plus the text it reported.</summary>

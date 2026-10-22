@@ -37,7 +37,7 @@ Also in this phase: the worker smoke test (`scripts/smoke-worker.sh`), the fresh
 | `dotnet format --verify-no-changes` | clean |
 | `bash tests/hooks/run.sh` | 60/60 |
 | `bash scripts/check-docs-index.sh`, `check-todos.sh` | OK |
-| `dotnet test` (with coverage, as CI runs it) | 1 899 passed, 0 failed, 4 skipped (the opt-in live checks and the scale test): Calculator 73, Application 184, Architecture 15, Identity 76, Contract 13, Observability 41, MarketData 610, Watchlist 131, Web 127, Integration 629 (real PostgreSQL/Timescale, MongoDB and Redis through Testcontainers; 19 minutes on this machine) |
+| `dotnet test` (with coverage, as CI runs it) | 1 944 passed, 0 failed, 4 skipped (the opt-in live checks and the scale test): Calculator 73, Application 184, Architecture 15, Identity 76, Contract 13, Observability 41, MarketData 648, Watchlist 131, Web 127, Integration 636 (real PostgreSQL/Timescale, MongoDB and Redis through Testcontainers; 19 minutes on this machine) |
 | Coverage gate (`scripts/check-coverage.py 85`) | passes for the ten gated assemblies: MarketData.Application 99.3 %, MarketData.Domain 99.2 %, Watchlist.Application 98.0 %, Watchlist.Domain 99.5 %, Calculator.Application 96.3 %, Calculator.Domain 92.5 %, Kernel 95.1 %, Identity.Application 100 %, Retention.Application 98.5 % |
 | `dotnet list package --vulnerable --include-transitive` | no vulnerable packages |
 | `docker compose config` of the dev and observability profiles | valid |
@@ -61,12 +61,12 @@ Could not run here: the CI-only jobs (`api-contract` against the base branch wit
 - Carried over from Phase 1: availability of Clavaris (T1/T33), `aud` equal to the client id (A-021), account state cached 5 minutes (T32), forwarded headers (A-023), the audit chain without an off-database anchor (T3).
 
 ## 5. ADRs added or changed
-Added: 0027 market data providers and licensing, 0028 FX source and conversion path, 0029 ingestion design, 0030 performance windows and edge rules, 0031 watchlist and portfolios storage, 0032 on-demand stock registration, 0033 watchlist read model, 0034 portfolio API, 0035 portfolio metrics, 0036 partial-purchase calculator, 0037 money kit, 0038 price history and sparklines, 0039 listing lifecycle, 0040 company profiles and filings, 0041 cache of the daily numbers. Changed: 0026 (portfolios, from the decision of 2026-10-16 to accepted).
+Added: 0027 market data providers and licensing, 0028 FX source and conversion path, 0029 ingestion design, 0030 performance windows and edge rules, 0031 watchlist and portfolios storage, 0032 on-demand stock registration, 0033 watchlist read model, 0034 portfolio API, 0035 portfolio metrics, 0036 partial-purchase calculator, 0037 money kit, 0038 price history and sparklines, 0039 listing lifecycle, 0040 company profiles and filings, 0041 cache of the daily numbers, 0042 exchange rate guard, 0043 provider credit lanes. Changed: 0010 (the table owner and `FORCE`), 0026 (portfolios, from the decision of 2026-10-16 to accepted).
 
-0026 to 0040 are accepted (the owner, 2026-10-19 and 2026-10-21). **ADR-0041 is `proposed` and needs the owner's decision at the gate.** The notes in 0030, 0033, 0035 and 0038 that said "caching arrives with 2.8" now point to it.
+0026 to 0040 are accepted (the owner, 2026-10-19 and 2026-10-21). **ADR-0041, 0042 and 0043 are `proposed` and need the owner's decision at the gate.** The notes in 0030, 0033, 0035 and 0038 that said "caching arrives with 2.8" now point to it.
 
 ## 6. DOCS-INDEX status
-78 approved, 15 draft, 4 stub (at the Phase 1 gate: 57, 11 and 4). The stubs are the runbooks `provider-outage`, `llm-outage`, `restore` and `key-rotation`, all with target phase 5, so none is past its target. The drafts with target phase 2 are `docs/adr/0041-cache-of-the-daily-numbers.md`, `docs/runbooks/listing-lifecycle.md`, `docs/runbooks/cache.md` and `docs/reports/phase-2-load-baseline.md` and this report; they move to approved with the owner's review at the gate. This report and the Phase 2 pointer are updated only after the owner approves.
+78 approved, 19 draft, 4 stub (at the Phase 1 gate: 57, 11 and 4). The stubs are the runbooks `provider-outage`, `llm-outage`, `restore` and `key-rotation`, all with target phase 5, so none is past its target. The drafts with target phase 2 are the ADRs 0041, 0042 and 0043, the runbooks `listing-lifecycle`, `cache`, `fx-rates` and `provider-quota`, `docs/reports/phase-2-load-baseline.md` and this report; they move to approved with the owner's review at the gate. This report and the Phase 2 pointer are updated only after the owner approves.
 
 ## 7. Review findings and disposition
 `security-auditor` and `migration-reviewer` ran on 2026-10-21 over `7b5a90d..HEAD`; **`code-reviewer` is still pending** by decision of the owner, so the gate is not proposed yet. Neither reviewer found a blocker: the security audit has 0 critical, 0 high, 2 medium, 8 low and 3 informational findings; the migration review approves with changes.
@@ -74,7 +74,7 @@ Added: 0027 market data providers and licensing, 0028 FX source and conversion p
 ### security-auditor
 | # | Finding | Disposition |
 |---|---|---|
-| M1 | One user can drain the shared Twelve Data daily quota by registering unknown tickers (10 a minute each costs a backfill credit; 800 a day), and the daily refresh has no reserved lane | **Open, needs the owner's decision.** Proposed: a reserved share of the daily budget for the scheduled refresh, a separate capped allowance for on-demand backfills, and a per-user daily cap on new registrations. T38 now says "partly mitigated" |
+| M1 | One user can drain the shared Twelve Data daily quota by registering unknown tickers (10 a minute each costs a backfill credit; 800 a day), and the daily refresh has no reserved lane | **Fixed (ADR-0043, proposed)**: at most 20 new stocks per user per UTC day (`429` `marketdata.stock.registration_limit` with `Retry-After`; a stock already in the catalog costs nothing), and the history load of a new stock draws first on an on-demand allowance of 200 credits a day, so the daily refresh keeps at least 600; runbook `provider-quota`; unit, integration and mutation checks. T38 is now "mitigated" |
 | M2 | The exchange rate has no plausibility or jump guard (only `rate > 0`), and a corrected value rewrites a day without a trace | **Fixed (ADR-0042, proposed)**: a band per pair (USD/GTQ 5 to 12), a 3 % limit of change per day and a refusal to replace a stored day with a very different rate; a refused rate is kept in `marketdata.fx_rates_rejected`, logged (2303) and counted, never served; runbook `fx-rates`; unit, integration and mutation checks. T40 is now "mitigated" |
 | L1 | Automatic delisting depends on substring matching of the provider's error text | Open, low: it needs five different days in a row and `relist` undoes it. Proposed: classify only the documented code or HTTP 404, and ignore a day on which a large share of a market answers "not found". Recorded in T49 |
 | L2 | Provider names are stored with only a length check | **Fixed**: control, format (bidirectional, zero-width), separator characters and angle brackets are dropped in `Stock`; tests. A database check constraint would need a new migration and is not added |
@@ -115,9 +115,9 @@ What was done during the phase is not a substitute for the formal reviews, but i
 
 ## 8. Open questions and Phase 3 plan
 Open questions for the owner:
-- The reviews' open decisions: a lane and a daily cap for on-demand registrations against the shared Twelve Data quota (M1); a plausibility band and a jump guard for the exchange rate (M2); `FORCE ROW LEVEL SECURITY` or the written exception in ADR-0010; and whether the lower findings (L1, L4, L5) are done in Phase 2 or carried to Phase 5.
+- The lower findings left open: L1 (automatic delisting reads the provider's message text), L4 (a database transaction stays open during the call that registers an unknown stock) and L5 (retries are not re-budgeted): done in Phase 2 or carried to Phase 5?
 - Run `code-reviewer`, which is pending.
-- Accept ADR-0041, and review the four drafts above.
+- Accept ADR-0041, 0042 and 0043, and review the other drafts above.
 - Put `SONAR_TOKEN` in the Dependabot secret store, and exclude `**/Migrations/**` from Sonar's duplication detection (`sonar.cpd.exclusions`).
 - Which markets after the US, and when (A-027); whether the SEC adapter is turned on before Phase 4 (it needs the identity of the owner as the contact).
 - Whether the sparklines need their own cache before the Phase 3 screens, or the baseline is enough.

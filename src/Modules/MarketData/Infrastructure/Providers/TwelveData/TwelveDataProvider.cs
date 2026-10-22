@@ -35,6 +35,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
     // Measured on 2026-10-17 with /api_usage: a time_series call costs one credit even when it fails (unknown symbol, plan restriction),
     // and symbol_search costs none, so a search never touches the budget.
+    /// <summary>Suffix of the budget key of the on-demand allowance, after the provider name.</summary>
+    public const string OnDemandBudgetSuffix = "_ondemand";
+
     private const int _timeSeriesCredits = 1;
 
     private static readonly Counter<long> _calls = SakerTelemetry.Meter.CreateCounter<long>(
@@ -81,7 +84,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         using Activity? span = SakerTelemetry.Source.StartActivity("MarketData.Provider.TwelveData.Search");
 
         Result<ProviderResponse> response = await GetAsync(
-            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, credits: 0, cancellationToken);
+            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, credits: 0, CallLane.Scheduled, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_searchOperation, response.Error!);
@@ -125,7 +128,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
         string query = DailyQuery(request);
 
-        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, cancellationToken);
+        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, request.Lane, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_dailyOperation, response.Error!);
@@ -229,9 +232,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     private static KeyValuePair<string, object?>[] Tags(string operation, string outcome) =>
         [new("provider", TwelveDataOptions.ProviderName), new("operation", operation), new("outcome", outcome)];
 
-    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, int credits, CancellationToken cancellationToken)
+    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, int credits, CallLane lane, CancellationToken cancellationToken)
     {
-        if (await SpendBudgetAsync(credits, cancellationToken) is { } refused)
+        if (await SpendBudgetAsync(credits, lane, cancellationToken) is { } refused)
         {
             return refused;
         }
@@ -260,7 +263,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     }
 
     // A denied call is never sent. A call that costs no credit needs no budget. Returns the refusal, or null when the call may go ahead.
-    private async Task<Error?> SpendBudgetAsync(int credits, CancellationToken cancellationToken)
+    // On-demand work spends the allowance of its own first and then the plan's budget, so a burst of new stocks cannot take the credits of the
+    // daily refresh (ADR-0043). The allowance is spent before the plan's budget because the plan's credits are the scarce ones.
+    private async Task<Error?> SpendBudgetAsync(int credits, CallLane lane, CancellationToken cancellationToken)
     {
         if (credits <= 0)
         {
@@ -268,6 +273,16 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         }
 
         TwelveDataOptions settings = _options.Value;
+        if (lane == CallLane.OnDemand)
+        {
+            BudgetDecision allowance = await _budget.TryAcquireAsync(
+                Name + OnDemandBudgetSuffix, new BudgetLimits(settings.CreditsPerMinute, settings.OnDemandCreditsPerDay), credits, cancellationToken);
+            if (!allowance.Granted)
+            {
+                return ProviderErrors.RateLimited(Name, allowance.RetryAfter);
+            }
+        }
+
         BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
         return decision.Granted ? null : ProviderErrors.RateLimited(Name, decision.RetryAfter);
     }

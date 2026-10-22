@@ -48,6 +48,6 @@ public sealed class ProviderErrorsTests
     }
 
     [Fact]
-    public void RetryAfter_IsCappedAtFiveMinutes_SoAProvidersWaitCannotBecomeOurs() =>
-        ProviderErrors.RetryAfter(new Error("c", "m", ErrorType.Failure, new Dictionary<string, string[]> { ["retry_after_seconds"] = ["86400"] })).Should().Be(TimeSpan.FromMinutes(5));
+    public void RetryAfter_IsCappedAtOneDay_SoAHostileWaitCannotStopAJobForYears() =>
+        ProviderErrors.RetryAfter(new Error("c", "m", ErrorType.Failure, new Dictionary<string, string[]> { ["retry_after_seconds"] = ["999999999"] })).Should().Be(TimeSpan.FromDays(1));
 }

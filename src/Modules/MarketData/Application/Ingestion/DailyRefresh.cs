@@ -108,7 +108,7 @@ public sealed partial class RefreshStockHandler(
         }
 
         DateOnly from = latest.Date.AddDays(-settings.RefreshOverlapDays);
-        Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, cancellationToken);
+        Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, CallLane.Scheduled, cancellationToken);
         if (!merged.IsSuccess)
         {
             await StopAsync(payload, context, merged.Error!, now, cancellationToken);

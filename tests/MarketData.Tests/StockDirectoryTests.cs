@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lookup;
@@ -101,7 +102,14 @@ public sealed class StockDirectoryTests
         }
     }
 
-    private sealed record Rig(StockDirectory Directory, Provider Provider, Catalog Catalog, Registry Registry, Budget Budget, Cache Cache, Enqueuer Jobs);
+    private sealed class User(Guid? id) : ICurrentUser
+    {
+        public Guid? UserId => id;
+    }
+
+    private static readonly Guid _user = Guid.Parse("00000000-0000-0000-0000-0000000000f1");
+
+    private sealed record Rig(StockDirectory Directory, Provider Provider, Catalog Catalog, Registry Registry, Budget Budget, Cache Cache, Enqueuer Jobs, Budget Quota);
 
     private static ProviderListing Listing(string mic, string symbol, string? name = "Apple Inc.", string? currency = "USD", AssetType type = AssetType.Equity) =>
         new(new ProviderListingKey(mic, symbol), name, currency, "Asia/Tokyo", type);
@@ -113,7 +121,9 @@ public sealed class StockDirectoryTests
         bool grant = true,
         Guid? existingId = null,
         StockLookupOptions? lookup = null,
-        string[]? markets = null)
+        string[]? markets = null,
+        bool quotaLeft = true,
+        Guid? user = null)
     {
         var provider = new Provider(answer);
         var catalog = new Catalog();
@@ -126,9 +136,11 @@ public sealed class StockDirectoryTests
             [provider],
             Options.Create(new MarketDataProvidersOptions { Markets = (markets ?? ["XNAS", "XNYS"]).ToDictionary(m => m, _ => "fake") }));
         var search = new ProviderSearch(budget, cache, Options.Create(lookup ?? new StockLookupOptions()), NullLogger<ProviderSearch>.Instance);
-        var registration = new StockRegistration(registry, jobs, Options.Create(new IngestionOptions()), NullLogger<StockRegistration>.Instance);
+        var quota = new Budget(quotaLeft);
+        var registration = new StockRegistration(
+            registry, jobs, Options.Create(new IngestionOptions()), quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions()), NullLogger<StockRegistration>.Instance);
         var directory = new StockDirectory(catalog, search, registration, router, ExchangeCalendars.Default(), new TimeProviderIdGenerator(clock), clock);
-        return new Rig(directory, provider, catalog, registry, budget, cache, jobs);
+        return new Rig(directory, provider, catalog, registry, budget, cache, jobs, quota);
     }
 
     [Theory]
@@ -429,5 +441,64 @@ public sealed class StockDirectoryTests
         {
             seen.Should().Contain([("search", "success"), ("search", "invalid"), ("ensure", "registered"), ("ensure", "not_found"), ("ensure", "catalogued")]);
         }
+    }
+
+    [Fact]
+    public async Task Ensure_RegisteringANewStock_TakesOneOfTheUsersRegistrationsOfTheDay()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: new StockLookupOptions { RegistrationsPerUserPerDay = 7 });
+
+        await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        rig.Quota.Spent.Should().ContainSingle().Which.Should().Be((StockRegistration.RegistrationBudgetKey(_user), new BudgetLimits(7, 7), 1));
+        StockRegistration.RegistrationBudgetKey(_user).Should().Be("register_000000000000000000000000000000f1");
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheUserHasUsedTheirRegistrationsOfTheDay_IsRefusedWithTheWait_AndNothingIsRegistered()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), quotaLeft: false);
+
+        Error error = (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+
+        (error.Code, error.Type).Should().Be((StockDirectory.RegistrationLimitCode, ErrorType.TooManyRequests));
+        rig.Registry.Registered.Should().BeEmpty();
+        rig.Jobs.Queued.Should().BeEmpty("a refused registration queues no history, which is what spends the provider's credits");
+    }
+
+    [Fact]
+    public async Task Ensure_ACataloguedStockOrATickerTheProviderDoesNotKnow_DoesNotTakeARegistration()
+    {
+        Rig known = Build(_ => Found());
+        known.Catalog.Listings.Add(new CatalogListing(StockId.Create(Guid.CreateVersion7()), Mic.Parse("XNAS"), Ticker.Parse("AAPL"), "Apple Inc.", CurrencyCode.Parse("USD"), AssetType.Equity, true));
+        Rig unknown = Build(_ => Found());
+
+        await known.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+        await unknown.Directory.EnsureAsync("XNAS", "ZZZZ", CancellationToken.None);
+
+        known.Quota.Spent.Should().BeEmpty();
+        unknown.Quota.Spent.Should().BeEmpty("a wrong ticker costs a search and not a registration");
+    }
+
+    [Fact]
+    public async Task Search_WhenTheProviderIsRateLimitedForAnHour_TellsTheUserAtMostFiveMinutes()
+    {
+        Rig rig = Build(_ => ProviderErrors.RateLimited("fake", TimeSpan.FromHours(1)));
+
+        Error error = (await rig.Directory.SearchAsync("aapl", CancellationToken.None)).Error!;
+
+        error.Code.Should().Be(StockDirectory.SearchBusyCode);
+        error.Details!["retry_after_seconds"].Should().Equal("300");
+    }
+
+    [Fact]
+    public async Task Reserve_ForACallWithNoUser_IsNotLimited_AndSpendsNothing()
+    {
+        var quota = new Budget(grant: false);
+        var registration = new StockRegistration(
+            new Registry(), new Enqueuer(), Options.Create(new IngestionOptions()), quota, new User(null), Options.Create(new StockLookupOptions()), NullLogger<StockRegistration>.Instance);
+
+        (await registration.ReserveAsync(CancellationToken.None)).Should().BeNull();
+        quota.Spent.Should().BeEmpty();
     }
 }

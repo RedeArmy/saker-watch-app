@@ -74,6 +74,28 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task PuttingNewStocks_StopsAtTheUsersRegistrationsOfTheDay_ButAStockAlreadyInTheCatalogStillGoesIn()
+    {
+        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres, registrationsPerDay: 2);
+        _rigs.Add(rig);
+        string ana = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-registrations-ana" });
+        string ben = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-registrations-ben" });
+
+        HttpResponseMessage first = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", ana));
+        HttpResponseMessage second = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/MSFT", ana));
+        HttpResponseMessage third = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/NVDA", ana));
+        HttpResponseMessage otherUser = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/NVDA", ben));
+        HttpResponseMessage catalogued = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/NVDA", ana));
+
+        (first.StatusCode, second.StatusCode).Should().Be((HttpStatusCode.Created, HttpStatusCode.Created));
+        third.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "a third new stock is a history load too many for one user in a day");
+        third.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromHours(5));
+        (await BodyAsync(third)).GetProperty("code").GetString().Should().Be("marketdata.stock.registration_limit");
+        otherUser.StatusCode.Should().Be(HttpStatusCode.Created, "the limit is per user");
+        catalogued.StatusCode.Should().Be(HttpStatusCode.Created, "once another user registered it, the stock is in the catalog and costs nothing");
+    }
+
+    [Fact]
     public async Task Search_ReturnsTheMatchesOfTheEnabledMarkets_WithTheCanonicalMarket()
     {
         WatchlistRig.Rig rig = await StartAsync();

@@ -45,6 +45,9 @@ public sealed partial class StockDirectory(
     /// <summary>Code of the failure when the shared search budget is spent.</summary>
     public const string SearchBusyCode = "marketdata.search.busy";
 
+    /// <summary>Code of the failure when the user has put the most new stocks in the catalog that one day allows.</summary>
+    public const string RegistrationLimitCode = "marketdata.stock.registration_limit";
+
     /// <summary>Code of the failure when the provider cannot answer for now.</summary>
     public const string ProviderUnavailableCode = "marketdata.search.provider_unavailable";
 
@@ -163,6 +166,7 @@ public sealed partial class StockDirectory(
     private static string Outcome(Error error) => error.Code switch
     {
         SearchBusyCode => "busy",
+        RegistrationLimitCode => "limit",
         ProviderUnavailableCode => "unavailable",
         StockNotFoundCode => "not_found",
         MarketNotAvailableCode => "market_not_available",
@@ -257,6 +261,12 @@ public sealed partial class StockDirectory(
         if (!stock.IsSuccess)
         {
             return Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.");
+        }
+
+        // Only here, once the provider has confirmed a stock the catalog does not have: a wrong ticker costs a search and not a registration.
+        if (await registration.ReserveAsync(cancellationToken) is { } limited)
+        {
+            return limited;
         }
 
         StockId id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);

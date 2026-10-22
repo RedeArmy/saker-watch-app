@@ -18,6 +18,9 @@ public sealed partial class ProviderSearch(IProviderCallBudget budget, ISearchCa
     // What a provider answers is kept in Redis; a hostile or broken one cannot make it keep more than a page of candidates.
     private const int _maxCachedRows = 50;
 
+    // The wait a user is told when the provider itself is rate limited: what the provider asked for, but never more than a few minutes.
+    private const double _maxClientWaitSeconds = 300;
+
     /// <summary>Most candidates a search returns.</summary>
     public int MaxResults => lookup.Value.MaxResults;
 
@@ -43,7 +46,7 @@ public sealed partial class ProviderSearch(IProviderCallBudget budget, ISearchCa
         {
             LogProviderFailed(provider.Name, response.Error!.Code);
             return ProviderErrors.Classify(response.Error) == ProviderFailureKind.RateLimited
-                ? Error.TooManyRequests(StockDirectory.SearchBusyCode, "Searches are busy. Try again in a moment.", (int)Math.Ceiling((ProviderErrors.RetryAfter(response.Error) ?? TimeSpan.FromSeconds(30)).TotalSeconds))
+                ? Error.TooManyRequests(StockDirectory.SearchBusyCode, "Searches are busy. Try again in a moment.", (int)Math.Ceiling(Math.Min((ProviderErrors.RetryAfter(response.Error) ?? TimeSpan.FromSeconds(30)).TotalSeconds, _maxClientWaitSeconds)))
                 : Error.Unavailable(StockDirectory.ProviderUnavailableCode, "The market data provider cannot answer for now. Try again later.", 30);
         }
 
