@@ -5,6 +5,7 @@ using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Contracts;
 using SakerWatch.Watchlist.Application;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
@@ -25,8 +26,39 @@ public sealed class WatchlistUseCaseTests
         public Guid? UserId => id;
     }
 
-    private sealed class Stocks(Result<StockSummary>? ensure = null, Result<StockSummary>? find = null) : IStockDirectory
+    private sealed class Unit : IUnitOfWork
     {
+        public bool Open { get; private set; }
+
+        public int Committed { get; private set; }
+
+        public int RolledBack { get; private set; }
+
+        public Task BeginAsync(CancellationToken cancellationToken)
+        {
+            Open = true;
+            return Task.CompletedTask;
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken)
+        {
+            Open = false;
+            Committed++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken)
+        {
+            Open = false;
+            RolledBack++;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class Stocks(Result<StockSummary>? ensure = null, Result<StockSummary>? find = null, Unit? watching = null) : IStockDirectory
+    {
+        public bool UnitWasOpenWhileEnsuring { get; private set; }
+
         public List<(string Market, string Ticker)> Ensured { get; } = [];
 
         public List<(string Market, string Ticker)> Found { get; } = [];
@@ -41,6 +73,7 @@ public sealed class WatchlistUseCaseTests
 
         public Task<Result<StockSummary>> EnsureAsync(string market, string ticker, CancellationToken cancellationToken)
         {
+            UnitWasOpenWhileEnsuring |= watching?.Open == true;
             Ensured.Add((market, ticker));
             return Task.FromResult(ensure ?? _apple);
         }
@@ -91,11 +124,11 @@ public sealed class WatchlistUseCaseTests
         public Task<bool> RemoveByStockAsync(Guid userId, Guid stockId, CancellationToken cancellationToken) => Task.FromResult(Items.Remove((userId, stockId)));
     }
 
-    private static PutWatchlistItemHandler Put(Repository repository, Stocks stocks, Guid? user = null, int maxItems = 500, FakeTimeProvider? clock = null)
+    private static PutWatchlistItemHandler Put(Repository repository, Stocks stocks, Guid? user = null, int maxItems = 500, FakeTimeProvider? clock = null, Unit? unit = null)
     {
         FakeTimeProvider time = clock ?? new FakeTimeProvider(_now);
         return new PutWatchlistItemHandler(
-            new User(user ?? _user), stocks, repository, new TimeProviderIdGenerator(time), Options.Create(new WatchlistOptions { MaxItems = maxItems }), time);
+            new User(user ?? _user), stocks, repository, new TimeProviderIdGenerator(time), Options.Create(new WatchlistOptions { MaxItems = maxItems }), unit ?? new Unit(), time);
     }
 
     private static ValueTask<Result<PutWatchlistItemResult>> PutAsync(PutWatchlistItemHandler handler, string market = "XNAS", string ticker = "AAPL", string? notes = null, decimal? target = null) =>
@@ -154,7 +187,7 @@ public sealed class WatchlistUseCaseTests
         var repository = new Repository();
         var stocks = new Stocks();
         var handler = new PutWatchlistItemHandler(
-            new User(null), stocks, repository, new TimeProviderIdGenerator(TimeProvider.System), Options.Create(new WatchlistOptions()), TimeProvider.System);
+            new User(null), stocks, repository, new TimeProviderIdGenerator(TimeProvider.System), Options.Create(new WatchlistOptions()), new Unit(), TimeProvider.System);
 
         Result<PutWatchlistItemResult> result = await PutAsync(handler);
 
@@ -330,5 +363,58 @@ public sealed class WatchlistUseCaseTests
 
         options.ToLimits().Should().Be(WatchlistLimits.Defaults);
         new WatchlistOptions { MaxItems = 10, MaxPortfolios = 2, MaxItemsPerPortfolio = 5 }.ToLimits().IsWithinCeilings.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Put_LooksUpOrRegistersTheStockBeforeAnyUnitOfWorkIsOpen_SoNoConnectionIsHeldWhileTheProviderIsAsked()
+    {
+        var unit = new Unit();
+        var stocks = new Stocks(watching: unit);
+
+        await PutAsync(Put(new Repository(), stocks, unit: unit));
+
+        stocks.UnitWasOpenWhileEnsuring.Should().BeFalse("registering a stock calls a provider and can take as long as its timeout (ADR-0044)");
+        (unit.Committed, unit.RolledBack).Should().Be((2, 0), "a short unit to count the list and one to write the item");
+    }
+
+    [Fact]
+    public async Task Put_ThatEndsInAFailure_RollsItsWriteBack_AndAStockThatCouldNotBeFoundWritesNothing()
+    {
+        var full = new Unit();
+        var refused = new Unit();
+
+        Result<PutWatchlistItemResult> limit = await PutAsync(Put(new Repository { ForcedOutcome = AddOutcome.LimitReached }, new Stocks(), unit: full));
+        Result<PutWatchlistItemResult> missing = await PutAsync(Put(new Repository(), new Stocks(ensure: Error.NotFound("marketdata.stock.not_found", "no")), unit: refused));
+
+        limit.IsSuccess.Should().BeFalse();
+        (full.Committed, full.RolledBack).Should().Be((1, 1), "the count committed and the write was rolled back");
+        missing.IsSuccess.Should().BeFalse();
+        (refused.Committed, refused.RolledBack).Should().Be((1, 0), "only the short count was opened: nothing was written");
+    }
+
+    [Fact]
+    public async Task Put_OnAFullWatchlist_OfAStockTheCatalogDoesNotHave_IsRefusedBeforeAProviderIsAsked()
+    {
+        var repository = new Repository();
+        await PutAsync(Put(repository, new Stocks(), maxItems: 1));
+        var stocks = new Stocks(find: Error.NotFound("marketdata.stock.not_found", "not in the catalog"));
+
+        Result<PutWatchlistItemResult> result = await PutAsync(Put(repository, stocks, maxItems: 1), ticker: "NEW");
+
+        result.Error!.Code.Should().Be(WatchlistErrors.LimitReached);
+        stocks.Ensured.Should().BeEmpty("nothing is registered, and no provider quota is spent, for a stock that could not be added");
+    }
+
+    [Fact]
+    public async Task Put_OnAFullWatchlist_OfAStockTheCatalogHas_StillGoesOnToEditItOrRefuseIt()
+    {
+        var repository = new Repository();
+        await PutAsync(Put(repository, new Stocks(), maxItems: 1));
+        var stocks = new Stocks();
+
+        Result<PutWatchlistItemResult> edit = await PutAsync(Put(repository, stocks, maxItems: 1), notes: "still fine");
+
+        edit.IsSuccess.Should().BeTrue();
+        stocks.Ensured.Should().ContainSingle();
     }
 }

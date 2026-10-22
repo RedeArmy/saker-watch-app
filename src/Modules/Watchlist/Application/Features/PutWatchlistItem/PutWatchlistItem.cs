@@ -4,6 +4,7 @@ using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Contracts;
 using SakerWatch.Watchlist.Domain.Items;
 
@@ -18,7 +19,7 @@ namespace SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
 /// <param name="Ticker">The ticker on that market.</param>
 /// <param name="Notes">The user's notes, or <see langword="null"/>.</param>
 /// <param name="TargetPrice">The target price in the stock's currency, or <see langword="null"/>.</param>
-public sealed record PutWatchlistItemCommand(string Market, string Ticker, string? Notes, decimal? TargetPrice) : ICommand<PutWatchlistItemResult>;
+public sealed record PutWatchlistItemCommand(string Market, string Ticker, string? Notes, decimal? TargetPrice) : ISelfTransactingCommand<PutWatchlistItemResult>;
 
 /// <summary>A watchlist item with the stock it points to.</summary>
 /// <param name="Id">The item id.</param>
@@ -59,13 +60,18 @@ public sealed class PutWatchlistItemValidator : AbstractValidator<PutWatchlistIt
     }
 }
 
-/// <summary>Registers the stock if needed, then adds or updates the item inside the command's unit of work.</summary>
+/// <summary>
+/// Registers the stock if needed, then adds or updates the item in a unit of work of its own. Registering a stock asks a provider, which can
+/// take as long as the client's timeout, so the pipeline does not hold a connection and a transaction around it (ADR-0044): the stock is
+/// found or registered first, in short units of work of its own, and the item is written in one that opens after.
+/// </summary>
 public sealed class PutWatchlistItemHandler(
     ICurrentUser currentUser,
     IStockDirectory stocks,
     IWatchlistRepository items,
     IIdGenerator ids,
     IOptions<WatchlistOptions> options,
+    IUnitOfWork unit,
     TimeProvider clock) : IRequestHandler<PutWatchlistItemCommand, Result<PutWatchlistItemResult>>
 {
     /// <inheritdoc />
@@ -89,16 +95,64 @@ public sealed class PutWatchlistItemHandler(
             return target.Error!;
         }
 
+        // A full watchlist can still edit a stock it holds, but a stock the catalog does not have cannot be on it: it is refused here, before a
+        // provider is asked and a catalog row is made for a stock that cannot be added.
+        if (await IsFullAsync(userId, cancellationToken)
+            && (await stocks.FindAsync(request.Market, request.Ticker, cancellationToken)).Error is { Type: ErrorType.NotFound })
+        {
+            return LimitReached();
+        }
+
         Result<StockSummary> stock = await stocks.EnsureAsync(request.Market, request.Ticker, cancellationToken);
         if (!stock.IsSuccess)
         {
             return stock.Error!;
         }
 
-        DateTimeOffset now = clock.GetUtcNow();
-        if (await items.FindByStockAsync(userId, stock.Value.Id, cancellationToken) is { } existing)
+        await unit.BeginAsync(cancellationToken);
+        try
         {
-            return await UpdateAsync(existing, stock.Value, notes.Value, target.Value, now, cancellationToken);
+            Result<PutWatchlistItemResult> written = await WriteAsync(userId, stock.Value, notes.Value, target.Value, cancellationToken);
+            if (written.IsSuccess)
+            {
+                await unit.CommitAsync(cancellationToken);
+            }
+            else
+            {
+                await unit.RollbackAsync(cancellationToken);
+            }
+
+            return written;
+        }
+        catch
+        {
+            await unit.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private async Task<bool> IsFullAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await unit.BeginAsync(cancellationToken);
+        try
+        {
+            bool full = await items.CountAsync(userId, cancellationToken) >= options.Value.MaxItems;
+            await unit.CommitAsync(cancellationToken);
+            return full;
+        }
+        catch
+        {
+            await unit.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private async Task<Result<PutWatchlistItemResult>> WriteAsync(Guid userId, StockSummary stock, string? notesText, decimal? targetPrice, CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        if (await items.FindByStockAsync(userId, stock.Id, cancellationToken) is { } existing)
+        {
+            return await UpdateAsync(existing, stock, notesText, targetPrice, now, cancellationToken);
         }
 
         if (await items.CountAsync(userId, cancellationToken) >= options.Value.MaxItems)
@@ -106,13 +160,13 @@ public sealed class PutWatchlistItemHandler(
             return LimitReached();
         }
 
-        Result<WatchlistItem> created = WatchlistItem.Add(ids.New<WatchlistItemId>(), userId, stock.Value.Id, now);
+        Result<WatchlistItem> created = WatchlistItem.Add(ids.New<WatchlistItemId>(), userId, stock.Id, now);
         if (!created.IsSuccess)
         {
             return created.Error!;
         }
 
-        Result applied = created.Value.Update(notes.Value, target.Value, now);
+        Result applied = created.Value.Update(notesText, targetPrice, now);
         if (!applied.IsSuccess)
         {
             return applied.Error!;
@@ -124,12 +178,12 @@ public sealed class PutWatchlistItemHandler(
                 return LimitReached();
             case AddOutcome.AlreadyThere:
                 // A parallel request put the same stock there between our read and our insert: the end state is the same, so update that one.
-                WatchlistItem? winner = await items.FindByStockAsync(userId, stock.Value.Id, cancellationToken);
+                WatchlistItem? winner = await items.FindByStockAsync(userId, stock.Id, cancellationToken);
                 return winner is null
                     ? Error.Conflict("watchlist.item_changed", "The watchlist changed while the request ran. Try again.")
-                    : await UpdateAsync(winner, stock.Value, notes.Value, target.Value, now, cancellationToken);
+                    : await UpdateAsync(winner, stock, notesText, targetPrice, now, cancellationToken);
             default:
-                return new PutWatchlistItemResult(ToView(created.Value, stock.Value), Created: true);
+                return new PutWatchlistItemResult(ToView(created.Value, stock), Created: true);
         }
     }
 

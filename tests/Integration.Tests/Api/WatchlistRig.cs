@@ -70,7 +70,7 @@ internal static class WatchlistRig
     internal static ProviderListing Listing(string mic, string symbol, string name) =>
         new(new ProviderListingKey(mic, symbol), name, "USD", "Asia/Tokyo", AssetType.Equity);
 
-    internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false, int? registrationsPerDay = null)
+    internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false, int? registrationsPerDay = null, Func<FakeMarketDataProvider, MigratedDatabase, IMarketDataProvider>? wrap = null)
     {
         RealApiHost api = await RealApiHost.StartAsync(postgres);
         var provider = new FakeMarketDataProvider(ExchangeCalendars.Default(), TimeProvider.System)
@@ -101,7 +101,7 @@ internal static class WatchlistRig
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IMarketDataProvider>();
-                services.AddSingleton<IMarketDataProvider>(provider);
+                services.AddSingleton(wrap is null ? provider : wrap(provider, api.Db));
                 services.RemoveAll<IProviderCallBudget>();
                 services.AddSingleton(budget);
                 services.RemoveAll<ISearchCache>();

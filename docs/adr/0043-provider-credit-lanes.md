@@ -25,4 +25,4 @@ The free Twelve Data plan allows 800 credits a day and 8 a minute, and every pro
 - A user who adds more than 20 new stocks in a day is told so and can add the rest tomorrow; the stocks the catalog already has are not limited.
 - A burst of registrations over the allowance makes the newest stocks wait for the next day with status `pending`; this is visible in the watchlist and in the `waiting` outcome of the backfill metric.
 - A registered but unwanted stock is still in the shared catalog and is refreshed every day (the catalog has no deletion in Phase 2); the caps bound how fast that can happen, not that it happens. Removing stocks nobody follows is a Phase 5 retention matter.
-- Retries by the HTTP pipeline (up to two for Twelve Data) are still not re-budgeted (security audit, L5); they can make the provider's count run ahead of ours by a few credits, which the allowance's margin absorbs.
+- Retries by the HTTP pipeline would have made the provider's count run ahead of ours (security audit, L5); the Twelve Data client is no longer retried by the pipeline (ADR-0044).

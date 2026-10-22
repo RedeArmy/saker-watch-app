@@ -23,7 +23,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_listings` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | market, state=fresh\|stale\|pending | ingestable listings by freshness: `stale` have missed a session that has settled, `pending` have no history yet. Per process: aggregate with `max` across worker replicas |
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
 | `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed\|not_found\|delisted | daily refreshes of a listing: `not_found` is a day the provider did not know the symbol (counted, not failed) and `delisted` is the day the count reached the limit (ADR-0039); `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
-| `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
+| `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting\|provider_fault | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
 | `sakerwatch_marketdata_perf_cache_total` (counter) | result=hit\|miss\|error | listings asked of the performance cache (ADR-0041): found, computed from the database, or a read or write Redis could not do |
 | `sakerwatch_marketdata_fx_rejected_total` (counter) | reason=out_of_band\|jump\|rewrite | exchange rates kept apart instead of stored (ADR-0042) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
@@ -110,6 +110,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2605 | Warning | `{Operation} was refused with {Code}: {Reason}` | `LifecycleCommandLine` |
 | 2606 | Warning | `The request cannot be read: {Reason}` | `LifecycleCommandLine` |
 | 2607 | Error | `{Operation} failed and nothing was changed` (with the exception) | `LifecycleCommandLine` |
+| 2608 | Warning | `{InStreak} of {Active} active listings of a market are unknown to the provider at once: that looks like a fault of the provider, so nothing is delisted automatically` | `ListingLifecycle` |
 | 2701 | Warning | `EDGAR {Operation}: {Dropped} of {Rows} rows were not valid and were dropped` | `EdgarProvider` |
 | 2702 | Warning | `EDGAR could not be reached ({ExceptionType})` | `EdgarProvider` |
 | 2703 | Warning | `The raw EDGAR response was not kept ({ExceptionType}); the call is not affected` | `EdgarProvider` |

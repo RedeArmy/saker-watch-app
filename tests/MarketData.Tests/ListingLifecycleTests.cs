@@ -44,6 +44,8 @@ public sealed class ListingLifecycleTests
 
         public int Days { get; set; }
 
+        public NotFoundShare Share { get; set; } = new(1, 100);
+
         public List<string> Calls { get; } = [];
 
         public Task<bool> DelistAsync(StockId stock, DateTimeOffset at, DateOnly on, string source, CancellationToken cancellationToken)
@@ -69,10 +71,46 @@ public sealed class ListingLifecycleTests
             Calls.Add($"note {day:yyyy-MM-dd}");
             return Task.FromResult(Days);
         }
+
+        public Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken) => Task.FromResult(Share);
     }
 
     private static ListingLifecycle Lifecycle(Store store, string ticker = "FB", int limit = 5) =>
         new(new Catalog(ticker), store, Options.Create(new IngestionOptions { DelistAfterNotFoundDays = limit }), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
+
+    [Theory]
+    [InlineData(30, 100, false)]
+    [InlineData(31, 100, false)]
+    [InlineData(29, 100, true)]
+    [InlineData(3, 10, false)]
+    [InlineData(2, 10, true)]
+    public async Task Ingestion_WhenAThirdOfTheMarketIsUnknownAtOnce_ItIsAProviderFaultAndNothingIsDelisted(int inStreak, int active, bool delists)
+    {
+        var store = new Store { Days = 5, Share = new NotFoundShare(inStreak, active) };
+
+        bool delisted = await Lifecycle(store, limit: 5).NoteSymbolNotFoundAsync(_stock, new DateOnly(2026, 10, 19), CancellationToken.None);
+
+        delisted.Should().Be(delists);
+        store.Calls.Contains("delist 2026-10-19 ingestion").Should().Be(delists);
+    }
+
+    [Fact]
+    public async Task Ingestion_InAMarketTooSmallForTheShareToMean_JudgesOneListingAtATime()
+    {
+        // Two of three listings is 67 %, but a market of three is not evidence of a provider fault.
+        var store = new Store { Days = 5, Share = new NotFoundShare(2, 3) };
+
+        (await Lifecycle(store, limit: 5).NoteSymbolNotFoundAsync(_stock, new DateOnly(2026, 10, 19), CancellationToken.None)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Ingestion_BelowTheLimit_DoesNotEvenLookAtTheMarket()
+    {
+        var store = new Store { Days = 3, Share = new NotFoundShare(100, 100) };
+
+        (await Lifecycle(store, limit: 5).NoteSymbolNotFoundAsync(_stock, new DateOnly(2026, 10, 19), CancellationToken.None)).Should().BeFalse();
+        store.Calls.Should().Equal("note 2026-10-19");
+    }
 
     [Fact]
     public async Task Delist_MarksTheStockAtTheDayAsked_OrToday()

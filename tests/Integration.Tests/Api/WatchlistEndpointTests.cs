@@ -95,6 +95,40 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
         catalogued.StatusCode.Should().Be(HttpStatusCode.Created, "once another user registered it, the stock is in the catalog and costs nothing");
     }
 
+    // Asks the database, from outside the API, how many sessions are sitting in an open transaction at the moment the provider is being asked.
+    private sealed class WatchingProvider(FakeMarketDataProvider inner, string admin) : IMarketDataProvider
+    {
+        public List<long> OpenTransactionsWhileAsking { get; } = [];
+
+        public string Name => inner.Name;
+
+        public async Task<Result<IReadOnlyList<ProviderListing>>> SearchAsync(string symbol, CancellationToken cancellationToken)
+        {
+            OpenTransactionsWhileAsking.Add(await admin.ScalarAsync<long>(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state LIKE 'idle in transaction%'"));
+            return await inner.SearchAsync(symbol, cancellationToken);
+        }
+
+        public Task<Result<DailySeries>> GetDailyAsync(DailySeriesRequest request, CancellationToken cancellationToken) => inner.GetDailyAsync(request, cancellationToken);
+    }
+
+    [Fact]
+    public async Task PuttingANewStock_HoldsNoTransactionWhileTheProviderIsAsked_YetStoresTheStockItsHistoryAndTheItem()
+    {
+        WatchingProvider? watching = null;
+        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres, wrap: (fake, db) => watching = new WatchingProvider(fake, db.Admin));
+        _rigs.Add(rig);
+        string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-no-held-transaction" });
+
+        HttpResponseMessage response = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token, new { notes = "nota" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        watching!.OpenTransactionsWhileAsking.Should().ContainSingle().Which.Should().Be(0, "a connection held across the call would be one session idle in transaction (ADR-0044)");
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks WHERE ticker = 'AAPL'")).Should().Be(1);
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM platform.job_queue WHERE job_key LIKE 'marketdata.backfill%'")).Should().Be(1, "the first load is queued with the stock, in the same write");
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.watchlist_items")).Should().Be(1);
+    }
+
     [Fact]
     public async Task Search_ReturnsTheMatchesOfTheEnabledMarkets_WithTheCanonicalMarket()
     {

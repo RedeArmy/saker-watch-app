@@ -43,6 +43,8 @@ public sealed class LifecycleCommandLineTests
             Task.FromResult(RenameOutcome.Done);
 
         public Task<int> NoteSymbolNotFoundAsync(StockId stock, DateOnly day, DateTimeOffset at, CancellationToken cancellationToken) => Task.FromResult(1);
+
+        public Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken) => Task.FromResult(new NotFoundShare(0, 0));
     }
 
     private sealed class Unit : IUnitOfWork

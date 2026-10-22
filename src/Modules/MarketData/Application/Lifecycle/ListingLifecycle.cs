@@ -43,7 +43,18 @@ public interface IListingLifecycleStore
 
     /// <summary>Counts <paramref name="day"/> as a day the provider did not know the symbol (once per day however many times it is tried) and returns the days in a row.</summary>
     Task<int> NoteSymbolNotFoundAsync(StockId stock, DateOnly day, DateTimeOffset at, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// How many of the active listings of the market of <paramref name="stock"/> are in a streak of days the provider did not know their symbol
+    /// (the last of them <paramref name="day"/> or the day before), out of how many are active.
+    /// </summary>
+    Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken);
 }
+
+/// <summary>How many listings of a market the provider currently does not know.</summary>
+/// <param name="InStreak">Active listings in a streak of unknown-symbol days that is still going.</param>
+/// <param name="Active">Active listings of the market.</param>
+public sealed record NotFoundShare(int InStreak, int Active);
 
 /// <summary>A stock that changes its ticker within its market.</summary>
 /// <param name="Stock">The stock; it keeps its identity.</param>
@@ -98,6 +109,7 @@ public sealed partial class ListingLifecycle(
     private const string _rejected = "rejected";
     private const string _done = "done";
     private const string _unchanged = "unchanged";
+    private const string _providerFault = "provider_fault";
 
     private static readonly Counter<long> _changes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_listing_changes_total",
@@ -205,6 +217,16 @@ public sealed partial class ListingLifecycle(
             return false;
         }
 
+        // When a large part of the market is "unknown" at once, a provider is having a bad time and the stocks have not all left (ADR-0044).
+        NotFoundShare share = await store.NotFoundShareAsync(stock, day, cancellationToken);
+        IngestionOptions settings = options.Value;
+        if (share.Active >= settings.MarketWideMinListings && (double)share.InStreak / share.Active >= settings.MarketWideNotFoundShare)
+        {
+            Count(_notFound, _providerFault);
+            LogProviderFault(share.InStreak, share.Active);
+            return false;
+        }
+
         bool changed = await store.DelistAsync(stock, now, day, IngestionSource, cancellationToken);
         Count(_notFound, changed ? _done : _unchanged);
         if (changed && await catalog.FindAsync(stock, cancellationToken) is { } listing)
@@ -246,4 +268,7 @@ public sealed partial class ListingLifecycle(
 
     [LoggerMessage(EventId = 2603, Level = LogLevel.Information, Message = "The stock {Market} {OldTicker} now has the ticker {NewTicker}; the old one is kept in its history")]
     private partial void LogRenamed(string market, string oldTicker, string newTicker);
+
+    [LoggerMessage(EventId = 2608, Level = LogLevel.Warning, Message = "{InStreak} of {Active} active listings of a market are unknown to the provider at once: that looks like a fault of the provider, so nothing is delisted automatically")]
+    private partial void LogProviderFault(int inStreak, int active);
 }

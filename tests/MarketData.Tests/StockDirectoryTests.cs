@@ -8,6 +8,7 @@ using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Providers;
@@ -55,8 +56,15 @@ public sealed class StockDirectoryTests
     {
         public List<(Stock Stock, string Provider, ProviderListingKey Key)> Registered { get; } = [];
 
+        public bool Throw { get; set; }
+
         public Task<StockId> RegisterAsync(Stock stock, string provider, ProviderListingKey providerKey, DateTimeOffset now, CancellationToken cancellationToken)
         {
+            if (Throw)
+            {
+                throw new InvalidOperationException("the database is down");
+            }
+
             Registered.Add((stock, provider, providerKey));
             return Task.FromResult(existing is { } id ? StockId.Create(id) : stock.Id);
         }
@@ -102,6 +110,33 @@ public sealed class StockDirectoryTests
         }
     }
 
+    private sealed class Unit : IUnitOfWork
+    {
+        public int Begun { get; private set; }
+
+        public int Committed { get; private set; }
+
+        public int RolledBack { get; private set; }
+
+        public Task BeginAsync(CancellationToken cancellationToken)
+        {
+            Begun++;
+            return Task.CompletedTask;
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken)
+        {
+            Committed++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken)
+        {
+            RolledBack++;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class User(Guid? id) : ICurrentUser
     {
         public Guid? UserId => id;
@@ -109,7 +144,7 @@ public sealed class StockDirectoryTests
 
     private static readonly Guid _user = Guid.Parse("00000000-0000-0000-0000-0000000000f1");
 
-    private sealed record Rig(StockDirectory Directory, Provider Provider, Catalog Catalog, Registry Registry, Budget Budget, Cache Cache, Enqueuer Jobs, Budget Quota);
+    private sealed record Rig(StockDirectory Directory, Provider Provider, Catalog Catalog, Registry Registry, Budget Budget, Cache Cache, Enqueuer Jobs, Budget Quota, Unit Unit);
 
     private static ProviderListing Listing(string mic, string symbol, string? name = "Apple Inc.", string? currency = "USD", AssetType type = AssetType.Equity) =>
         new(new ProviderListingKey(mic, symbol), name, currency, "Asia/Tokyo", type);
@@ -137,10 +172,16 @@ public sealed class StockDirectoryTests
             Options.Create(new MarketDataProvidersOptions { Markets = (markets ?? ["XNAS", "XNYS"]).ToDictionary(m => m, _ => "fake") }));
         var search = new ProviderSearch(budget, cache, Options.Create(lookup ?? new StockLookupOptions()), NullLogger<ProviderSearch>.Instance);
         var quota = new Budget(quotaLeft);
+        var unit = new Unit();
         var registration = new StockRegistration(
-            registry, jobs, Options.Create(new IngestionOptions()), quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions()), NullLogger<StockRegistration>.Instance);
+            registry,
+            jobs,
+            Options.Create(new IngestionOptions()),
+            new RegistrationQuota(quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions())),
+            unit,
+            NullLogger<StockRegistration>.Instance);
         var directory = new StockDirectory(catalog, search, registration, router, ExchangeCalendars.Default(), new TimeProviderIdGenerator(clock), clock);
-        return new Rig(directory, provider, catalog, registry, budget, cache, jobs, quota);
+        return new Rig(directory, provider, catalog, registry, budget, cache, jobs, quota, unit);
     }
 
     [Theory]
@@ -450,8 +491,8 @@ public sealed class StockDirectoryTests
 
         await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
 
-        rig.Quota.Spent.Should().ContainSingle().Which.Should().Be((StockRegistration.RegistrationBudgetKey(_user), new BudgetLimits(7, 7), 1));
-        StockRegistration.RegistrationBudgetKey(_user).Should().Be("register_000000000000000000000000000000f1");
+        rig.Quota.Spent.Should().ContainSingle().Which.Should().Be((RegistrationQuota.BudgetKey(_user), new BudgetLimits(7, 7), 1));
+        RegistrationQuota.BudgetKey(_user).Should().Be("register_000000000000000000000000000000f1");
     }
 
     [Fact]
@@ -495,10 +536,32 @@ public sealed class StockDirectoryTests
     public async Task Reserve_ForACallWithNoUser_IsNotLimited_AndSpendsNothing()
     {
         var quota = new Budget(grant: false);
-        var registration = new StockRegistration(
-            new Registry(), new Enqueuer(), Options.Create(new IngestionOptions()), quota, new User(null), Options.Create(new StockLookupOptions()), NullLogger<StockRegistration>.Instance);
+        var registration = new RegistrationQuota(quota, new User(null), Options.Create(new StockLookupOptions()));
 
         (await registration.ReserveAsync(CancellationToken.None)).Should().BeNull();
         quota.Spent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_RegisteringAStock_WritesInOneShortUnitOfWorkOfItsOwn()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+
+        await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        (rig.Unit.Begun, rig.Unit.Committed, rig.Unit.RolledBack).Should().Be((1, 1, 0), "the stock and its first load are one atomic write, and nothing is held while the provider is asked");
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheCatalogWriteFails_TheUnitIsRolledBack_AndTheFailureIsNotHidden()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+        rig.Registry.Throw = true;
+
+        Func<Task> act = () => rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (rig.Unit.Committed, rig.Unit.RolledBack).Should().Be((0, 1));
+        rig.Jobs.Queued.Should().BeEmpty();
     }
 }

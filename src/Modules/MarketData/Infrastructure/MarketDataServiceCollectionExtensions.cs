@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
 using SakerWatch.MarketData.Application.Fx;
@@ -54,14 +55,7 @@ public static class MarketDataServiceCollectionExtensions
         services.AddSakerHttpClient(
             TwelveDataProvider.ClientName,
             baseAddress,
-            http =>
-            {
-                http.AllowedHosts = [baseAddress.IsDefaultPort ? baseAddress.Host : $"{baseAddress.Host}:{baseAddress.Port}"];
-                http.MaxResponseBytes = 4 * 1024 * 1024;
-                http.MaxRetries = 2;
-                // The shared Redis budget tracks the quota; a 429 is a quota answer and not a sign that the service is unwell.
-                http.RateLimitIsTransient = false;
-            });
+            http => TwelveDataProvider.ConfigureClient(http, baseAddress));
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IProviderCallBudget, RedisProviderCallBudget>();
@@ -75,7 +69,9 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.TryAddSingleton<ISearchCache, RedisSearchCache>();
-        services.TryAddScoped<IStockCatalog, StockCatalog>();
+        services.TryAddScoped<StockCatalog>();
+        services.TryAddScoped<IStockCatalog>(provider => new UnitScopedStockCatalog(provider.GetRequiredService<StockCatalog>(), provider.GetRequiredService<IUnitOfWork>()));
+        services.TryAddScoped<RegistrationQuota>();
         services.TryAddScoped<IStockRegistry, StockRegistry>();
         services.TryAddScoped<ProviderSearch>();
         services.TryAddScoped<StockRegistration>();
