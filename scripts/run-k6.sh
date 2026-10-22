@@ -3,7 +3,7 @@
 # It builds its own compose project (saker-load: other ports, random passwords, removed at the end), applies the migrations, seeds 500
 # listings with six years of prices (scripts/load/seed.sql), starts the API with a stand-in identity provider (scripts/load/idp.py: a key and a TLS certificate made for this run only, which the API is told to trust) and runs tests/load/baseline.js with k6 from a pinned image. The dev stack and your secrets are never touched.
 #   bash scripts/run-k6.sh [output-dir]       (default: a new temporary directory; the k6 summaries and the logs stay there)
-# Needs docker, python3, openssl and a built solution. On a CPU without AVX set LOAD_NOAVX=1. K6_ENFORCE=1 fails the run when the
+# Needs docker, python3 (3.14 or later: its http.server serves the stand-in identity provider over TLS), openssl and a built solution. On a CPU without AVX set LOAD_NOAVX=1. K6_ENFORCE=1 fails the run when the
 # budgets of ADR-0033 are crossed. The numbers belong to the machine they were taken on: k6, the API and the databases share it.
 set -u
 cd "$(dirname "$0")/.."

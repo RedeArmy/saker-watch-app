@@ -20,7 +20,8 @@ for name in POSTGRES_PASSWORD MONGO_PASSWORD; do
 done
 
 psql_admin() {
-  "${compose[@]}" exec -T postgres psql -U saker_admin -d saker -At -c "$1"
+  local statement="$1"
+  "${compose[@]}" exec -T postgres psql -U saker_admin -d saker -At -c "$statement"
   return $?
 }
 

@@ -29,7 +29,8 @@ done
 (cd "$dir" && sha256sum --check --quiet SHA256SUMS)
 
 psql_admin() { # psql_admin <database> <statement>
-  "${compose[@]}" exec -T postgres psql -U saker_admin -d "$1" -v ON_ERROR_STOP=1 -q -At -c "$2"
+  local database="$1" statement="$2"
+  "${compose[@]}" exec -T postgres psql -U saker_admin -d "$database" -v ON_ERROR_STOP=1 -q -At -c "$statement"
   return $?
 }
 

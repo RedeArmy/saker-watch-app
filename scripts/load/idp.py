@@ -8,7 +8,7 @@ else, and the server uses a certificate made for the run, which the API is told 
 over HTTPS like it does against a real provider. Python standard library plus the openssl command only.
 
   idp.py init  NAME AUTHORITY AUDIENCE   create the keys, the certificate and the discovery and jwks documents (AUTHORITY is an https URL)
-  idp.py serve NAME PORT                 serve the public documents on https://127.0.0.1:PORT (the key is not among them)
+  idp.py serve NAME PORT                 serve the public documents on https://127.0.0.1:PORT with the standard library's server (Python 3.14 or later); the key is not among them
   idp.py token NAME SUBJECT              print an access token for SUBJECT, valid for an hour
   idp.py cert  NAME                      print the path of the certificate, for SSL_CERT_FILE
   idp.py clean NAME                      delete everything of NAME
@@ -16,13 +16,10 @@ over HTTPS like it does against a real provider. Python standard library plus th
 NAME is one to 63 lower-case letters, digits or hyphens, never a path.
 """
 import base64
-import functools
-import http.server
 import json
 import os
 import re
 import shutil
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -33,6 +30,8 @@ from urllib.parse import urlparse
 
 KEY_ID = "load-1"
 PUBLIC = "public"
+CERT = "cert.pem"
+TLS_KEY = "tls-key.pem"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
 
@@ -64,10 +63,10 @@ def init(name: str, authority: str, audience: str) -> None:
     key.chmod(0o600)
     modulus = openssl("rsa", "-in", str(key), "-noout", "-modulus").decode().strip().split("=", 1)[1]
     # The TLS certificate of the stand-in server: made for this run, valid for a day, for the loopback address only.
-    tls_key = directory / "tls-key.pem"
+    tls_key = directory / TLS_KEY
     openssl(
         "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1",
-        "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", str(tls_key), "-out", str(directory / "cert.pem"))
+        "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", str(tls_key), "-out", str(directory / CERT))
     tls_key.chmod(0o600)
     # Only the public documents are served: the keys and the settings stay beside them, not inside.
     base = directory / PUBLIC / urlparse(authority).path.strip("/")
@@ -100,14 +99,13 @@ def token(name: str, subject: str) -> str:
 
 
 def serve(name: str, port: int) -> None:
+    """Hands the process over to the standard library's own server, which serves TLS since Python 3.14; nothing here speaks HTTP."""
+    if sys.version_info < (3, 14):
+        raise SystemExit("serve needs Python 3.14 or later: that is when http.server learned to serve TLS")
     directory = workdir(name)
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory / PUBLIC))
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
-    context.load_cert_chain(str(directory / "cert.pem"), str(directory / "tls-key.pem"))
-    server.socket = context.wrap_socket(server.socket, server_side=True)
-    server.serve_forever()
+    os.execv(sys.executable, [
+        sys.executable, "-I", "-m", "http.server", "--bind", "127.0.0.1", "--directory", str(directory / PUBLIC),
+        "--tls-cert", str(directory / CERT), "--tls-key", str(directory / TLS_KEY), str(port)])
 
 
 def main(argv: list[str]) -> int:
@@ -119,7 +117,7 @@ def main(argv: list[str]) -> int:
     elif command == "token" and len(arguments) == 2:
         print(token(arguments[0], arguments[1]))
     elif command == "cert" and len(arguments) == 1:
-        print(workdir(arguments[0]) / "cert.pem")
+        print(workdir(arguments[0]) / CERT)
     elif command == "clean" and len(arguments) == 1:
         shutil.rmtree(workdir(arguments[0]), ignore_errors=True)
     else:

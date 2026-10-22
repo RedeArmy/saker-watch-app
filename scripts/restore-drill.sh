@@ -52,12 +52,14 @@ cleanup() {
 trap cleanup EXIT
 
 psql_in() { # psql_in <database> <statement>: one value
-  "${compose[@]}" exec -T postgres psql -U saker_admin -d "$1" -v ON_ERROR_STOP=1 -q -At -c "$2" 2>>"$out/psql.log"
+  local database="$1" statement="$2"
+  "${compose[@]}" exec -T postgres psql -U saker_admin -d "$database" -v ON_ERROR_STOP=1 -q -At -c "$statement" 2>>"$out/psql.log"
   return $?
 }
 mongo_eval() { # mongo_eval <javascript>: one value
+  local script="$1"
   export MONGO_PASSWORD
-  "${compose[@]}" exec -T -e MONGO_PASSWORD -e SCRIPT="$1" mongo sh -c \
+  "${compose[@]}" exec -T -e MONGO_PASSWORD -e SCRIPT="$script" mongo sh -c \
     'cmd=$(command -v mongosh || command -v mongo); "$cmd" --quiet --username saker_admin --password "$MONGO_PASSWORD" --authenticationDatabase admin --eval "$SCRIPT"' 2>>"$out/mongo.log"
   return $?
 }
