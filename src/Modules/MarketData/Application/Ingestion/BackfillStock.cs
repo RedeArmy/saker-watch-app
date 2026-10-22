@@ -81,7 +81,7 @@ public sealed partial class BackfillStockHandler(
         }
 
         DateOnly from = DateOnly.FromDateTime(now.UtcDateTime).AddYears(-options.Value.BackfillYears);
-        Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, cancellationToken);
+        Result<MergedPrices> merged = await ingestion.FetchAsync(listing.Value, from, now, CallLane.OnDemand, cancellationToken);
         if (!merged.IsSuccess)
         {
             await StopAsync(payload, context, merged.Error!, now, cancellationToken);

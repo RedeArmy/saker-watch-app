@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using SakerWatch.BuildingBlocks.Persistence.Platform;
 using SakerWatch.Identity.Infrastructure.Persistence;
 using SakerWatch.MarketData.Infrastructure.Persistence;
+using SakerWatch.Watchlist.Infrastructure.Persistence;
 
 namespace SakerWatch.Integration.Tests.Persistence;
 
@@ -38,7 +39,7 @@ public sealed class MigrationsAreForwardOnlyTests
     }
 
     private static List<Type> AllMigrations() =>
-        new[] { typeof(PlatformDbContext).Assembly, typeof(IdentityDbContext).Assembly, typeof(MarketDataDbContext).Assembly }
+        new[] { typeof(PlatformDbContext).Assembly, typeof(IdentityDbContext).Assembly, typeof(MarketDataDbContext).Assembly, typeof(WatchlistDbContext).Assembly }
             .SelectMany(a => a.GetTypes())
             .Where(t => t is { IsAbstract: false } && t.IsSubclassOf(typeof(Migration)) && t.GetCustomAttribute<MigrationAttribute>() is not null)
             .ToList();

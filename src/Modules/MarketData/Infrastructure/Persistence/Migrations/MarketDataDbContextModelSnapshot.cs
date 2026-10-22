@@ -89,6 +89,57 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.FxRateRejectedRow", b =>
+                {
+                    b.Property<string>("Base")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("base")
+                        .IsFixedLength();
+
+                    b.Property<string>("Quote")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("quote")
+                        .IsFixedLength();
+
+                    b.Property<DateOnly>("AsOfDate")
+                        .HasColumnType("date")
+                        .HasColumnName("as_of_date");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(30, 12)
+                        .HasColumnType("numeric(30,12)")
+                        .HasColumnName("rate");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("SeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("seen_at");
+
+                    b.HasKey("Base", "Quote", "AsOfDate", "Source")
+                        .HasName("pk_fx_rates_rejected");
+
+                    b.ToTable("fx_rates_rejected", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_fx_rates_rejected_currencies", "base ~ '^[A-Z]{3}$' AND quote ~ '^[A-Z]{3}$' AND base <> quote");
+
+                            t.HasCheckConstraint("ck_fx_rates_rejected_reason", "reason IN ('out_of_band', 'jump', 'rewrite')");
+
+                            t.HasCheckConstraint("ck_fx_rates_rejected_source", "source ~ '^[a-z0-9_]{1,32}$'");
+                        });
+                });
+
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.FxRateRow", b =>
                 {
                     b.Property<string>("Base")
@@ -117,8 +168,8 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                         .HasColumnName("ingested_at");
 
                     b.Property<decimal>("Rate")
-                        .HasPrecision(20, 10)
-                        .HasColumnType("numeric(20,10)")
+                        .HasPrecision(30, 12)
+                        .HasColumnType("numeric(30,12)")
                         .HasColumnName("rate");
 
                     b.HasKey("Base", "Quote", "AsOfDate", "Source")
@@ -327,6 +378,8 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_stocks_name", "char_length(name) BETWEEN 1 AND 200");
 
                             t.HasCheckConstraint("ck_stocks_ticker", "ticker ~ '^[A-Z0-9][A-Z0-9._-]{0,15}$'");
+
+                            t.HasCheckConstraint("ck_stocks_time_zone", "time_zone ~ '^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$'");
                         });
                 });
 
@@ -361,7 +414,14 @@ namespace SakerWatch.MarketData.Infrastructure.Persistence.Migrations
                     b.HasIndex("StockId")
                         .HasDatabaseName("ix_symbol_aliases_stock_id");
 
-                    b.ToTable("symbol_aliases", "marketdata");
+                    b.ToTable("symbol_aliases", "marketdata", t =>
+                        {
+                            t.HasCheckConstraint("ck_symbol_aliases_provider", "provider ~ '^[a-z0-9_]{1,32}$'");
+
+                            t.HasCheckConstraint("ck_symbol_aliases_provider_mic", "provider_mic ~ '^[A-Za-z0-9]{1,16}$'");
+
+                            t.HasCheckConstraint("ck_symbol_aliases_provider_symbol", "provider_symbol ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,31}$'");
+                        });
                 });
 
             modelBuilder.Entity("SakerWatch.MarketData.Infrastructure.Persistence.TickerHistoryRow", b =>

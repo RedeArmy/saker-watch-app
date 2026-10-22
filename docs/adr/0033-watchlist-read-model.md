@@ -20,5 +20,5 @@
 
 ## Consequences
 - A stock whose catalog row cannot be found is left out of the list instead of failing it; nothing deletes catalog rows, so it should not occur.
-- Sorting by performance reads 500 stocks' windows (about 0.3 s uncached, ADR-0030) until the cache of 2.8 exists.
+- Sorting by performance reads 500 stocks' windows (about 0.3 s uncached, ADR-0030) until the cache of 2.8 exists (done: ADR-0041; the baseline of that milestone has the sort at 225 ms p95 with the cache and 849 ms without).
 - The list says nothing about signals or advice; every analysis screen carries its own notice (spec §7.5).

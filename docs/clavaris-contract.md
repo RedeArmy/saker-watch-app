@@ -1,7 +1,7 @@
 # Clavaris contract
 
 - **Purpose:** the integration contract between Saker Watch and Clavaris (the owner's identity provider), extracted from the Clavaris repository docs and code. Replaces the earlier question list.
-- **Owner:** Eder · **Status:** draft (verified against Clavaris docs; items marked UNCONFIRMED must be checked against a running instance) · **Target phase:** 1
+- **Owner:** Eder · **Status:** approved (verified against Clavaris docs; items marked UNCONFIRMED must be checked against a running instance) · **Target phase:** 1
 
 Sources (read-only, in the Clavaris repository; ADR numbers below are Clavaris's own): `docs/03-architecture/api-contracts/api-contract-overview.md`, `integration-design/integration-design.md`, Clavaris ADR-0002, 0006, 0008, 0010, 0013; token/claim customizers under `app/src/main/java/.../infrastructure/`. Secrets files were deliberately not read.
 

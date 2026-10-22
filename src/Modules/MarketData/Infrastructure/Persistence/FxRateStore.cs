@@ -85,3 +85,64 @@ public sealed class FxRateStore(DbSession session) : IFxRateStore
 
     private NpgsqlCommand Command(string sql) => new(sql, session.Connection, session.Transaction);
 }
+
+/// <summary><see cref="IFxRateScreening"/> over <c>marketdata.fx_rates</c> and <c>marketdata.fx_rates_rejected</c> (ADR-0042).</summary>
+/// <param name="session">The scope's database connection and transaction.</param>
+public sealed class FxRateScreening(DbSession session) : IFxRateScreening
+{
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<FxRate>> StoredAsync(CurrencyCode baseCurrency, CurrencyCode quote, string source, DateOnly from, DateOnly to, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(baseCurrency);
+        ArgumentNullException.ThrowIfNull(quote);
+        ArgumentException.ThrowIfNullOrWhiteSpace(source);
+
+        await using var command = new NpgsqlCommand(
+            "SELECT as_of_date, rate FROM marketdata.fx_rates WHERE base = @base AND quote = @quote AND source = @source AND as_of_date BETWEEN @from AND @to ORDER BY as_of_date",
+            session.Connection,
+            session.Transaction);
+        command.Parameters.AddWithValue("base", baseCurrency.Value);
+        command.Parameters.AddWithValue("quote", quote.Value);
+        command.Parameters.AddWithValue("source", source);
+        command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Date) { Value = from });
+        command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Date) { Value = to });
+
+        var stored = new List<FxRate>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            stored.Add(FxRate.Create(baseCurrency, quote, reader.GetFieldValue<DateOnly>(0), reader.GetDecimal(1), source).Value);
+        }
+
+        return stored;
+    }
+
+    /// <inheritdoc />
+    public async Task RejectAsync(IReadOnlyList<RejectedFxRate> rejected, DateTimeOffset seenAt, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rejected);
+        if (rejected.Count == 0)
+        {
+            return;
+        }
+
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO marketdata.fx_rates_rejected (base, quote, as_of_date, source, rate, reason, seen_at)
+            SELECT t.base, t.quote, t.as_of_date, t.source, t.rate, t.reason, @seen_at
+            FROM unnest(@bases, @quotes, @dates, @sources, @rates, @reasons) AS t(base, quote, as_of_date, source, rate, reason)
+            ON CONFLICT (base, quote, as_of_date, source) DO UPDATE SET rate = EXCLUDED.rate, reason = EXCLUDED.reason, seen_at = EXCLUDED.seen_at
+            """,
+            session.Connection,
+            session.Transaction);
+        command.Parameters.AddWithValue("seen_at", seenAt.ToUniversalTime());
+        command.Parameters.AddWithValue("bases", rejected.Select(r => r.Rate.Base.Value).ToArray());
+        command.Parameters.AddWithValue("quotes", rejected.Select(r => r.Rate.Quote.Value).ToArray());
+        command.Parameters.AddWithValue("dates", rejected.Select(r => r.Rate.AsOfDate).ToArray());
+        command.Parameters.AddWithValue("sources", rejected.Select(r => r.Rate.Source).ToArray());
+        command.Parameters.AddWithValue("rates", rejected.Select(r => r.Rate.Rate).ToArray());
+        command.Parameters.AddWithValue("reasons", rejected.Select(r => r.Reason).ToArray());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+}
+

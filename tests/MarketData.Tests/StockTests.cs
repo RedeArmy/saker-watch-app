@@ -91,4 +91,21 @@ public sealed class StockTests
 
         a.Should().Be(b);
     }
+
+    [Fact]
+    public void Create_DropsControlBidirectionalAndZeroWidthCharactersAndMarkupFromTheName()
+    {
+        // NUL, a right-to-left override, a zero-width space, a line separator and angle brackets: none belongs in a name every user sees.
+        Stock stock = Create(name: "Ap\0ple\u202E Inc.\u200B\u2028 <b>Co</b>").Value;
+
+        stock.Name.Should().Be("Apple Inc. bCo/b");
+    }
+
+    [Fact]
+    public void Create_KeepsLettersOfAnyScriptAndSymbolsOfRealNames() =>
+        Create(name: "Nestlé S.A. — 日本電信電話 & Co. (A/S)").Value.Name.Should().Be("Nestlé S.A. — 日本電信電話 & Co. (A/S)");
+
+    [Fact]
+    public void Create_WithANameOfOnlyInvisibleCharacters_IsRefused() =>
+        Create(name: "\u200B\u202E\0").Error!.Code.Should().Be("marketdata.stock.name_invalid");
 }

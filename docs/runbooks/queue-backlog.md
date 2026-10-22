@@ -1,7 +1,7 @@
 # Runbook — queue-backlog
 
 - **Purpose:** what to do when jobs or outbox messages pile up, die, or stop being processed.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 5 (first procedure written in Phase 1; completed with the dashboards and alerts)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 5 (first procedure written in Phase 1; completed with the dashboards and alerts)
 
 ## Symptoms and where they show
 | Signal | Meaning |
@@ -23,6 +23,9 @@
 4. Requeue a dead job (the handler must be re-runnable, ADR-0022): `UPDATE platform.job_queue SET state = 'pending', attempts = 0, available_at = now(), lease_token = NULL, lease_expires_at = NULL, finished_at = NULL WHERE id = '<id>' AND state = 'dead';`
 5. A parked outbox message has `next_attempt_at = 'infinity'`, so it is never due again by itself (raising `Outbox:MaxAttempts` does not revive it). Requeue it: `UPDATE platform.outbox_messages SET attempts = 0, next_attempt_at = now(), last_error = NULL WHERE id = '<id>' AND processed_at IS NULL;`
 6. Dead rows are kept for the retention period (`Retention:JobsDeadDays`, 90 days by default) and then purged by the retention job; parked outbox messages are not purged automatically.
+
+## Jobs that are waiting for a provider's budget (Phase 2)
+A market data job (a history load, a daily refresh) that finds the provider's call budget spent is not failed: it queues a continuation for when the budget has room and uses no attempt (`sakerwatch_marketdata_backfills_total{outcome="waiting"}`, `sakerwatch_marketdata_refreshes_total{outcome="waiting"}`). The history load of a new stock draws on an on-demand allowance of the day (ADR-0043), so after a burst of new stocks the queue depth and the oldest age can grow until 00:00 UTC without anything being wrong; the stocks show as `pending`. Check `docs/runbooks/provider-quota.md` before requeueing anything, and do not raise `attempts` or requeue these jobs by hand: they would only spend the allowance again.
 
 ## Handler outlives its lease or its transaction
 A job that waits on external I/O for longer than the worker login's `idle_in_transaction_session_timeout` loses its connection and retries until dead (ADR-0022, "keep the unit of work short"). Fix the handler (fetch before the transaction) rather than raising the timeout.

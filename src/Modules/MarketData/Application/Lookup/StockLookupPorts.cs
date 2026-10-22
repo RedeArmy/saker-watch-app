@@ -27,6 +27,13 @@ public sealed class StockLookupOptions
     /// <summary>Most candidates a search returns.</summary>
     [Range(1, 50)]
     public int MaxResults { get; set; } = 20;
+
+    /// <summary>
+    /// New stocks one user may put in the shared catalog per UTC day (ADR-0043). Each one queues a history load that spends the provider's daily
+    /// credits, which every user shares. A stock already in the catalog does not count.
+    /// </summary>
+    [Range(1, 10_000)]
+    public int RegistrationsPerUserPerDay { get; set; } = 20;
 }
 
 /// <summary>A listing found at a provider, kept as the cache stores it: the provider's own code and symbol plus the text it reported.</summary>
@@ -58,9 +65,35 @@ public interface ISearchCache
 /// <param name="DelistedAt">When the instrument stopped trading, or <see langword="null"/> while it trades.</param>
 public sealed record CatalogListing(StockId Id, Mic Market, Ticker Ticker, string Name, CurrencyCode Currency, AssetType AssetType, bool IsActive, DateTimeOffset? DelistedAt = null);
 
+/// <summary>The provider's listing is already the alias of another stock of the catalog, so it cannot be registered as a new one (ADR-0045).</summary>
+public sealed class ProviderListingTakenException : Exception
+{
+    /// <summary>Creates the exception.</summary>
+    public ProviderListingTakenException()
+        : base("The provider listing is already the alias of another stock.")
+    {
+    }
+
+    /// <summary>Creates the exception with a message.</summary>
+    /// <param name="message">What happened.</param>
+    public ProviderListingTakenException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Creates the exception with a message and its cause.</summary>
+    /// <param name="message">What happened.</param>
+    /// <param name="innerException">The database error.</param>
+    public ProviderListingTakenException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
 /// <summary>
 /// Puts a validated stock in the shared catalog. The implementation is idempotent on <c>(market, ticker)</c> and never changes a stock that
-/// already exists: it returns the id of whichever row holds the key.
+/// already exists: it returns the id of whichever row holds the key. When the provider's listing is already the alias of another stock it throws
+/// <see cref="ProviderListingTakenException"/> and nothing is registered.
 /// </summary>
 public interface IStockRegistry
 {

@@ -45,6 +45,12 @@ public sealed partial class StockDirectory(
     /// <summary>Code of the failure when the shared search budget is spent.</summary>
     public const string SearchBusyCode = "marketdata.search.busy";
 
+    /// <summary>Code of the failure when the provider's listing is already the alias of another stock of the catalog.</summary>
+    public const string ProviderListingTakenCode = "marketdata.stock.provider_listing_taken";
+
+    /// <summary>Code of the failure when the user has put the most new stocks in the catalog that one day allows.</summary>
+    public const string RegistrationLimitCode = "marketdata.stock.registration_limit";
+
     /// <summary>Code of the failure when the provider cannot answer for now.</summary>
     public const string ProviderUnavailableCode = "marketdata.search.provider_unavailable";
 
@@ -56,7 +62,7 @@ public sealed partial class StockDirectory(
         description: "Stock searches and registrations by operation and outcome.");
 
     // Letters, digits, spaces and the few marks tickers and names use. The text goes to a provider as a URL parameter and to a cache as a key.
-    [GeneratedRegex(@"^[\p{L}\p{N} .&_\-]{1,40}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[\p{L}\p{N} .&_\-]{1,40}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex QueryPattern();
 
     /// <inheritdoc />
@@ -163,6 +169,8 @@ public sealed partial class StockDirectory(
     private static string Outcome(Error error) => error.Code switch
     {
         SearchBusyCode => "busy",
+        RegistrationLimitCode => "limit",
+        ProviderListingTakenCode => "conflict",
         ProviderUnavailableCode => "unavailable",
         StockNotFoundCode => "not_found",
         MarketNotAvailableCode => "market_not_available",
@@ -259,7 +267,22 @@ public sealed partial class StockDirectory(
             return Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.");
         }
 
-        StockId id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
+        // Only here, once the provider has confirmed a stock the catalog does not have: a wrong ticker costs a search and not a registration.
+        if (await registration.ReserveAsync(cancellationToken) is { } limited)
+        {
+            return limited;
+        }
+
+        StockId id;
+        try
+        {
+            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
+        }
+        catch (ProviderListingTakenException)
+        {
+            return Error.Conflict(ProviderListingTakenCode, $"{ticker} on {market} is already known to the provider as another stock of the catalog. Ask the owner to look at it.");
+        }
+
         return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType));
     }
 }

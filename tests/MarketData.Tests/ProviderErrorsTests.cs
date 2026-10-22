@@ -46,4 +46,8 @@ public sealed class ProviderErrorsTests
         ProviderErrors.PlanRestricted("twelvedata").Message.Should().Contain("twelvedata");
         ProviderErrors.SymbolNotFound("twelvedata", "ZZZ").Message.Should().Contain("ZZZ");
     }
+
+    [Fact]
+    public void RetryAfter_IsCappedAtOneDay_SoAHostileWaitCannotStopAJobForYears() =>
+        ProviderErrors.RetryAfter(new Error("c", "m", ErrorType.Failure, new Dictionary<string, string[]> { ["retry_after_seconds"] = ["999999999"] })).Should().Be(TimeSpan.FromDays(1));
 }

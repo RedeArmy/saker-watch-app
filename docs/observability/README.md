@@ -1,13 +1,13 @@
 # Observability catalog
 
 - **Purpose:** concrete telemetry contract: identifiers, metric names, log events, SLOs, alerts (ADR-0016).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (dashboards/alerts: 5)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1 (dashboards/alerts: 5)
 
 ## Identifiers
 `traceparent` (W3C) · `X-Correlation-Id` (echoed on every response and ProblemDetails) · `trace_id`/`correlation_id` columns on jobs, outbox, audit log and Mongo documents.
 
 ## Metric prefixes
-This table is the starter set; ADR-0016 section 4 defines the complete mandatory sets, which are added here as each module is built.
+This table is the starter set; ADR-0016 section 4 defines the complete mandatory sets, which are added here as each module is built. The metrics of the modules that exist are listed in the next table; those marked "planned" belong to a later phase and are not emitted yet (a test of the catalog compares the code with this document: every `sakerwatch_` name in the code is here).
 
 `sakerwatch_http_*`, `sakerwatch_jobs_*`, `sakerwatch_idempotency_*`, `sakerwatch_provider_*`, `sakerwatch_price_*`, `sakerwatch_llm_*`, `sakerwatch_watchlist_*`, `sakerwatch_analysis_*`, `sakerwatch_retention_*`. Labels: low cardinality only.
 
@@ -15,7 +15,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 |---|---|---|
 | `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|cancelled\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive\|pre-authentication | requests rejected by the rate limiter |
-| `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
+| HTTP server latency and errors | route, method, status | not a `sakerwatch_` metric: they come from the ASP.NET Core instrumentation (`http.server.request.duration`, exported by the backend under its own name); the rate limiter has its own counter above |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
 | `sakerwatch_auth_attempts_total` (counter) | outcome=success\|<refusal reason> (Malformed, InvalidSignature, UnknownKey, UnsupportedAlgorithm, Expired, NotYetValid, InvalidIssuer, InvalidAudience, MissingSubject, NotAnAccessToken, KeyDiscoveryFailed, Invalid) | access token validation; a spike of refusals or any `KeyDiscoveryFailed` is a symptom |
 | `sakerwatch_provider_calls_total` (counter) | provider, operation=search\|daily\|fx_daily\|tickers\|profile\|filings, outcome=success\|ratelimited\|transient\|planrestricted\|symbolnotfound\|permanent | calls to external market data providers by outcome; a run of `ratelimited` means the free budget is spent, `planrestricted` means a market is routed to a plan that does not include it |
@@ -23,9 +23,11 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_listings` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | market, state=fresh\|stale\|pending | ingestable listings by freshness: `stale` have missed a session that has settled, `pending` have no history yet. Per process: aggregate with `max` across worker replicas |
 | `sakerwatch_marketdata_price_staleness_seconds` (gauge) | market | how long the stalest listing of a market has been stale; zero when all are current. Alert when it passes 24 hours on trading days (the SLO) |
 | `sakerwatch_marketdata_refreshes_total` (counter) | outcome=completed\|backfill_queued\|reload_queued\|waiting\|retry\|failed\|not_found\|delisted | daily refreshes of a listing: `not_found` is a day the provider did not know the symbol (counted, not failed) and `delisted` is the day the count reached the limit (ADR-0039); `backfill_queued` is a listing with no history handed to the backfill, `reload_queued` is a rewrite of the adjusted history detected (a dividend or a split) |
-| `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
+| `sakerwatch_marketdata_listing_changes_total` (counter) | operation=delist\|relist\|rename\|not_found, outcome=done\|unchanged\|rejected\|waiting\|provider_fault | changes to the life of a listing (ADR-0039): the operator's commands and the automatic count of days the provider did not know a symbol (`waiting` is below the limit) |
+| `sakerwatch_marketdata_perf_cache_total` (counter) | result=hit\|miss\|error | listings asked of the performance cache (ADR-0041): found, computed from the database, or a read or write Redis could not do |
+| `sakerwatch_marketdata_fx_rejected_total` (counter) | reason=out_of_band\|jump\|rewrite | exchange rates kept apart instead of stored (ADR-0042) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
-| `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog |
+| `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered\|limit\|conflict | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog; `limit` means the user reached the daily cap of new stocks (ADR-0043); `conflict` means the provider's listing is already the alias of another stock (ADR-0045) |
 | `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
 | `sakerwatch_marketdata_fx_rows_total` (counter) | none | exchange rates written by the daily refresh |
 | `sakerwatch_marketdata_fx_age_days` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | pair, source | days since the date of the newest exchange rate (Guatemalan calendar); the bank fills weekends, so a value above `MarketData:Ingestion:FxMaxAgeDays` (3) means the ingestion stopped. Per process: aggregate with `max` |
@@ -34,11 +36,8 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_jobs_total` (counter), `sakerwatch_jobs_duration_seconds` (histogram) | type, outcome=success\|retry\|dead\|lease_lost\|released | job attempts |
 | `sakerwatch_jobs_dead_letter_total` (counter) | none | poison messages |
 | `sakerwatch_idempotency_events_total` (counter) | outcome=claimed\|replay\|mismatch\|conflict (`takeover` is reserved for cross-store operations, ADR-0022) | idempotency health |
-| `sakerwatch_provider_call_duration_seconds` (histogram) | provider, outcome | provider health |
-| `sakerwatch_price_staleness_seconds` (gauge) | market | freshness SLO |
-| `sakerwatch_llm_tokens_total` (counter) | direction=in\|out, model | cost/capacity |
-| `sakerwatch_llm_run_total` (counter) | outcome | pipeline health |
-| `sakerwatch_retention_deleted_total` (counter) | policy, dry_run | retention evidence |
+| `sakerwatch_llm_tokens_total` (counter, planned for Phase 4) | direction=in\|out, model | cost/capacity |
+| `sakerwatch_llm_run_total` (counter, planned for Phase 4) | outcome | pipeline health |
 
 ## Log events
 Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchlist 3000s, Analysis 4000s, Signals 5000s, Calculator 6000s, Retention 7000s, Platform 9000s); events are listed here when introduced.
@@ -97,6 +96,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2503 | Warning | `The search cache could not be used ({ExceptionType}); the search goes to the provider` | `RedisSearchCache` |
 | 2301 | Information | `Exchange rates {Base}/{Quote} refreshed: {Rows} rows written` | `FxRefreshHandler` |
 | 2302 | Warning | `Refresh of the exchange rates {Base}/{Quote} failed for good with {Code}; the next day asks again` | `FxRefreshHandler` |
+| 2303 | Warning | `{Rows} exchange rates {Base}/{Quote} were not believed ({Reasons}) and were kept apart in marketdata.fx_rates_rejected; they are not used` | `FxRefreshHandler` |
 | 2111 | Information | `Daily refresh of {Market} for {Day}: {Listings} listings, {Queued} newly queued` | `IngestMarketDayHandler` |
 | 2112 | Information | `The adjusted history of {Market} {Ticker} was rewritten by the provider; a full reload is queued` | `RefreshStockHandler` |
 | 2113 | Warning | `Refresh of listing {StockId} failed for good with {Code}` | `RefreshStockHandler` |
@@ -107,9 +107,12 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2605 | Warning | `{Operation} was refused with {Code}: {Reason}` | `LifecycleCommandLine` |
 | 2606 | Warning | `The request cannot be read: {Reason}` | `LifecycleCommandLine` |
 | 2607 | Error | `{Operation} failed and nothing was changed` (with the exception) | `LifecycleCommandLine` |
+| 2608 | Warning | `{InStreak} of {Active} active listings of a market are unknown to the provider at once: that looks like a fault of the provider, so nothing is delisted automatically` | `ListingLifecycle` |
 | 2701 | Warning | `EDGAR {Operation}: {Dropped} of {Rows} rows were not valid and were dropped` | `EdgarProvider` |
 | 2702 | Warning | `EDGAR could not be reached ({ExceptionType})` | `EdgarProvider` |
 | 2703 | Warning | `The raw EDGAR response was not kept ({ExceptionType}); the call is not affected` | `EdgarProvider` |
+| 2801 | Warning | `The performance cache could not be used ({ExceptionType}); the numbers come from the database` | `RedisPerformanceCache` |
+| 2802 | Warning | `A cached performance report could not be read and is computed again` | `RedisPerformanceCache` |
 | 2121 | Information | `The daily market data refresh is disabled; no session will be scheduled` | `MarketDataScheduler` |
 | 2122 | Information | `Daily refresh of {Market} for {Day} queued` | `MarketDataScheduler` |
 | 2123 | Warning | `Could not queue the daily refresh of {Market}; it will be tried again shortly` (with exception) | `MarketDataScheduler` |

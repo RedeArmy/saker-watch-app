@@ -206,6 +206,24 @@ public sealed class MarketDataSchemaTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task PriceDaily_ANewYearlyChunk_CreatedByTheWorker_IsReadableByTheApiAndWritableByTheWorkerAgain()
+    {
+        // The first row of a year creates a chunk; the grants of the table must reach it, or the first load of every January would fail.
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var id = Guid.CreateVersion7();
+        await db.Worker.ExecuteAsync(_insertStock, Stock(id));
+        const string insert = "INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at) VALUES (@id, @day::date, 10, 11, 9, 10, 10, 5, 'twelvedata', true, now())";
+        long before = await db.Admin.ScalarAsync<long>("SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'price_daily'");
+
+        await db.Worker.ExecuteAsync(insert, ("id", id), ("day", "2031-03-03"));
+        await db.Worker.ExecuteAsync("UPDATE marketdata.price_daily SET volume = 7 WHERE stock_id = @id AND trade_date = '2031-03-03'", ("id", id));
+
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'price_daily'")).Should().Be(before + 1, "the row opened a chunk of its own");
+        (await db.Api.AsUserScalarAsync<long>(null, "SELECT count(*) FROM marketdata.price_daily WHERE trade_date = '2031-03-03'")).Should().Be(1);
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(null, "UPDATE marketdata.price_daily SET volume = 1 WHERE trade_date = '2031-03-03'"), "42501");
+    }
+
+    [Fact]
     public async Task UpgradeFromTheCatalogVersion_KeepsTheStocksAndAddsThePriceTable()
     {
         string admin = await postgres.CreateDatabaseAsync();
@@ -219,6 +237,25 @@ public sealed class MarketDataSchemaTests(TimescalePostgresFixture postgres) : I
 
         (await admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1);
         (await admin.ScalarAsync<bool>("SELECT to_regclass('marketdata.price_daily') IS NOT NULL")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpgradeFromRegisterStock_KeepsTheListingsAndStartsTheCountOfUnknownDaysAtZero()
+    {
+        string admin = await postgres.CreateDatabaseAsync();
+        await MigrationSteps.PlatformStep(admin).RunAsync(CancellationToken.None);
+        var step = MigrationSteps.MarketDataStep(admin);
+        await step.MigrateToAsync("RegisterStock", CancellationToken.None);
+        var id = Guid.CreateVersion7();
+        await admin.ExecuteAsync(_insertStock, Stock(id));
+        await admin.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status, last_success_at) VALUES (@id, 'ok', now())", ("id", id));
+
+        await step.RunAsync(CancellationToken.None);
+
+        (await admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks WHERE delisted_at IS NULL")).Should().Be(1);
+        (await admin.ScalarAsync<int>("SELECT not_found_days FROM marketdata.ingestion_state WHERE stock_id = @id", ("id", id))).Should().Be(0);
+        (await admin.ScalarAsync<bool>("SELECT to_regclass('marketdata.ticker_history') IS NOT NULL")).Should().BeTrue();
+        await ExpectAsync(() => admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET not_found_days = -1 WHERE stock_id = @id", ("id", id)), "23514");
     }
 
     [Fact]

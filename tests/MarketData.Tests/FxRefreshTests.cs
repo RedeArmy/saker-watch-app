@@ -34,9 +34,20 @@ public sealed class FxRefreshTests
         }
     }
 
-    private sealed class Store(DateOnly? latest = null) : IFxRateStore
+    private sealed class Store(DateOnly? latest = null, params FxRate[] stored) : IFxRateStore, IFxRateScreening
     {
         public List<FxRate> Written { get; } = [];
+
+        public List<RejectedFxRate> Rejected { get; } = [];
+
+        public Task<IReadOnlyList<FxRate>> StoredAsync(CurrencyCode baseCurrency, CurrencyCode quote, string source, DateOnly from, DateOnly to, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<FxRate>>([.. stored.Where(rate => rate.AsOfDate >= from && rate.AsOfDate <= to)]);
+
+        public Task RejectAsync(IReadOnlyList<RejectedFxRate> rejected, DateTimeOffset seenAt, CancellationToken cancellationToken)
+        {
+            Rejected.AddRange(rejected);
+            return Task.CompletedTask;
+        }
 
         public Task<int> UpsertAsync(IReadOnlyList<FxRate> rates, DateTimeOffset ingestedAt, CancellationToken cancellationToken)
         {
@@ -54,7 +65,7 @@ public sealed class FxRefreshTests
     private static Result<IReadOnlyList<FxRate>> Rates(params FxRate[] rates) => rates;
 
     private static Task RunAsync(Provider provider, Store store, FxRefreshJob? job = null) =>
-        new FxRefreshHandler(provider, store, Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<FxRefreshHandler>.Instance)
+        new FxRefreshHandler(provider, store, store, Options.Create(new IngestionOptions()), Options.Create(new FxGuardOptions()), new FakeTimeProvider(_now), NullLogger<FxRefreshHandler>.Instance)
             .HandleAsync(job ?? new FxRefreshJob("USD", "GTQ", _day), new JobContext(Guid.CreateVersion7(), "k", 1, 8, null), CancellationToken.None);
 
     [Fact]
@@ -180,5 +191,70 @@ public sealed class FxRefreshTests
             outcomes.Should().Contain(["completed", "failed", "retry"]);
             rows.Should().BeGreaterThanOrEqualTo(2);
         }
+    }
+
+    private static FxRate RateOf(int day, decimal rate) => FxRate.Create(_usd, _gtq, new DateOnly(2026, 10, day), rate, "banguat").Value;
+
+    [Fact]
+    public async Task Refresh_ARateOutsideTheBand_IsKeptApartAndNotStored()
+    {
+        var store = new Store();
+
+        await RunAsync(new Provider((_, _) => Rates(RateOf(15, 7.6m), RateOf(16, 76m), RateOf(17, 7.61m))), store);
+
+        store.Written.Select(rate => rate.AsOfDate.Day).Should().Equal(15, 17);
+        store.Rejected.Should().ContainSingle().Which.Should().Match<RejectedFxRate>(r => r.Rate.AsOfDate.Day == 16 && r.Reason == FxRejectionReasons.OutOfBand);
+    }
+
+    [Fact]
+    public async Task Refresh_ARateThatMovedTooMuchInADay_IsKeptApartAgainstTheLastStoredOne()
+    {
+        var store = new Store(new DateOnly(2026, 10, 14), RateOf(14, 7.6m));
+
+        await RunAsync(new Provider((_, _) => Rates(RateOf(15, 8.4m))), store);
+
+        store.Written.Should().BeEmpty();
+        store.Rejected.Should().ContainSingle().Which.Reason.Should().Be(FxRejectionReasons.Jump);
+    }
+
+    [Fact]
+    public async Task Refresh_ACorrectionOfTheSameDayThatIsSmall_ReplacesIt_AndALargeOneDoesNot()
+    {
+        var store = new Store(new DateOnly(2026, 10, 16), RateOf(16, 7.6m));
+
+        await RunAsync(new Provider((_, _) => Rates(RateOf(16, 7.61m))), store);
+        await RunAsync(new Provider((_, _) => Rates(RateOf(16, 7.0m))), store);
+
+        store.Written.Select(rate => rate.Rate).Should().Equal(7.61m);
+        store.Rejected.Should().ContainSingle().Which.Reason.Should().Be(FxRejectionReasons.Rewrite);
+    }
+
+    [Fact]
+    public async Task Refresh_CountsWhatItKeepsApart_ByReason()
+    {
+        var counted = new Dictionary<string, long>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "sakerwatch_marketdata_fx_rejected_total")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            foreach (KeyValuePair<string, object?> tag in tags)
+            {
+                lock (counted)
+                {
+                    counted[(string)tag.Value!] = counted.GetValueOrDefault((string)tag.Value!) + value;
+                }
+            }
+        });
+        listener.Start();
+
+        await RunAsync(new Provider((_, _) => Rates(RateOf(16, 76m), RateOf(17, 0.76m))), new Store());
+
+        counted.Should().Contain(new KeyValuePair<string, long>(FxRejectionReasons.OutOfBand, 2));
     }
 }

@@ -1,6 +1,7 @@
 using Npgsql;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.MarketData.Application.Lookup;
+using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Domain.Stocks;
 
 namespace SakerWatch.MarketData.Infrastructure.Persistence;
@@ -69,5 +70,33 @@ public sealed class FailedIngestions(DbSession session) : IIngestionStatuses
         }
 
         return failed;
+    }
+}
+
+/// <summary><see cref="IIngestionStamps"/> over <c>marketdata.ingestion_state</c>.</summary>
+/// <param name="session">The scope's database session.</param>
+public sealed class IngestionStamps(DbSession session) : IIngestionStamps
+{
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<StockId, DateTimeOffset>> LastSuccessAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stocks);
+        var stamps = new Dictionary<StockId, DateTimeOffset>();
+        foreach (StockId[] batch in stocks.Distinct().Chunk(1000))
+        {
+            await using var command = new NpgsqlCommand(
+                "SELECT stock_id, last_success_at FROM marketdata.ingestion_state WHERE stock_id = ANY(@ids) AND last_success_at IS NOT NULL",
+                session.Connection,
+                session.Transaction);
+            command.Parameters.AddWithValue("ids", batch.Select(id => id.Value).ToArray());
+
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                stamps[StockId.Create(reader.GetGuid(0))] = reader.GetFieldValue<DateTimeOffset>(1);
+            }
+        }
+
+        return stamps;
     }
 }

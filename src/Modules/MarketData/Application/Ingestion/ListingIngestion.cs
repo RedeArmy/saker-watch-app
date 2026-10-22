@@ -67,17 +67,17 @@ public sealed class ListingIngestion(
     /// Fetches the adjusted and the unadjusted daily series from <paramref name="from"/> (two requests, two credits) and merges them by date.
     /// The unadjusted one is not asked for when the adjusted one failed.
     /// </summary>
-    public async Task<Result<MergedPrices>> FetchAsync(ResolvedListing listing, DateOnly from, DateTimeOffset now, CancellationToken cancellationToken)
+    public async Task<Result<MergedPrices>> FetchAsync(ResolvedListing listing, DateOnly from, DateTimeOffset now, CallLane lane, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(listing);
 
-        Result<DailySeries> adjusted = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: true), cancellationToken);
+        Result<DailySeries> adjusted = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: true, lane), cancellationToken);
         if (!adjusted.IsSuccess)
         {
             return adjusted.Error!;
         }
 
-        Result<DailySeries> raw = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: false), cancellationToken);
+        Result<DailySeries> raw = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: false, lane), cancellationToken);
         return raw.IsSuccess
             ? PriceSeriesMerger.Merge(raw.Value, adjusted.Value, listing.Calendar, now, options.Value.SettleDelay)
             : raw.Error!;

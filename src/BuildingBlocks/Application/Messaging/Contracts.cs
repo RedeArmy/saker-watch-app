@@ -24,6 +24,14 @@ public interface ICommand : IRequest<Result>, ITransactionalRequest;
 /// <typeparam name="T">The success value.</typeparam>
 public interface ICommand<T> : IRequest<Result<T>>, ITransactionalRequest;
 
+/// <summary>
+/// A state-changing request that returns <typeparamref name="T"/> and that the pipeline does not wrap in a unit of work: its handler first does
+/// something slow that must not hold a connection and a transaction (a call to an external service), and then opens short units of work for what
+/// it writes. It gives up the guarantee that everything it does commits together, so use it only for that reason (ADR-0044).
+/// </summary>
+/// <typeparam name="T">The success value.</typeparam>
+public interface ISelfTransactingCommand<T> : IRequest<Result<T>>;
+
 /// <summary>A read-only request that returns <typeparamref name="T"/> (CQRS query).</summary>
 /// <typeparam name="T">The success value.</typeparam>
 public interface IQuery<T> : IRequest<Result<T>>;

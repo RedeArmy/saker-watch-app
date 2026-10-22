@@ -54,7 +54,7 @@ public sealed partial class EdgarOptionsValidator : IValidateOptions<EdgarOption
     public const int MaxUserAgentLength = 200;
 
     // Something that looks like an address: the SEC refuses a caller it cannot write to, and a header must not carry control characters.
-    [GeneratedRegex(@"^[\x20-\x7E]{1,200}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[\x20-\x7E]{1,200}\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex Printable();
 
     [GeneratedRegex(@"\S+@\S+\.\S+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]

@@ -1,7 +1,7 @@
 # Runbook — SonarCloud and merge-to-main quality gates
 
 - **Purpose:** one-time setup of SonarCloud and the branch rules that keep `main` clean (ADR-0019).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1
 
 ## A. SonarCloud (web, one time)
 1. Sign in at https://sonarcloud.io with the GitHub account, **Import an organization** from GitHub (`RedeArmy`) and authorize the SonarCloud GitHub app on the repository `saker-watch-app`.
@@ -9,7 +9,8 @@
 3. **Analyze new project** → select `saker-watch-app` → set the new-code definition to **Previous version** (or **Reference branch: main**) → **With GitHub Actions**. Note the **organization key** and **project key** shown on that page.
 4. **Administration → Analysis Method:** turn **Automatic Analysis OFF** (CI analysis is used because it provides coverage; both at once makes the scan fail).
 5. **My Account → Security:** generate a token (name it `saker-watch-ci`); copy it once.
-6. **Quality Gate:** keep the built-in *Sonar way* (new code: no new bugs/vulnerabilities, hotspots reviewed, coverage >= 80 %, duplication <= 3 %) or create a stricter copy and assign it to the project.
+6. **Duplications:** *Administration → General Settings → Analysis Scope → Duplications Exclusions*: add `**/Migrations/**`. EF migrations are generated and each one repeats the shape of the others (a `Designer` file repeats the model snapshot), so Sonar reports them as duplicated code that no one can reasonably refactor.
+7. **Quality Gate:** keep the built-in *Sonar way* (new code: no new bugs/vulnerabilities, hotspots reviewed, coverage >= 80 %, duplication <= 3 %) or create a stricter copy and assign it to the project.
 
 ## B. GitHub repository settings
 1. **Settings → Secrets and variables → Actions → Secrets:** add `SONAR_TOKEN` (the token from A.5). **Add the same secret under the *Dependabot* tab** too: Dependabot-triggered runs cannot read the Actions secret store, so without it every Dependabot PR fails the `sonarcloud` job (by design, see below).
@@ -40,7 +41,7 @@ What the ruleset enforces on the default branch:
 | Restrict deletions / block force pushes | `main` cannot be deleted or rewritten |
 | Require linear history | no merge commits; use squash or rebase |
 | Require a pull request | all changes arrive through a PR; 0 approvals (solo developer, A-015); stale approvals dismissed on push; conversations must be resolved; merge methods: squash or rebase |
-| Require status checks | `docs-and-config`, `secrets`, `dotnet`, `sonarcloud`, `codeql`, `trivy`; branch must be up to date (strict) |
+| Require status checks | `docs-and-config`, `api-contract`, `secrets`, `dotnet`, `sonarcloud`, `codeql`, `trivy`; branch must be up to date (strict) |
 | Bypass list | empty on purpose: nobody, including the owner, skips the rules |
 
 Notes:

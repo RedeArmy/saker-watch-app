@@ -11,6 +11,7 @@ using Polly.RateLimiting;
 using Polly.Timeout;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
+using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Prices;
 using SakerWatch.MarketData.Domain.Stocks;
@@ -35,6 +36,26 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
     // Measured on 2026-10-17 with /api_usage: a time_series call costs one credit even when it fails (unknown symbol, plan restriction),
     // and symbol_search costs none, so a search never touches the budget.
+    /// <summary>
+    /// The policy of the named client: only the provider's host, a bounded answer, and no retries by the HTTP pipeline. A retry would send a
+    /// request that costs a credit at the provider without the shared budget having counted it (a call is reserved once, before the first
+    /// attempt), so the count would drift under the real use; a failure that retrying can fix is retried by the job queue, which reserves the
+    /// credits again on every attempt (ADR-0044).
+    /// </summary>
+    public static void ConfigureClient(HttpClientResilienceOptions http, Uri baseAddress)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(baseAddress);
+        http.AllowedHosts = [baseAddress.IsDefaultPort ? baseAddress.Host : $"{baseAddress.Host}:{baseAddress.Port}"];
+        http.MaxResponseBytes = 4 * 1024 * 1024;
+        http.MaxRetries = 0;
+        // The shared Redis budget tracks the quota; a 429 is a quota answer and not a sign that the service is unwell.
+        http.RateLimitIsTransient = false;
+    }
+
+    /// <summary>Suffix of the budget key of the on-demand allowance, after the provider name.</summary>
+    public const string OnDemandBudgetSuffix = "_ondemand";
+
     private const int _timeSeriesCredits = 1;
 
     private static readonly Counter<long> _calls = SakerTelemetry.Meter.CreateCounter<long>(
@@ -81,7 +102,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         using Activity? span = SakerTelemetry.Source.StartActivity("MarketData.Provider.TwelveData.Search");
 
         Result<ProviderResponse> response = await GetAsync(
-            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, credits: 0, cancellationToken);
+            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, credits: 0, CallLane.Scheduled, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_searchOperation, response.Error!);
@@ -125,7 +146,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
         string query = DailyQuery(request);
 
-        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, cancellationToken);
+        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, request.Lane, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_dailyOperation, response.Error!);
@@ -229,9 +250,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     private static KeyValuePair<string, object?>[] Tags(string operation, string outcome) =>
         [new("provider", TwelveDataOptions.ProviderName), new("operation", operation), new("outcome", outcome)];
 
-    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, int credits, CancellationToken cancellationToken)
+    private async Task<Result<ProviderResponse>> GetAsync(string relativeUrl, string symbol, int credits, CallLane lane, CancellationToken cancellationToken)
     {
-        if (await SpendBudgetAsync(credits, cancellationToken) is { } refused)
+        if (await SpendBudgetAsync(credits, lane, cancellationToken) is { } refused)
         {
             return refused;
         }
@@ -260,7 +281,9 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     }
 
     // A denied call is never sent. A call that costs no credit needs no budget. Returns the refusal, or null when the call may go ahead.
-    private async Task<Error?> SpendBudgetAsync(int credits, CancellationToken cancellationToken)
+    // On-demand work spends the allowance of its own first and then the plan's budget, so a burst of new stocks cannot take the credits of the
+    // daily refresh (ADR-0043). The allowance is spent before the plan's budget because the plan's credits are the scarce ones.
+    private async Task<Error?> SpendBudgetAsync(int credits, CallLane lane, CancellationToken cancellationToken)
     {
         if (credits <= 0)
         {
@@ -268,6 +291,16 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         }
 
         TwelveDataOptions settings = _options.Value;
+        if (lane == CallLane.OnDemand)
+        {
+            BudgetDecision allowance = await _budget.TryAcquireAsync(
+                Name + OnDemandBudgetSuffix, new BudgetLimits(settings.CreditsPerMinute, settings.OnDemandCreditsPerDay), credits, cancellationToken);
+            if (!allowance.Granted)
+            {
+                return ProviderErrors.RateLimited(Name, allowance.RetryAfter);
+            }
+        }
+
         BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
         return decision.Granted ? null : ProviderErrors.RateLimited(Name, decision.RetryAfter);
     }
@@ -320,7 +353,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             return ProviderErrors.RateLimited(Name, retryAfter ?? (Mentions(text, "current minute") ? UntilNextMinute() : null));
         }
 
-        return ClassifyAccess(status, effective, text) ?? ClassifyLookup(status, effective, text, symbol);
+        return ClassifyAccess(status, effective, text) ?? ClassifyLookup(status, effective, symbol);
     }
 
     // The key was refused, or the plan does not include what was asked.
@@ -334,10 +367,12 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         return Mentions(text, "available starting with") || Mentions(text, "upgrade") ? ProviderErrors.PlanRestricted(Name) : null;
     }
 
-    // Whatever else the answer says: an unknown symbol, a server problem, or something that is not the contract.
-    private Error ClassifyLookup(int status, int effective, string text, string symbol)
+    // Whatever else the answer says: an unknown symbol, a server problem, or something that is not the contract. An unknown symbol is the documented
+    // 404 and nothing else: a 400 that happens to contain the words is a request we got wrong or a provider that changed, and calling it "unknown
+    // symbol" would count towards delisting the stock (ADR-0039).
+    private Error ClassifyLookup(int status, int effective, string symbol)
     {
-        if (effective == 404 || Mentions(text, "missing or invalid") || Mentions(text, "not found"))
+        if (effective == 404)
         {
             return ProviderErrors.SymbolNotFound(Name, symbol);
         }

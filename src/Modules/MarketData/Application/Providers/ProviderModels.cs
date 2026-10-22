@@ -31,7 +31,21 @@ public sealed record ProviderListing(ProviderListingKey Key, string? Name, strin
 /// <param name="From">First day wanted, or <see langword="null"/> for as far back as the provider allows.</param>
 /// <param name="To">Last day wanted, or <see langword="null"/> for the latest.</param>
 /// <param name="Adjusted">True for prices adjusted for splits and dividends, false for the raw prices.</param>
-public sealed record DailySeriesRequest(ProviderListingKey Key, DateOnly? From, DateOnly? To, bool Adjusted);
+/// <param name="Lane">Whose budget the call spends (ADR-0043); the scheduled refresh by default.</param>
+public sealed record DailySeriesRequest(ProviderListingKey Key, DateOnly? From, DateOnly? To, bool Adjusted, CallLane Lane = CallLane.Scheduled);
+
+/// <summary>
+/// Whose share of a provider's daily credits a call spends (ADR-0043). The scheduled refresh keeps the credits that on-demand work cannot touch:
+/// loading the history of a stock somebody just added draws on a smaller allowance of its own.
+/// </summary>
+public enum CallLane
+{
+    /// <summary>The daily refresh of the stocks already in the catalog: only the plan's own limit applies.</summary>
+    Scheduled,
+
+    /// <summary>History loaded because a stock entered the catalog (or was reloaded): also limited by the on-demand allowance of the day.</summary>
+    OnDemand,
+}
 
 /// <summary>A run of daily bars in ascending date order, with no date twice.</summary>
 /// <param name="Key">The provider's identification of the listing.</param>

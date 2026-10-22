@@ -1,7 +1,7 @@
 # Local development: infrastructure, migrations and runtime logins
 
 - **Purpose:** how to run the datastores, apply migrations and start the hosts on a development machine, and how the runtime logins relate to `api_role` and `worker_role`.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (extended as hosts gain features)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1 (extended as hosts gain features)
 
 ## 1. Secrets (never committed)
 `deploy/.env` supplies the bootstrap secrets read by `deploy/docker-compose.yml`: `POSTGRES_PASSWORD`, `MONGO_PASSWORD`, `REDIS_PASSWORD`. The observability stack also needs `GRAFANA_ADMIN_PASSWORD` (only when `docker-compose.obs.yml` is loaded). The runtime logins below take their passwords from the shell environment.
@@ -18,7 +18,7 @@ ConnectionStrings__PostgresAdmin="Host=127.0.0.1;Port=5432;Database=saker;Userna
 ConnectionStrings__MongoAdmin="mongodb://saker_admin:<MONGO_PASSWORD>@127.0.0.1:27017/?authSource=admin" \
 dotnet run --project src/Hosts/Host.Migrator
 ```
-It applies platform, then identity, then marketdata, then MongoDB, and exits non-zero on the first failure. Running it again applies nothing. Migrations are forward-only (ADR-0021).
+It applies platform, then identity, then marketdata, then watchlist, then MongoDB, and exits non-zero on the first failure. Running it again applies nothing. Migrations are forward-only (ADR-0021).
 
 ## 4. Create the runtime logins
 The platform migration creates two `NOLOGIN` group roles, `api_role` and `worker_role` (ADR-0010). The hosts connect with **logins** that belong to one of them, never with the admin login:
@@ -62,3 +62,11 @@ The API trusts `X-Forwarded-*` only from `ForwardedHeaders__KnownProxies__0` (an
 
 ## Retention (worker)
 The worker enqueues one retention job per UTC day and runs it through the job queue. It starts in **dry-run mode**: it logs (event 9701) and counts (`sakerwatch_retention_rows_total{mode="dry_run"}`) what it would remove and deletes nothing. After reading that for an environment, set `Retention__DryRun=false`. Ages and limits: `Retention__OutboxProcessedDays`, `Retention__InboxProcessedDays`, `Retention__JobsSucceededDays`, `Retention__JobsDeadDays`, `Retention__BatchSize`, `Retention__MaxBatchesPerTarget`; `Retention__Enabled=false` stops the daily schedule. A delete run that reports `more remaining` is finished by the next run, and running twice is harmless.
+
+## Scripts that start a throwaway stack
+Each uses its own compose project, other ports and random passwords that live only in the script's shell, and removes everything it made; none touches the dev stack (`saker-watch`), its volumes or your secrets. They need docker and a built solution (`dotnet build`); on a CPU without AVX set the variable named in each.
+- `bash scripts/smoke-worker.sh` (`SMOKE_NOAVX=1`): applies the migrations, runs the worker for 25 seconds and tries the operator command `marketdata delist|relist|rename` (`docs/runbooks/listing-lifecycle.md`). Prints `ALL OK` or one `FAIL` line per check.
+- `bash scripts/run-k6.sh` (`LOAD_NOAVX=1`, `K6_ENFORCE=1`, `K6_PHASE_SECONDS`): seeds 500 stocks with six years of prices, starts the API with a stand-in identity provider and measures the read paths with k6 with the performance cache on and off (`docs/reports/phase-2-load-baseline.md`). Needs python3 (3.14 or later, whose `http.server` serves the stand-in identity provider over TLS) and openssl.
+- `bash scripts/dev-backup.sh`, `scripts/dev-restore.sh` and `bash scripts/restore-drill.sh` (`DRILL_NOAVX=1`): back up the databases of a stack, restore a backup into new databases (never over existing ones) and prove on a throwaway stack that the copy is the same (`docs/runbooks/restore.md`).
+- `bash scripts/run-live-edgar.sh` and `bash scripts/run-live-twelvedata.sh` are opt-in checks against the real services; they read the identity or key from your environment and are never run by `dotnet test`.
+

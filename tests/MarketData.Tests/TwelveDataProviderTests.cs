@@ -243,6 +243,19 @@ public sealed class TwelveDataProviderTests
         ProviderErrors.Classify(missing.Error!).Should().Be(ProviderFailureKind.SymbolNotFound);
     }
 
+    [Theory]
+    [InlineData(400, "**symbol** or **figi** parameter is missing or invalid.")]
+    [InlineData(400, "The symbol was not found.")]
+    [InlineData(422, "symbol not found")]
+    public async Task AnAnswerThatOnlyMentionsAMissingSymbol_IsNotAnUnknownSymbol_BecauseOnlyA404Counts(int status, string message)
+    {
+        (TwelveDataProvider provider, _) = Build(_ => Json($$"""{"code":{{status}},"message":"{{message}}","status":"error"}""", (HttpStatusCode)status));
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily("XNGS", "AAPL"), CancellationToken.None);
+
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.Permanent, "counting it towards delisting would let a changed message delist a market");
+    }
+
     [Fact]
     public async Task ARateLimit_IsClassified_AndCarriesTheWaitTheProviderSent()
     {
@@ -353,6 +366,69 @@ public sealed class TwelveDataProviderTests
 
         budget.Spent.Should().ContainSingle().Which.Should().Be(("twelvedata", new BudgetLimits(8, 800), 1));
         handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task AnOnDemandCall_SpendsTheAllowanceOfItsOwnFirst_AndThenThePlansBudget()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily() with { Lane = CallLane.OnDemand }, CancellationToken.None);
+
+        budget.Spent.Should().Equal(
+            ("twelvedata_ondemand", new BudgetLimits(8, 200), 1),
+            ("twelvedata", new BudgetLimits(8, 800), 1));
+    }
+
+    [Fact]
+    public async Task AScheduledCall_NeverTouchesTheOnDemandAllowance()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily() with { Lane = CallLane.Scheduled }, CancellationToken.None);
+
+        budget.Spent.Select(spent => spent.Provider).Should().Equal("twelvedata");
+    }
+
+    [Fact]
+    public async Task AnOnDemandCall_WhenTheAllowanceIsSpent_IsNeverSent_AndLeavesThePlansBudgetAlone()
+    {
+        var budget = new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromHours(3)));
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily() with { Lane = CallLane.OnDemand }, CancellationToken.None);
+
+        handler.Requests.Should().BeEmpty();
+        budget.Spent.Select(spent => spent.Provider).Should().Equal("twelvedata_ondemand");
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
+        ProviderErrors.RetryAfter(result.Error!).Should().Be(TimeSpan.FromHours(3), "the job waits for the allowance of the next day and does not burn its attempts");
+    }
+
+    [Fact]
+    public void TheClient_IsNotRetriedByTheHttpPipeline_BecauseARetryCostsACreditTheBudgetNeverCounted()
+    {
+        var http = new SakerWatch.BuildingBlocks.Resilience.HttpClientResilienceOptions();
+
+        TwelveDataProvider.ConfigureClient(http, new Uri("https://api.twelvedata.com/"));
+
+        http.MaxRetries.Should().Be(0);
+        http.AllowedHosts.Should().Equal("api.twelvedata.com");
+        http.RateLimitIsTransient.Should().BeFalse();
+        http.MaxResponseBytes.Should().Be(4 * 1024 * 1024);
+    }
+
+    [Theory]
+    [InlineData(200, 800, true)]
+    [InlineData(800, 800, true)]
+    [InlineData(0, 800, true)]
+    [InlineData(801, 800, false)]
+    public void Options_TheOnDemandAllowanceIsAShareOfTheDay(int onDemand, int perDay, bool valid)
+    {
+        var options = new TwelveDataOptions { ApiKey = _key, OnDemandCreditsPerDay = onDemand, CreditsPerDay = perDay };
+
+        new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded.Should().Be(valid);
     }
 
     [Fact]

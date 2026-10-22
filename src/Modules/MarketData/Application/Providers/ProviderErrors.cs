@@ -82,7 +82,10 @@ public static class ProviderErrors
         };
     }
 
-    /// <summary>How long the provider asked to wait, when the error carries it.</summary>
+    // Nothing waits longer than a day: the budgets reset every UTC day. A hostile or buggy value (a provider answering with years) is capped there.
+    private const double _maxRetryAfterSeconds = 86_400;
+
+    /// <summary>How long the provider (or our own budget) asked to wait, when the error carries it; at most one day.</summary>
     public static TimeSpan? RetryAfter(Error error)
     {
         ArgumentNullException.ThrowIfNull(error);
@@ -91,7 +94,7 @@ public static class ProviderErrors
             && values.Length == 1
             && double.TryParse(values[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds)
             && seconds >= 0
-                ? TimeSpan.FromSeconds(seconds)
+                ? TimeSpan.FromSeconds(Math.Min(seconds, _maxRetryAfterSeconds))
                 : null;
     }
 

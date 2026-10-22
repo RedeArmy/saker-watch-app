@@ -30,6 +30,18 @@ internal static class WatchlistRig
             Task.FromResult(BudgetDecision.Allowed);
     }
 
+    /// <summary>Grants credits until the day of each key is spent, as the shared budget does; one counter per key, no clock.</summary>
+    internal sealed class CountingBudget : IProviderCallBudget
+    {
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _spent = new();
+
+        public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken)
+        {
+            int total = _spent.AddOrUpdate(provider, credits, (_, spent) => spent + credits);
+            return Task.FromResult(total <= limits.PerDay ? BudgetDecision.Allowed : new BudgetDecision(false, TimeSpan.FromHours(5)));
+        }
+    }
+
     internal sealed class DenyAll : IProviderCallBudget
     {
         public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken) =>
@@ -58,7 +70,7 @@ internal static class WatchlistRig
     internal static ProviderListing Listing(string mic, string symbol, string name) =>
         new(new ProviderListingKey(mic, symbol), name, "USD", "Asia/Tokyo", AssetType.Equity);
 
-    internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false)
+    internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false, int? registrationsPerDay = null, Func<FakeMarketDataProvider, MigratedDatabase, IMarketDataProvider>? wrap = null)
     {
         RealApiHost api = await RealApiHost.StartAsync(postgres);
         var provider = new FakeMarketDataProvider(ExchangeCalendars.Default(), TimeProvider.System)
@@ -67,17 +79,31 @@ internal static class WatchlistRig
             .WithListing(Listing("XNGS", "MSFT", "Microsoft Corp."), 400m)
             .WithListing(Listing("XNGS", "NVDA", "Nvidia Corp."), 900m)
             .WithListing(new ProviderListing(new ProviderListingKey("XTSE", "SHOP"), "Shopify", "CAD", "America/Toronto", AssetType.Equity), 90m);
+        IProviderCallBudget budget = new AllowAll();
+        if (budgetSpent)
+        {
+            budget = new DenyAll();
+        }
+        else if (registrationsPerDay is not null)
+        {
+            budget = new CountingBudget();
+        }
+
         WebApplicationFactory<HostApi::Program> host = api.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("MarketData:Providers:Markets:XNAS", FakeMarketDataProvider.ProviderName);
             builder.UseSetting("MarketData:Providers:Markets:XNYS", FakeMarketDataProvider.ProviderName);
             builder.UseSetting("MarketData:Payloads:Enabled", "false");
+            if (registrationsPerDay is { } perDay)
+            {
+                builder.UseSetting("MarketData:Lookup:RegistrationsPerUserPerDay", perDay.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IMarketDataProvider>();
-                services.AddSingleton<IMarketDataProvider>(provider);
+                services.AddSingleton(wrap is null ? provider : wrap(provider, api.Db));
                 services.RemoveAll<IProviderCallBudget>();
-                services.AddSingleton<IProviderCallBudget>(budgetSpent ? new DenyAll() : new AllowAll());
+                services.AddSingleton(budget);
                 services.RemoveAll<ISearchCache>();
                 services.AddSingleton<ISearchCache, MemoryCache>();
             });

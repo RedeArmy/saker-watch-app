@@ -156,6 +156,27 @@ public sealed class ListingLifecycleStoreTests(TimescalePostgresFixture postgres
     }
 
     [Fact]
+    public async Task TheShareOfTheMarketUnknownToTheProvider_CountsOnlyStreaksThatAreStillGoing_AmongTheActiveListings()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        StockId[] stocks = [.. await Task.WhenAll(Enumerable.Range(0, 6).Select(i => SeedStockAsync(db.Admin, $"S{i}")))];
+        foreach (StockId stock in stocks)
+        {
+            await db.Admin.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status) VALUES (@id, 'ok')", ("id", stock.Value));
+        }
+
+        // Two are in a streak that reached the day before, one is in a streak that ended a week ago, one is delisted and was unknown too, two are fine.
+        await db.Admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET not_found_days = 2, last_not_found_on = '2026-10-18' WHERE stock_id = ANY(@ids)", ("ids", new[] { stocks[0].Value, stocks[1].Value }));
+        await db.Admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET not_found_days = 1, last_not_found_on = '2026-10-10' WHERE stock_id = @id", ("id", stocks[2].Value));
+        await db.Admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET not_found_days = 4, last_not_found_on = '2026-10-19' WHERE stock_id = @id", ("id", stocks[3].Value));
+        await db.Admin.ExecuteAsync("UPDATE marketdata.stocks SET is_active = false, delisted_at = now() WHERE id = @id", ("id", stocks[3].Value));
+
+        NotFoundShare share = await InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).NotFoundShareAsync(stocks[0], new DateOnly(2026, 10, 19), CancellationToken.None));
+
+        share.Should().Be(new NotFoundShare(2, 5), "the delisted one is not active and the old streak is over");
+    }
+
+    [Fact]
     public async Task TheDaysTheProviderDidNotKnowTheSymbol_OfAStockNeverTried_AreCountedFromAFreshPendingRow()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

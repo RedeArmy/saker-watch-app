@@ -18,6 +18,6 @@ ADR-0026 promised aggregate numbers per portfolio. A portfolio holds no quantiti
 - **No signal in the metrics.** Signals do not exist before Phase 4; when they do, a count per signal can be added without breaking the response. Nothing here is advice.
 
 ## Consequences
-- The numbers are computed on read from the same snapshots as the watchlist, so the two views agree by construction (a test compares them). The cost is the one noted in ADR-0033; caching arrives with 2.8.
+- The numbers are computed on read from the same snapshots as the watchlist, so the two views agree by construction (a test compares them). The cost is the one noted in ADR-0033; caching arrived with 2.8 (ADR-0041).
 - An empty portfolio answers `200` with zero counts, which a client can render without a special case.
 - A window whose `count` is low is a weak statement; clients should show the count beside the figure.

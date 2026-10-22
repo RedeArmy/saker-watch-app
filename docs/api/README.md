@@ -1,7 +1,7 @@
 # API guidelines
 
 - **Purpose:** conventions every endpoint must follow; the OpenAPI contract is generated from code (ADR-0014).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1 (kept current through Phase 2)
 
 ## Contract
 - OpenAPI 3.x per major version; committed at `docs/api/openapi.v1.json`; CI fails on unreviewed diffs and on breaking changes.
@@ -42,14 +42,14 @@ Problem responses use `type = urn:sakerwatch:error:<code>` plus `code`, `correla
 
 ## Stocks and the watchlist (milestone 2.6, ADR-0031 to ADR-0033)
 - `GET /v1/stocks/search?q=`: finds stocks in the enabled markets (exact ticker first); limited per user and by a shared search budget (`429` with `Retry-After`; `503` with `Retry-After` when the provider cannot answer).
-- `PUT /v1/watchlist/items/{market}/{ticker}`: adds the stock (`201`) or replaces the notes and target of the item (`200`); a PUT is idempotent by nature and takes no `Idempotency-Key`. It shares the stricter per-user limit of the stock search (10 a minute by default, `429` with `Retry-After`), because a new stock can spend a provider search. `DELETE` on the same route answers `204` whether or not the stock was there.
-- `GET /v1/watchlist?sort=&order=&market=&assetType=&q=&priceStatus=&limit=&offset=`: the list with price, `priceStatus` (`current`, `stale` with `staleSince`, `pending`, `unavailable`) and the eight performance windows; carries an `ETag` and answers `304` to a matching `If-None-Match`. A window without a number has a `reason` instead.
+- `PUT /v1/watchlist/items/{market}/{ticker}`: adds the stock (`201`) or replaces the notes and target of the item (`200`); a PUT is idempotent by nature and takes no `Idempotency-Key`. It shares the stricter per-user limit of the stock search (10 a minute by default, `429` with `Retry-After`), because a new stock can spend a provider search, and a user can put at most 20 new stocks a day in the shared catalog (`429` with the code `marketdata.stock.registration_limit` and `Retry-After` until the next UTC day; a stock already in the catalog is not counted); `409` with `marketdata.stock.provider_listing_taken` when the provider's listing is already the alias of another stock. `DELETE` on the same route answers `204` whether or not the stock was there.
+- `GET /v1/watchlist?sort=&order=&market=&assetType=&q=&priceStatus=&limit=&offset=`: the list with price, `priceStatus` (`current`, `stale` with `staleSince`, `pending`, `unavailable`, `delisted` with `delistedAt`) and the eight performance windows; carries an `ETag` and answers `304` to a matching `If-None-Match`. A window without a number has a `reason` instead.
 
 ## Portfolios (milestone 2.6d, ADR-0026 and ADR-0034)
 - `POST /v1/portfolios` (needs an `Idempotency-Key`; `201` with a `Location`), `GET /v1/portfolios`, `GET /v1/portfolios/{id}` (both with an ETag), `PUT /v1/portfolios/{id}` (name and description), `PUT /v1/portfolios/order` (`{"portfolioIds": [...]}`, every portfolio once).
 - `PUT /v1/portfolios/{id}/items/{market}/{ticker}` puts a stock of the watchlist in the portfolio (`201` added, `200` already there, `404` when the stock is not on the watchlist), `DELETE` takes it out (it stays on the watchlist), `PUT /v1/portfolios/{id}/items/order` orders the stocks of a portfolio.
 - `GET /v1/portfolios/{id}/deletion-preview` lists the stocks that only this portfolio holds; `DELETE /v1/portfolios/{id}?confirm=true` deletes the portfolio and those stocks leave the watchlist. Without `confirm=true` the answer is `409` when stocks would leave, and nothing changes.
-- `GET /v1/portfolios/{id}/metrics` (ETag, ADR-0035): per window (`1D` … `5Y`) the `count` of stocks with a number, their equal-weighted `average` and `median`, and the `best` and `worst` stock; plus `stockCount`, `priceStatuses` (`current`, `stale`, `pending`, `unavailable`) and `staleSince`. A stock without a number for a window is left out, not counted as zero; with none the figures are `null`. Decimals are strings. Informational only.
+- `GET /v1/portfolios/{id}/metrics` (ETag, ADR-0035): per window (`1D` … `5Y`) the `count` of stocks with a number, their equal-weighted `average` and `median`, and the `best` and `worst` stock; plus `stockCount`, `priceStatuses` (`current`, `stale`, `pending`, `unavailable`, `delisted`) and `staleSince`. A stock without a number for a window is left out, not counted as zero; with none the figures are `null`. Decimals are strings. Informational only.
 - `GET /v1/watchlist?portfolio={id}` lists only the stocks of that portfolio, combined with the other filters; an unknown or foreign portfolio is `404`.
 
 ## Price history and sparklines (milestone 2.7g, ADR-0038)

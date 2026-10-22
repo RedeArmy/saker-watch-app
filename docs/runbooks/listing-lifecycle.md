@@ -1,12 +1,14 @@
 # Runbook — listing lifecycle
 
 - **Purpose:** change the life of a listing in the shared catalog: it stopped trading, it trades again, or it has a new ticker (ADR-0039).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 2
+- **Owner:** Eder · **Status:** approved · **Target phase:** 2
 
 ## When
 - The logs show `The stock {Market} {Ticker} was marked delisted by ingestion` (event 2601) and the stock did not really stop trading: relist it.
 - A company changed its ticker (the provider stops knowing the old symbol). Rename it before the days in a row reach `MarketData:Ingestion:DelistAfterNotFoundDays` (default 5), or relist it after.
 - A stock stopped trading and the provider still answers: delist it by hand.
+
+- The logs show event 2608 (`... of ... active listings of a market are unknown to the provider at once`) and the metric outcome `provider_fault`: the provider is failing for a large part of the market, so nothing is delisted automatically (ADR-0044). Check the provider first (`provider-outage`); if the stocks really left, delist them with the command below.
 
 ## How
 Run the worker with `marketdata` and the change. It does not start the worker; it needs the same configuration as the worker (the connection strings), and it writes its outcome to the log.
@@ -23,6 +25,9 @@ dotnet SakerWatch.Hosts.Worker.dll marketdata rename  XNAS FB META [--on 2022-06
 
 ### The provider already changed the symbol
 If the provider already answers to the new symbol and no longer knows the old one, ingestion counts the old ticker as "symbol not found" and delists the stock after `DelistAfterNotFoundDays` days. Do not wait: run `rename` first (the stock keeps its history), and then `relist` if the stock was already delisted by ingestion in the meantime. `relist` clears the failure and the count of unknown days, and ingestion tries the stock again with the new symbol. Order matters: a `relist` before the `rename` would be counted unknown again on the next run.
+
+### Tuning the market-wide check
+`MarketData:Ingestion:MarketWideNotFoundShare` (default 0.3) and `MarketData:Ingestion:MarketWideMinListings` (default 10) decide when many unknown symbols at once are taken as a provider fault. A market with fewer active listings than the minimum is judged one listing at a time.
 
 ## Check
 - `marketdata.stocks`: `is_active`, `delisted_at`, `ticker`.

@@ -128,6 +128,22 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
         return Convert.ToInt32(days, System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    /// <inheritdoc />
+    public async Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = Command(
+            """
+            SELECT count(*) FILTER (WHERE i.not_found_days > 0 AND i.last_not_found_on >= @day - 1), count(*)
+            FROM marketdata.stocks s
+            LEFT JOIN marketdata.ingestion_state i ON i.stock_id = s.id
+            WHERE s.is_active AND s.market_mic = (SELECT market_mic FROM marketdata.stocks WHERE id = @id)
+            """,
+            [("id", stock.Value), ("day", day)]);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return new NotFoundShare((int)reader.GetInt64(0), (int)reader.GetInt64(1));
+    }
+
     private Task<int> RecordActionAsync(StockId stock, string kind, DateOnly on, string source, DateTimeOffset at, CancellationToken cancellationToken) =>
         ExecuteAsync(
             """

@@ -37,7 +37,14 @@ public sealed class StockRegistry(DbSession session) : IStockRegistry
         command.Parameters.AddWithValue("provider_symbol", providerKey.Symbol);
         command.Parameters.AddWithValue("now", now.ToUniversalTime());
 
-        object? id = await command.ExecuteScalarAsync(cancellationToken);
-        return StockId.Create((Guid)id!);
+        try
+        {
+            object? id = await command.ExecuteScalarAsync(cancellationToken);
+            return StockId.Create((Guid)id!);
+        }
+        catch (PostgresException error) when (error is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "pk_symbol_aliases" })
+        {
+            throw new ProviderListingTakenException("The provider listing is already the alias of another stock.", error);
+        }
     }
 }

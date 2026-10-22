@@ -45,6 +45,17 @@ public sealed class IngestionOptions
     [Range(2, 60)]
     public int DelistAfterNotFoundDays { get; set; } = 5;
 
+    /// <summary>
+    /// The share of a market's active listings, as a fraction, that must be in a streak of unknown-symbol days for the streaks to be taken as a
+    /// fault of the provider and not as stocks that left (ADR-0044). While that is so, nothing in that market is delisted automatically.
+    /// </summary>
+    [Range(0.05, 1.0)]
+    public double MarketWideNotFoundShare { get; set; } = 0.3;
+
+    /// <summary>Fewest active listings a market must have for the share to mean anything; a market with fewer is judged one listing at a time.</summary>
+    [Range(1, 10000)]
+    public int MarketWideMinListings { get; set; } = 10;
+
     /// <summary>Relative difference in a stored adjusted close, beyond which the provider is taken to have rewritten the history.</summary>
     [Range(0.0000001, 0.1)]
     public double RewriteTolerance { get; set; } = 0.000001;
