@@ -147,8 +147,8 @@ public sealed class PerformanceCacheTests(TimescalePostgresFixture postgres) : I
     {
         var cache = new RedisPerformanceCache(_connection!, NullLogger<RedisPerformanceCache>.Instance);
         var key = new PerformanceCacheKey(StockId.Create(Guid.CreateVersion7()), _loaded, 10);
-        await _connection!.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10:c{PerformanceCalculator.Version}", "{\"Format\":1,\"LatestDate\":\"not a date\"}");
-        await _connection.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:11:c{PerformanceCalculator.Version}", "garbage");
+        await _connection!.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10:{PerformanceRules.CacheTag}", "{\"Format\":1,\"LatestDate\":\"not a date\"}");
+        await _connection.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:11:{PerformanceRules.CacheTag}", "garbage");
 
         (await cache.GetManyAsync([key], CancellationToken.None)).Should().BeEmpty();
         (await cache.GetManyAsync([key with { MaxGapDays = 11 }], CancellationToken.None)).Should().BeEmpty();
@@ -164,13 +164,13 @@ public sealed class PerformanceCacheTests(TimescalePostgresFixture postgres) : I
 
         await cache.SetManyAsync(new Dictionary<PerformanceCacheKey, PerformanceReport> { [key] = report }, TimeSpan.FromHours(26), CancellationToken.None);
 
-        TimeSpan? ttl = await _connection!.GetDatabase().KeyTimeToLiveAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10:c{PerformanceCalculator.Version}");
+        TimeSpan? ttl = await _connection!.GetDatabase().KeyTimeToLiveAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10:{PerformanceRules.CacheTag}");
         ttl.Should().BeGreaterThan(TimeSpan.FromHours(25));
         (await cache.GetManyAsync([key], CancellationToken.None))[key.Stock].Windows.Should().Equal(report.Windows);
     }
 
     [Fact]
-    public async Task Get_AReportMadeByAnotherVersionOfTheCalculation_IsAMiss()
+    public async Task Get_AReportMadeByOtherRulesOfTheCalculation_IsAMiss()
     {
         var cache = new RedisPerformanceCache(_connection!, NullLogger<RedisPerformanceCache>.Instance);
         var current = new PerformanceCacheKey(StockId.Create(Guid.CreateVersion7()), _loaded, 10);
@@ -178,12 +178,12 @@ public sealed class PerformanceCacheTests(TimescalePostgresFixture postgres) : I
         PriceSample latest = PriceSample.Create(new DateOnly(2026, 10, 16), 120.5m).Value;
         var report = new PerformanceReport(latest, [.. Enum.GetValues<PerformanceWindow>().Select(window => WindowPerformance.Missing(window, PerformanceGap.HistoryGap))]);
         await cache.SetManyAsync(new Dictionary<PerformanceCacheKey, PerformanceReport> { [current] = report }, TimeSpan.FromHours(26), CancellationToken.None);
-        // The very same entry, as a calculator of the version before this one would have left it.
-        RedisValue stored = await _connection!.GetDatabase().StringGetAsync($"v1:perf:{current.Stock.Value}:{current.Stamp.UtcTicks}:10:c{PerformanceCalculator.Version}");
-        await _connection.GetDatabase().StringSetAsync($"v1:perf:{older.Stock.Value}:{older.Stamp.UtcTicks}:10:c{PerformanceCalculator.Version - 1}", stored);
+        // The very same entry, as a calculator with other rules (another fingerprint) would have left it.
+        RedisValue stored = await _connection!.GetDatabase().StringGetAsync($"v1:perf:{current.Stock.Value}:{current.Stamp.UtcTicks}:10:{PerformanceRules.CacheTag}");
+        await _connection.GetDatabase().StringSetAsync($"v1:perf:{older.Stock.Value}:{older.Stamp.UtcTicks}:10:c{PerformanceCalculator.Version}.00000000", stored);
 
         IReadOnlyDictionary<StockId, PerformanceReport> found = await cache.GetManyAsync([current, older], CancellationToken.None);
 
-        found.Keys.Should().BeEquivalentTo([current.Stock], "a report made by another version of the rules is never served as the current one");
+        found.Keys.Should().BeEquivalentTo([current.Stock], "a report made by other rules is never served as the current one");
     }
 }

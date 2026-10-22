@@ -11,7 +11,7 @@ using StackExchange.Redis;
 namespace SakerWatch.MarketData.Infrastructure.Providers;
 
 /// <summary>
-/// <see cref="IPerformanceCache"/> over Redis (ADR-0041): one string per listing under <c>v1:perf:{stock}:{stamp}:{maxGap}:c{calculation version}</c> (the version of <see cref="PerformanceCalculator"/>, so a change of the rules is a new key). The report is stored as
+/// <see cref="IPerformanceCache"/> over Redis (ADR-0041): one string per listing under <c>v1:perf:{stock}:{stamp}:{maxGap}:c{version}.{fingerprint}</c> (<see cref="PerformanceRules.CacheTag"/>: the version of the calculation and a fingerprint of what it does, so a change of the rules is a new key). The report is stored as
 /// text (dates ISO, decimals invariant) and the changes are not stored at all: they are rebuilt from the two closes by the same function the
 /// calculator uses, so the cache cannot hold a number the calculator would not produce. Nothing here is authoritative: a Redis failure, an entry
 /// that cannot be read or a version bump is a miss, never an error for the request.
@@ -23,6 +23,8 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
     private const string _dateFormat = "yyyy-MM-dd";
     private const int _format = 1;
 
+    private int _announced;
+
     private sealed record StoredWindow(int Window, string? BaselineDate, string? BaselineClose, int? Gap);
 
     private sealed record Stored(int Format, string? LatestDate, string? LatestClose, StoredWindow[] Windows);
@@ -32,6 +34,7 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
     {
         ArgumentNullException.ThrowIfNull(keys);
         cancellationToken.ThrowIfCancellationRequested();
+        Announce();
         var found = new Dictionary<StockId, PerformanceReport>();
         if (keys.Count == 0)
         {
@@ -65,6 +68,7 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
     {
         ArgumentNullException.ThrowIfNull(reports);
         cancellationToken.ThrowIfCancellationRequested();
+        Announce();
         try
         {
             IBatch batch = redis.GetDatabase().CreateBatch();
@@ -79,12 +83,21 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
         }
     }
 
+    // Once per process, so whoever looks at Redis after a deploy can tell the keys of this version from those a former one left (docs/runbooks/cache.md).
+    private void Announce()
+    {
+        if (Interlocked.Exchange(ref _announced, 1) == 0)
+        {
+            LogKeyTag(PerformanceRules.CacheTag);
+        }
+    }
+
     private static RedisKey KeyFor(PerformanceCacheKey key) => RedisKeys.For(
         "perf",
         key.Stock.Value.ToString("D", CultureInfo.InvariantCulture),
         key.Stamp.UtcTicks.ToString(CultureInfo.InvariantCulture),
         key.MaxGapDays.ToString(CultureInfo.InvariantCulture),
-        "c" + PerformanceCalculator.Version.ToString(CultureInfo.InvariantCulture));
+        PerformanceRules.CacheTag);
 
     private static string Write(PerformanceReport report) => JsonSerializer.Serialize(new Stored(
         _format,
@@ -143,6 +156,9 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
 
     private static PriceSample Sample(string date, string close) =>
         PriceSample.Create(DateOnly.ParseExact(date, _dateFormat, CultureInfo.InvariantCulture), decimal.Parse(close, NumberStyles.Number, CultureInfo.InvariantCulture)).Value;
+
+    [LoggerMessage(EventId = 2803, Level = LogLevel.Information, Message = "The keys of the performance cache of this process end in {Tag}; keys with another ending were left by another version and expire by themselves")]
+    private partial void LogKeyTag(string tag);
 
     [LoggerMessage(EventId = 2801, Level = LogLevel.Warning, Message = "The performance cache could not be used ({ExceptionType}); the numbers come from the database")]
     private partial void LogUnavailable(string exceptionType);

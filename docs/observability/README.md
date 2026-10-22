@@ -28,6 +28,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_marketdata_fx_rejected_total` (counter) | reason=out_of_band\|jump\|rewrite | exchange rates kept apart instead of stored (ADR-0042) |
 | `sakerwatch_marketdata_price_rows_total` (counter) | operation=backfill\|refresh | daily price rows written by ingestion |
 | `sakerwatch_marketdata_stock_lookups_total` (counter) | operation=search\|ensure, outcome=success\|invalid\|busy\|unavailable\|not_found\|market_not_available\|catalogued\|registered\|limit\|conflict | stock searches and registrations on demand from the API: `busy` means the shared search budget or the provider's rate limit, `unavailable` a provider that cannot answer, `registered` a stock that entered the catalog; `limit` means the user reached the daily cap of new stocks (ADR-0043); `conflict` means the provider's listing is already the alias of another stock (ADR-0045) |
+| `sakerwatch_marketdata_registration_quota_total` (counter) | source=shared\|process, outcome=granted\|refused | decisions on a user's registration of a new stock; `process` is the count of the API process while Redis cannot be reached (ADR-0047): any increase of `source=process` means the shared budget is down |
 | `sakerwatch_marketdata_fx_refreshes_total` (counter) | outcome=completed\|refused\|retry\|failed | daily refreshes of the USD to GTQ exchange rate: `refused` is a refresh whose rates were all kept apart by the guard (the rate in use stays the earlier one), `retry` is an outage the queue will retry, `failed` is a permanent failure (the next day asks again) |
 | `sakerwatch_marketdata_fx_rows_total` (counter) | none | exchange rates written by the daily refresh |
 | `sakerwatch_marketdata_fx_age_days` (gauge, sampled every `MarketData:Ingestion:FreshnessInterval`) | pair, source | days since the date of the newest exchange rate (Guatemalan calendar); the bank fills weekends, so a value above `MarketData:Ingestion:FxMaxAgeDays` (3) means the ingestion stopped. Per process: aggregate with `max` |
@@ -116,6 +117,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 2703 | Warning | `The raw EDGAR response was not kept ({ExceptionType}); the call is not affected` | `EdgarProvider` |
 | 2801 | Warning | `The performance cache could not be used ({ExceptionType}); the numbers come from the database` | `RedisPerformanceCache` |
 | 2802 | Warning | `A cached performance report could not be read and is computed again` | `RedisPerformanceCache` |
+| 2803 | Information | `The keys of the performance cache of this process end in {Tag}; keys with another ending were left by another version and expire by themselves` | `RedisPerformanceCache` |
 | 2121 | Information | `The daily market data refresh is disabled; no session will be scheduled` | `MarketDataScheduler` |
 | 2122 | Information | `Daily refresh of {Market} for {Day} queued` | `MarketDataScheduler` |
 | 2123 | Warning | `Could not queue the daily refresh of {Market}; it will be tried again shortly` (with exception) | `MarketDataScheduler` |

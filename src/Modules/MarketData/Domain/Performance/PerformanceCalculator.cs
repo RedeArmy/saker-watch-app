@@ -12,10 +12,10 @@ namespace SakerWatch.MarketData.Domain.Performance;
 public static class PerformanceCalculator
 {
     /// <summary>
-    /// The version of the calculation: part of every key of the performance cache (ADR-0041, ADR-0047), so a report computed by an older rule is a
-    /// miss and never served as the current one. Raise it whenever a change makes the same prices give another report (the target dates, the gap
-    /// rule, how a change is computed, the calendars' idea of the previous trading day). <c>PerformanceCalculatorVersionTests</c> pins the behavior
-    /// this number stands for and fails, with that instruction, when the behavior changes without it.
+    /// A version for the rules the cache cannot see by itself (ADR-0047). The key of the performance cache holds <see cref="PerformanceRules.CacheTag"/>,
+    /// which is this number and a fingerprint of what the calculator does with fixed inputs, so a change inside the calculator or the calendars makes new
+    /// keys without anyone remembering. Raise this number when a change makes the same prices give another report <i>outside</i> the calculator: how the
+    /// baseline close on or before a date is looked up in the database, or what is stored as the adjusted close.
     /// </summary>
     public const int Version = 1;
 

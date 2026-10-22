@@ -18,6 +18,15 @@ The windows of a listing are kept in Redis under `v1:perf:{stockId}:{stamp}:{max
 2. A cache entry is stale only when the prices changed without `last_success_at` changing: prices edited by hand in `price_daily`, or a change of the exchange calendars (they decide the previous trading day of the one-day window) without a load. Every other change makes a new key.
 3. Fix it: delete the keys of the listing (`v1:perf:{stockId}:*`), or all of them (`v1:perf:*`, with `SCAN`, never `KEYS` in production), or bump `RedisKeys.Version` in a release so every key is new. The next read computes the windows again and keeps them.
 
+## After a deploy: keys of an older version
+A change of the rules of the windows makes new keys (the ending `c{version}.{fingerprint}` changes by itself, ADR-0047), so the first read of each listing after the deploy computes its windows again. That is not a new cost: the stamp of a listing changes with every nightly load, so the first read of each listing after the load is a miss every day; a deploy adds nothing to it. The keys of the old version are never read again and expire after 26 hours. At one key per listing and stamp they take about a kilobyte each, a few hundred kilobytes for the catalog of a day, so there is nothing to clean.
+
+The ending of the keys of the running version is in the log (event 2803, once per process). To look at what is there, or to remove the keys of other versions at once (never with `KEYS`):
+```
+redis-cli --scan --pattern 'v1:perf:*' | grep -v ':<ending from the log>$' | head        # what an older version left
+redis-cli --scan --pattern 'v1:perf:*' | grep -v ':<ending from the log>$' | xargs -r -n 100 redis-cli unlink
+```
+
 ## Redis is down
 Nothing to do for correctness: every read goes to PostgreSQL and the watchlist is slower (see the baseline). The connection to Redis fails fast while it is down (`BacklogPolicy.FailFast`): a cache read is a miss at once and not after the five seconds of the command timeout, so the cost is the database read and nothing more. The host makes the connection when it starts and waits up to `connectTimeout` (5 s by default) if Redis is not there. Fix Redis; the cache fills itself on the first reads. If the extra load on PostgreSQL is a problem while it is fixed, there is nothing to turn off: the failed calls are already misses.
 

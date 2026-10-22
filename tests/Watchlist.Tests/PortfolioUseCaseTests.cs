@@ -115,8 +115,9 @@ public sealed class PortfolioUseCaseTests
         public Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PortfolioMember>>(Members.GetValueOrDefault(id) ?? []);
 
-        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken)
+        public Task<MemberAdd> AddMemberAsync(NewMember member, int maxMembers, CancellationToken cancellationToken)
         {
+            (Guid _, PortfolioId id, Guid stockId, DateTimeOffset now) = member;
             MaxMembersSeen = maxMembers;
             if (ForcedMember is { } forced)
             {

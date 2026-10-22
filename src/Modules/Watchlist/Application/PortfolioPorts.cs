@@ -34,6 +34,13 @@ public enum PortfolioWrite
     NotFound,
 }
 
+/// <summary>A stock to put in a portfolio: whose, where, which, and when it is added.</summary>
+/// <param name="UserId">The owner of the portfolio and of the watchlist item.</param>
+/// <param name="Portfolio">The portfolio.</param>
+/// <param name="StockId">The catalog id of the stock, which must be on the user's watchlist.</param>
+/// <param name="At">The time of the add.</param>
+public sealed record NewMember(Guid UserId, PortfolioId Portfolio, Guid StockId, DateTimeOffset At);
+
 /// <summary>The result of putting a stock in a portfolio.</summary>
 public enum MemberAdd
 {
@@ -87,7 +94,7 @@ public interface IPortfolioRepository
     /// Puts the user's watchlist stock in the portfolio, at the end, unless the portfolio already holds <paramref name="maxMembers"/> stocks (the configured
     /// limit, checked under the portfolio's lock so that parallel adds cannot both pass it; the database ceiling is the backstop behind it).
     /// </summary>
-    Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<MemberAdd> AddMemberAsync(NewMember member, int maxMembers, CancellationToken cancellationToken);
 
     /// <summary>Takes the stock out of the portfolio (it stays on the watchlist). Returns whether it was there.</summary>
     Task<bool> RemoveMemberAsync(Guid userId, PortfolioId id, Guid stockId, CancellationToken cancellationToken);

@@ -76,7 +76,7 @@ public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDire
             return stock.Error!.Type == ErrorType.NotFound ? NotOnWatchlist() : stock.Error;
         }
 
-        MemberAdd added = await portfolios.AddMemberAsync(userId, id, stock.Value.Id, options.Value.MaxItemsPerPortfolio, clock.GetUtcNow(), cancellationToken);
+        MemberAdd added = await portfolios.AddMemberAsync(new NewMember(userId, id, stock.Value.Id, clock.GetUtcNow()), options.Value.MaxItemsPerPortfolio, cancellationToken);
         switch (added)
         {
             case MemberAdd.ItemNotOnWatchlist:

@@ -604,6 +604,27 @@ public sealed class StockDirectoryTests
         third.Registry.Registered.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(20, 1, 20)]
+    [InlineData(20, 3, 6)]
+    [InlineData(20, 4, 5)]
+    [InlineData(2, 5, 1)]
+    public async Task Reserve_WhileTheSharedBudgetIsDown_EachProcessHoldsItsShareOfTheCap(int cap, int replicas, int share)
+    {
+        var lookup = new StockLookupOptions { RegistrationsPerUserPerDay = cap, ApiReplicas = replicas };
+        var fallback = new RegistrationFallback();
+        int granted = 0;
+
+        for (int i = 0; i < cap + 2; i++)
+        {
+            Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: lookup, quotaUnreachable: true, fallback: fallback);
+            granted += (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).IsSuccess ? 1 : 0;
+        }
+
+        granted.Should().Be(share, $"{replicas} process(es) each holding {share} stay within the cap of {cap}");
+        (granted * replicas).Should().BeLessThanOrEqualTo(Math.Max(cap, replicas));
+    }
+
     [Fact]
     public void Fallback_CountsPerUserAndDay_ReleasesOne_AndForgetsAtMidnight()
     {

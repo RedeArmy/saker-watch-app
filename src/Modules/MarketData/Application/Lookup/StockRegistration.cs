@@ -1,8 +1,10 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
+using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
@@ -13,7 +15,8 @@ namespace SakerWatch.MarketData.Application.Lookup;
 /// <summary>
 /// The registrations of new stocks one user may make in a UTC day (ADR-0043, ADR-0047). The count is the shared Redis budget under a key of the user,
 /// so it holds across replicas. When Redis cannot be reached the shared budget lets the call through uncounted, and the quota then counts for itself in
-/// <see cref="RegistrationFallback"/>: the cap holds per process instead of not at all, so a user cannot drain the provider's credits while Redis is down.
+/// <see cref="RegistrationFallback"/>: each process holds its share of the cap (<see cref="StockLookupOptions.ApiReplicas"/>), so together they cannot pass it
+/// and a user cannot drain the provider's credits while Redis is down.
 /// A slot taken for a registration that did not create a stock (it already existed, or conflicted) is given back. A call with no user (a job) is not limited.
 /// </summary>
 /// <param name="budget">The shared budget.</param>
@@ -23,6 +26,10 @@ namespace SakerWatch.MarketData.Application.Lookup;
 /// <param name="clock">The clock; the day is the UTC one.</param>
 public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser currentUser, IOptions<StockLookupOptions> lookup, RegistrationFallback fallback, TimeProvider clock)
 {
+    private static readonly Counter<long> _decisions = SakerTelemetry.Meter.CreateCounter<long>(
+        "sakerwatch_marketdata_registration_quota_total",
+        description: "Decisions on a user's registration of a new stock, by where the count was kept (shared: Redis; process: the fallback while Redis is down) and outcome (granted, refused).");
+
     private bool _tookFromFallback;
     private bool _holdsSlot;
 
@@ -36,11 +43,16 @@ public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser c
 
         int cap = lookup.Value.RegistrationsPerUserPerDay;
         BudgetDecision decision = await budget.TryAcquireAsync(BudgetKey(user), new BudgetLimits(cap, cap), 1, cancellationToken);
+        string source = "shared";
         if (decision.Granted && decision.Degraded)
         {
-            decision = fallback.TryTake(user, cap, clock.GetUtcNow());
+            // Each of the processes holds its share of the cap, so that together they cannot pass it.
+            source = "process";
+            decision = fallback.TryTake(user, Math.Max(1, cap / lookup.Value.ApiReplicas), clock.GetUtcNow());
             _tookFromFallback = decision.Granted;
         }
+
+        _decisions.Add(1, new KeyValuePair<string, object?>("source", source), new KeyValuePair<string, object?>("outcome", decision.Granted ? "granted" : "refused"));
 
         _holdsSlot = decision.Granted;
         return decision.Granted
@@ -76,7 +88,7 @@ public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser c
 
 /// <summary>
 /// The registrations each user made today as this process counts them, used only while the shared budget is unreachable (ADR-0047). The count is per
-/// process, so with several replicas the cap holds per replica; that is the bound while Redis is down, and a day later every count is forgotten.
+/// process and each process is given its share of the cap, so the processes together stay within it; a day later every count is forgotten.
 /// </summary>
 public sealed class RegistrationFallback
 {

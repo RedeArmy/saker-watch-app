@@ -165,8 +165,10 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     }
 
     /// <inheritdoc />
-    public async Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken)
+    public async Task<MemberAdd> AddMemberAsync(NewMember member, int maxMembers, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(member);
+        (Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now) = member;
         await LockAsync(_membersLockKey + id.Value, cancellationToken);
         Guid? item = await ItemOfAsync(userId, stockId, cancellationToken);
         if (item is null)
