@@ -19,7 +19,7 @@ The windows of a listing are kept in Redis under `v1:perf:{stockId}:{stamp}:{max
 3. Fix it: delete the keys of the listing (`v1:perf:{stockId}:*`), or all of them (`v1:perf:*`, with `SCAN`, never `KEYS` in production), or bump `RedisKeys.Version` in a release so every key is new. The next read computes the windows again and keeps them.
 
 ## Redis is down
-Nothing to do for correctness: every read goes to PostgreSQL and the watchlist is slower (see the baseline). Fix Redis; the cache fills itself on the first reads. If the extra load on PostgreSQL is a problem while it is fixed, there is nothing to turn off: the failed calls are already misses.
+Nothing to do for correctness: every read goes to PostgreSQL and the watchlist is slower (see the baseline). The connection to Redis fails fast while it is down (`BacklogPolicy.FailFast`): a cache read is a miss at once and not after the five seconds of the command timeout, so the cost is the database read and nothing more. The host makes the connection when it starts and waits up to `connectTimeout` (5 s by default) if Redis is not there. Fix Redis; the cache fills itself on the first reads. If the extra load on PostgreSQL is a problem while it is fixed, there is nothing to turn off: the failed calls are already misses.
 
 ## Turn it off or change it
 - `MarketData:Cache:Enabled=false` (an environment variable `MARKETDATA__CACHE__ENABLED=false`) sends every read to PostgreSQL; the keys already there expire by themselves.

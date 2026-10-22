@@ -46,6 +46,15 @@ Latencies in milliseconds; every request answered 200 (0.00 % errors in all ten 
 - **The calculator** did not change with the cache because it no longer reads the windows (milestone 2.8b); its half-second maximum with the cache off is a single slow request in a run of 2 400.
 - Tail latencies (p99 up to 285 ms with the cache on) leave little room: the figures are for 4 users on 3 CPUs shared with k6, the API and the three databases. A deployed instance has other limits.
 
+## How the budget is enforced
+`K6_ENFORCE=1 bash scripts/run-k6.sh` fails the run (exit 1) when an endpoint's p95 is over the budget of ADR-0033 (300 ms, `K6_P95_BUDGET_MS` for another machine) or more than 1 % of its requests fail. It is judged so that it measures the product and not the circumstances:
+- **Only the shipped configuration is enforced** (the performance cache on). The cache-off run is the reference of what the cache buys and never fails: its sort is over the budget by design (849 ms p95 above, ADR-0041).
+- **The first seconds of each scenario are left out** (`K6_WARMUP_SECONDS`, 5 by default; requests are tagged `phase:warmup`): they meet cold code paths and plans. The thresholds and the tables of this report use the steady part. Enforcing needs at least 20 seconds per scenario, and the script refuses less.
+- **A crossing is repeated once** on the warm API. On a machine that also runs k6 and three databases a spike is not a regression; two runs that both cross are.
+- **The setup fills each portfolio one stock at a time**, as a user does: a portfolio serializes its changes on a lock, and a batch of 25 parallel requests into it queued for 15 seconds and ended in a lock timeout. That timeout is now a `503` with `Retry-After` (log event 9102) and not a `500`.
+
+Run of 2026-10-22 with enforcement on (30 s per scenario, 5 s of warm-up): every p95 with the cache on was at most 213 ms (the sparklines), the five endpoints answered 200 in all requests, and the run exited 0.
+
 ## What changed after the measurement
 The figures were taken before the follow-ups of the security review (ADR-0042 to ADR-0044). They do not touch the five paths measured, except that every catalog read now opens a short unit of work that joins the one the request already holds (a counter, not a connection), so no change is expected; repeat `scripts/run-k6.sh` before relying on a difference of a few milliseconds.
 

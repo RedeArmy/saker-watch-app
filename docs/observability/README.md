@@ -80,6 +80,7 @@ Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchli
 | 9704 | Warning | `Could not enqueue today's retention run; it will be retried shortly (after at most one minute)` (with exception) | `RetentionScheduler` |
 | 9705 | Warning | `Retention is in dry-run mode in the {Environment} environment: nothing is deleted, so expired data accumulates until Retention:DryRun is switched off` (logged at every start outside Development) | `RetentionScheduler` |
 | 9101 | Error | `Unhandled exception in {Method} {Endpoint}` (with exception) | `GlobalExceptionHandler` |
+| 9102 | Warning | `The database refused to wait ({SqlState}) in {Method} {Endpoint}; the client was told to retry` | `GlobalExceptionHandler` |
 | 2001 | Warning | `Twelve Data returned {Rejected} inconsistent daily rows for {Symbol}; they were dropped` | `TwelveDataProvider` |
 | 2002 | Warning | `Twelve Data call failed in transit ({ExceptionType})` | `TwelveDataProvider` |
 | 2003 | Warning | `The call budget of {Provider} could not be checked ({ExceptionType}); the call goes ahead and the provider enforces its own limit` | `RedisProviderCallBudget` |

@@ -224,6 +224,33 @@ public sealed class WebBuildingBlockTests
         ClientAddressKey.For(null).Should().Be("unknown");
     }
 
+    [Theory]
+    [InlineData("55P03")]
+    [InlineData("40P01")]
+    [InlineData("40001")]
+    public async Task ADatabaseThatRefusedToWait_IsABusy503WithARetryAfter_NotAnUnexpected500(string state)
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync($"/db-busy/{state}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(1));
+        JsonElement body = await ReadJson(response);
+        body.GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:busy");
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("could not get the lock", "the message of the driver is never sent to the client");
+    }
+
+    [Fact]
+    public async Task ADatabaseFailureThatIsNotARefusalToWait_StaysAnUnexpected500()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync("/db-busy/23505");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
     [Fact]
     public async Task AnAbandonedRequest_IsNotRecordedAsASuccess()
     {

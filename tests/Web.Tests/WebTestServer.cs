@@ -86,6 +86,7 @@ internal static class WebTestServer
                             http.RequestAborted = new CancellationToken(canceled: true);
                             throw new OperationCanceledException(http.RequestAborted);
                         });
+                        endpoints.MapGet("/db-busy/{state}", (string state) => { throw new WrapperException(new FakeDatabaseException(state)); });
                         endpoints.MapGet("/boom", () => { throw new InvalidOperationException("secret internal detail"); });
                         endpoints.MapGet("/expensive", () => Results.Ok()).RequireRateLimiting(RateLimitPolicies.Expensive);
                         endpoints.MapGet("/fail/{type}", (ErrorType type) =>
@@ -124,3 +125,11 @@ internal sealed class ReadyCheckCounter
 
     public void Increment() => Interlocked.Increment(ref _runs);
 }
+
+/// <summary>A database failure with the SQL state the driver would report, wrapped in another exception as EF does.</summary>
+public sealed class FakeDatabaseException(string state) : System.Data.Common.DbException("could not get the lock")
+{
+    public override string? SqlState => state;
+}
+
+public sealed class WrapperException(Exception inner) : Exception("saving failed", inner);
