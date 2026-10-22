@@ -3,8 +3,8 @@
 # It builds its own compose project (saker-load: other ports, random passwords, removed at the end), applies the migrations, seeds 500
 # listings with six years of prices (scripts/load/seed.sql), starts the API with a stand-in identity provider (scripts/load/idp.py: a key and a TLS certificate made for this run only, which the API is told to trust) and runs tests/load/baseline.js with k6 from a pinned image. The dev stack and your secrets are never touched.
 #   bash scripts/run-k6.sh [output-dir]       (default: a new temporary directory; the k6 summaries and the logs stay there)
-# Needs docker, python3 (3.14 or later: its http.server serves the stand-in identity provider over TLS), openssl and a built solution. On a CPU without AVX set LOAD_NOAVX=1. K6_ENFORCE=1 fails the run when the
-# budgets of ADR-0033 are crossed. The numbers belong to the machine they were taken on: k6, the API and the databases share it.
+# Needs docker, python3 (3.14 or later: its http.server serves the stand-in identity provider over TLS), openssl and a built solution. On a CPU without AVX set LOAD_NOAVX=1. K6_ENFORCE=1 fails the run (exit 1) when the
+# budgets of ADR-0033 are crossed. A k6 run that fails for another reason (a script error, no summary written) fails the run whatever K6_ENFORCE says. The numbers belong to the machine they were taken on: k6, the API and the databases share it.
 set -u
 cd "$(dirname "$0")/.."
 out="${1:-$(mktemp -d)}"
@@ -16,6 +16,7 @@ audience="saker-load-api"
 api_url="http://127.0.0.1:58090"
 api_pid=""
 idp_pid=""
+exit_code=0
 idp_name="run-$$-$RANDOM"
 repo="$PWD"
 
@@ -63,7 +64,7 @@ log "starting postgres, mongo and redis"
 "${compose[@]}" up -d postgres mongo redis >"$out/compose.log" 2>&1 || { log "compose up failed"; tail -5 "$out/compose.log"; exit 1; }
 healthy=0
 for _ in $(seq 1 60); do
-  healthy=$("${compose[@]}" ps --format '{{.Service}} {{.Health}}' 2>/dev/null | grep -c healthy)
+  healthy=$("${compose[@]}" ps --format '{{.Service}} {{.Health}}' 2>/dev/null | awk '$2 == "healthy" { n++ } END { print n + 0 }')
   [[ "$healthy" -ge 3 ]] && break
   sleep 2
 done
@@ -114,7 +115,7 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
     curl -s -f -o /dev/null "$api_url/health/ready" && { ready=1; break; }
     sleep 1
   done
-  [[ "$ready" -eq 1 ]] || { log "the API did not become ready (see api-$label.log)"; stop_api; return 1; }
+  [[ "$ready" -eq 1 ]] || { log "the API did not become ready (see api-$label.log)"; stop_api; exit_code=1; return 1; }
 
   for index in 1 2 3 4 5; do
     sub="00000000-0000-0000-0000-000000000${prefix}${index}0"
@@ -124,7 +125,13 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
   docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/tests/load:/scripts:ro" -v "$out:/out" \
     -e K6_BASE_URL="$api_url" -e K6_TOKENS="$tokens" -e K6_ENFORCE="${K6_ENFORCE:-0}" -e K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" \
     "$k6_image" run --quiet --summary-export="/out/summary-$label.json" /scripts/baseline.js >"$out/k6-$label.log" 2>&1
-  log "k6 ($label) exit code: $?"
+  local status=$?
+  log "k6 ($label) exit code: $status"
+  # 99 is k6's "a threshold was crossed": a failure of the run only when the budgets are enforced. Anything else non-zero is k6 itself failing.
+  if [[ "$status" -eq 99 && "${K6_ENFORCE:-0}" == "1" ]] || [[ "$status" -ne 0 && "$status" -ne 99 ]]; then
+    log "k6 ($label) failed the run"
+    exit_code=1
+  fi
   stop_api
   return 0
 }
@@ -133,5 +140,12 @@ run_mode cache-on true a
 run_mode cache-off false b
 
 log "results"
-(cd "$out" && K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" python3 -I "$repo/scripts/load/summarize.py" "performance cache on=summary-cache-on.json" "performance cache off=summary-cache-off.json") | tee -a "$out/results.md"
+if [[ -s "$out/summary-cache-on.json" && -s "$out/summary-cache-off.json" ]]; then
+  (cd "$out" && K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" python3 -I "$repo/scripts/load/summarize.py" "performance cache on=summary-cache-on.json" "performance cache off=summary-cache-off.json") | tee -a "$out/results.md"
+else
+  log "a k6 summary is missing, so there is nothing to compare (see k6-*.log)"
+  exit_code=1
+fi
+
 log "logs and summaries are in $out"
+exit "$exit_code"

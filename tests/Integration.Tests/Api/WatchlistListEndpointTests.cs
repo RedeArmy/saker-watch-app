@@ -57,7 +57,7 @@ public sealed class WatchlistListEndpointTests(TimescalePostgresFixture postgres
                 .Should().Be(HttpStatusCode.Created);
         }
 
-        DateOnly settled = SessionSchedule.LatestSettled(_calendar, DateTimeOffset.UtcNow, new IngestionOptions().SettleDelay);
+        DateOnly settled = SessionSchedule.LatestSettled(_calendar, rig.Clock.GetUtcNow(), new IngestionOptions().SettleDelay);
         DateOnly koLast = _calendar.PreviousTradingDay(_calendar.PreviousTradingDay(settled));
         await SeedBarsAsync(rig, "AAPL", settled, step: 0.5m, start: 100m);
         await SeedBarsAsync(rig, "KO", koLast, step: 0.1m, start: 50m);

@@ -1,0 +1,9 @@
+# Gated assemblies (*.Domain, *.Application) that hold no executable code yet, so no coverage report can mention them.
+# scripts/check-coverage.py fails when a gated assembly of src/ is neither in the reports nor listed here: a module whose tests stopped
+# emitting coverage must not slip through. Remove a line when its assembly gets logic.
+SakerWatch.Analysis.Domain          # Phase 4: only the assembly marker
+SakerWatch.Analysis.Application     # Phase 4: only the assembly marker
+SakerWatch.Signals.Domain           # Phase 3: only the assembly marker
+SakerWatch.Signals.Application      # Phase 3: only the assembly marker
+SakerWatch.Identity.Domain          # only the assembly marker
+SakerWatch.Retention.Domain         # only a type without executable lines

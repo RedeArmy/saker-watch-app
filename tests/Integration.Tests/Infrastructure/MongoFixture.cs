@@ -36,10 +36,17 @@ public sealed class MongoFixture : IAsyncLifetime
         return CpuHasAvx() ? ComposeImages.For("mongo") : "mongo:4.4";
     }
 
-    private static bool CpuHasAvx()
+    // Only x86 reports its features on a `flags` line of /proc/cpuinfo. Anything else (the arm64 of production and CI lists `Features`) cannot be
+    // asked, and is not what the missing-AVX crash is about, so it counts as able to run the image of the compose file.
+    internal static bool CpuHasAvx(IEnumerable<string>? cpuInfoLines = null)
     {
         const string cpuInfo = "/proc/cpuinfo";
-        return !File.Exists(cpuInfo)
-            || File.ReadLines(cpuInfo).Any(line => line.StartsWith("flags", StringComparison.Ordinal) && line.Contains(" avx", StringComparison.Ordinal));
+        if (cpuInfoLines is null && !File.Exists(cpuInfo))
+        {
+            return true;
+        }
+
+        string[] flagLines = [.. (cpuInfoLines ?? File.ReadLines(cpuInfo)).Where(line => line.StartsWith("flags", StringComparison.Ordinal))];
+        return flagLines.Length == 0 || flagLines.Any(line => line.Contains(" avx", StringComparison.Ordinal));
     }
 }

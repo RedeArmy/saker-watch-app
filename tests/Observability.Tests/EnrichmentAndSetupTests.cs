@@ -84,17 +84,27 @@ public sealed class EnrichmentAndSetupTests
         tracer.GetResource().Attributes.Should().Contain(a => a.Key == "service.name" && (string)a.Value == "saker-test");
     }
 
-    [Fact]
-    public void AddSakerObservability_WithoutOtlpEndpoint_DoesNotRequireAnExporter()
+    private static bool RegistersAnOtlpExporter(string? endpoint)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://127.0.0.1:4317" });
+        // An explicit value, null included, wins over the environment of the machine that runs the test.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint });
         builder.AddSakerObservability("saker-test");
 
         using IHost host = builder.Build();
 
         host.Services.GetRequiredService<TracerProvider>().Should().NotBeNull();
+        return builder.Services.Any(descriptor => (descriptor.ServiceType.FullName ?? string.Empty).Contains("Otlp", StringComparison.OrdinalIgnoreCase)
+            || (descriptor.ImplementationType?.FullName ?? string.Empty).Contains("Otlp", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void AddSakerObservability_WithoutOtlpEndpoint_RegistersNoExporter_AndStillBuilds() =>
+        RegistersAnOtlpExporter(endpoint: null).Should().BeFalse("telemetry leaves the process only when the endpoint is configured");
+
+    [Fact]
+    public void AddSakerObservability_WithAnOtlpEndpoint_RegistersTheExporter() =>
+        RegistersAnOtlpExporter("http://127.0.0.1:4317").Should().BeTrue();
 
     [Fact]
     public void ApplySakerDefaults_WithOtlpEndpoint_BuildsALoggerThatNeverThrowsWhenTheCollectorIsDown()

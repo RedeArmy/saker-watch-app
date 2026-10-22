@@ -320,7 +320,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
 
         // The delete starts while the membership is uncommitted: it must wait for it, then see it.
         Task<bool> deleting = AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, CancellationToken.None));
-        await Task.Delay(500);
+        await WaitUntilALockWaitsAsync(db);
         deleting.IsCompleted.Should().BeFalse("it waits for the uncommitted membership of the stock it was about to remove");
         await adding.CommitAsync(CancellationToken.None);
         await deleting.WaitAsync(TimeSpan.FromSeconds(30));
@@ -340,7 +340,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
 
         // The delete has locked and removed the item but not committed: the other request waits for it and then cannot add a stock that is gone.
         Task<MemberAdd> adding = PutAsync(db, user, other, a);
-        await Task.Delay(500);
+        await WaitUntilALockWaitsAsync(db);
         adding.IsCompleted.Should().BeFalse();
         await deleting.CommitAsync(CancellationToken.None);
 
@@ -395,11 +395,22 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         (await new PortfolioRepository(reordering).ReorderMembersAsync(user, portfolio.Id, [stocks[1], stocks[0]], CancellationToken.None)).Should().BeTrue();
 
         Task<MemberAdd> adding = PutAsync(db, user, portfolio, stocks[2]);
-        await Task.Delay(500);
+        await WaitUntilALockWaitsAsync(db);
         adding.IsCompleted.Should().BeFalse("it queues behind the reorder instead of reading positions that are about to change");
         await reordering.CommitAsync(CancellationToken.None);
         (await adding.WaitAsync(TimeSpan.FromSeconds(30))).Should().Be(MemberAdd.Added);
 
         (await AsAsync(db, user, r => r.MembersAsync(user, portfolio.Id, CancellationToken.None))).Select(m => m.StockId).Should().Equal(stocks[1], stocks[0], stocks[2]);
+    }
+
+    // Waits until a session of this database is blocked on a lock: the request under test, queued behind the transaction the test holds open. It is
+    // a fact read from the server and not a pause, so "it has not completed" that follows is true because the request really is waiting.
+    private static async Task WaitUntilALockWaitsAsync(MigratedDatabase db)
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'") == 0)
+        {
+            await Task.Delay(10, bound.Token);
+        }
     }
 }

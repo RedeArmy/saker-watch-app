@@ -48,7 +48,7 @@ public sealed class ListingLifecycleEndpointTests(TimescalePostgresFixture postg
         string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-lifecycle" });
         (await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", token))).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        DateOnly settled = SessionSchedule.LatestSettled(_calendar, DateTimeOffset.UtcNow, new IngestionOptions().SettleDelay);
+        DateOnly settled = SessionSchedule.LatestSettled(_calendar, rig.Clock.GetUtcNow(), new IngestionOptions().SettleDelay);
         await rig.Api.Db.Admin.ExecuteAsync(
             """
             INSERT INTO marketdata.price_daily (stock_id, trade_date, open, high, low, close, adjusted_close, volume, source, is_final, ingested_at)

@@ -237,13 +237,27 @@ public sealed class MongoMigrationTests(MongoFixture mongo) : IClassFixture<Mong
     public async Task AMigrationThatOutlastsTheLockLifetime_KeepsTheLockWhileItRuns()
     {
         IMongoDatabase db = mongo.NewDatabase();
-        // Real timers, so the margins are wide: the lock is renewed every second, would expire after three, and the second migrator
-        // arrives after four (a loaded CI machine can delay a renewal by a good fraction of a second without changing the outcome).
+        // Real timers, so the margins are wide: the lock is renewed every second and would expire after three. The second migrator arrives once
+        // the time the lock had when it was taken is a second past, measured from the lock itself and not guessed (a loaded CI machine can take
+        // a long time to connect and to start, and a fixed pause would then arrive too early).
         var slow = new SlowMigration(TimeSpan.FromSeconds(7));
         var shortLock = new MongoMigrationLockOptions(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(60));
+        IMongoCollection<BsonDocument> locks = db.GetCollection<BsonDocument>("_migration_lock");
 
         Task<int> first = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
-        await Task.Delay(TimeSpan.FromSeconds(4));
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        BsonDocument? taken;
+        while ((taken = await locks.Find(new BsonDocument("_id", "migrations")).FirstOrDefaultAsync(bound.Token)) is null)
+        {
+            await Task.Delay(50, bound.Token);
+        }
+
+        DateTime originalExpiry = taken["expiresAt"].ToUniversalTime();
+        while (DateTime.UtcNow < originalExpiry + TimeSpan.FromSeconds(1))
+        {
+            await Task.Delay(50, bound.Token);
+        }
+
         Task<int> second = RunnerFor(db).RunAsync([slow], shortLock, CancellationToken.None);
 
         (await first).Should().Be(1);

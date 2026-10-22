@@ -14,6 +14,6 @@
 	handle /health {
 		respond "ok" 200
 	}
-	# TODO(phase-1): reverse_proxy to Host.Api; (phase-3): Next.js web.
+	# TODO(owner: Eder, phase-5): reverse_proxy to Host.Api and to the Next.js web in the production edge.
 	respond "Saker Watch dev edge" 200
 }

@@ -56,7 +56,20 @@ internal static class WatchlistRig
         public Task SetAsync(string provider, string query, IReadOnlyList<CachedListing> listings, TimeSpan ttl, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    internal sealed record Rig(RealApiHost Api, WebApplicationFactory<HostApi::Program> Host, FakeMarketDataProvider Provider, HttpClient Client) : IAsyncDisposable
+    /// <summary>
+    /// The time as the API and the test see it: the instant the rig started, plus one microsecond for each time it is read. Seeding "the last
+    /// settled session" and answering "is the price current" cannot disagree because a session settled between the two, and what is stamped one
+    /// after the other keeps its order (a clock that stood still would stamp a whole test with one instant). Timers and delays are the real ones.
+    /// </summary>
+    internal sealed class SteadyClock(DateTimeOffset start) : TimeProvider
+    {
+        private const long _ticksPerMicrosecond = 10;
+        private long _reads;
+
+        public override DateTimeOffset GetUtcNow() => start.AddTicks(Interlocked.Increment(ref _reads) * _ticksPerMicrosecond);
+    }
+
+    internal sealed record Rig(RealApiHost Api, WebApplicationFactory<HostApi::Program> Host, FakeMarketDataProvider Provider, HttpClient Client, SteadyClock Clock) : IAsyncDisposable
     {
         /// <summary>Stops both hosts. A host that is left running keeps its file watchers, and the machine has a small number of them.</summary>
         public async ValueTask DisposeAsync()
@@ -73,7 +86,8 @@ internal static class WatchlistRig
     internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false, int? registrationsPerDay = null, Func<FakeMarketDataProvider, MigratedDatabase, IMarketDataProvider>? wrap = null)
     {
         RealApiHost api = await RealApiHost.StartAsync(postgres);
-        var provider = new FakeMarketDataProvider(ExchangeCalendars.Default(), TimeProvider.System)
+        var clock = new SteadyClock(DateTimeOffset.UtcNow);
+        var provider = new FakeMarketDataProvider(ExchangeCalendars.Default(), clock)
             .WithListing(Listing("XNGS", "AAPL", "Apple Inc."), 150m)
             .WithListing(Listing("XNYS", "KO", "Coca-Cola Co."), 60m)
             .WithListing(Listing("XNGS", "MSFT", "Microsoft Corp."), 400m)
@@ -100,6 +114,8 @@ internal static class WatchlistRig
             }
             builder.ConfigureTestServices(services =>
             {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(clock);
                 services.RemoveAll<IMarketDataProvider>();
                 services.AddSingleton(wrap is null ? provider : wrap(provider, api.Db));
                 services.RemoveAll<IProviderCallBudget>();
@@ -108,7 +124,7 @@ internal static class WatchlistRig
                 services.AddSingleton<ISearchCache, MemoryCache>();
             });
         });
-        return new Rig(api, host, provider, host.CreateClient());
+        return new Rig(api, host, provider, host.CreateClient(), clock);
     }
 
     internal static HttpRequestMessage Send(HttpMethod method, string path, string? token, object? body = null)

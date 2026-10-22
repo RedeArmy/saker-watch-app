@@ -60,6 +60,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
+| scripts/coverage-exempt.txt | Gated assemblies that hold no executable code yet (read by the coverage gate) | Eder | draft | 2 | 2026-10-22 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | scripts/dev-backup.sh | Backup of the PostgreSQL and MongoDB databases of a compose stack | Eder | approved | 2 | 2026-10-22 |
 | scripts/dev-restore.sh | Restore of a backup into new databases, never over existing ones | Eder | approved | 2 | 2026-10-22 |

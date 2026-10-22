@@ -1,6 +1,6 @@
 # Dev stack. Caddy publishes a port (loopback); datastores live on an internal network.
 # The observability stack (ADR-0016) lives in docker-compose.obs.yml and is added with `make up-obs`.
-# TODO(phase-5): pin image digests (supply-chain requirement) once versions are chosen.
+# TODO(owner: Eder, phase-5): pin image digests (supply-chain requirement) once versions are chosen.
 name: saker-watch
 services:
   postgres:

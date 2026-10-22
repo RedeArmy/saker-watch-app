@@ -77,7 +77,7 @@ log "starting postgres, mongo and redis"
 "${compose[@]}" up -d postgres mongo redis >"$out/compose.log" 2>&1 || { log "compose up failed"; tail -5 "$out/compose.log"; exit 1; }
 healthy=0
 for _ in $(seq 1 60); do
-  healthy=$("${compose[@]}" ps --format '{{.Service}} {{.Health}}' 2>/dev/null | grep -c healthy)
+  healthy=$("${compose[@]}" ps --format '{{.Service}} {{.Health}}' 2>/dev/null | awk '$2 == "healthy" { n++ } END { print n + 0 }')
   [[ "$healthy" -ge 3 ]] && break
   sleep 2
 done
