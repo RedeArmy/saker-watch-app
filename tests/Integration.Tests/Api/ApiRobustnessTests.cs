@@ -41,7 +41,7 @@ public sealed class ApiRobustnessTests(TimescalePostgresFixture postgres) : ICla
         }
 
         statuses.Take(5).Should().AllBeEquivalentTo(HttpStatusCode.Unauthorized);
-        statuses.Skip(5).Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests, "the limiter runs before authentication, so refused requests count");
+        statuses.Skip(5).Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests, "the limiter runs before authentication and charges the requests that authentication refuses");
     }
 
     [Theory]

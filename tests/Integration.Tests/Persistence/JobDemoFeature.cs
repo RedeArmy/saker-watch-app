@@ -21,6 +21,9 @@ internal sealed class JobProbe
 
     public bool IgnoreCancellation { get; set; }
 
+    /// <summary>Makes the handler cut its own database connection and fail, so the clean-up after the failure cannot reach the database either.</summary>
+    public bool KillOwnConnection { get; set; }
+
     public int Runs => Volatile.Read(ref _runs);
 
     public Task Entered => _entered.Task;
@@ -67,6 +70,11 @@ internal sealed class ComputeJobHandler(ProbeItemsContext db, JobProbe probe) : 
 {
     public async Task HandleAsync(ComputeJob payload, JobContext context, CancellationToken cancellationToken)
     {
+        if (probe.KillOwnConnection)
+        {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_terminate_backend(pg_backend_pid())", cancellationToken);
+        }
+
         List<string> session = await db.Database
             .SqlQueryRaw<string>("SELECT coalesce(current_setting('app.current_user_id', true), '') AS \"Value\"")
             .ToListAsync(cancellationToken);

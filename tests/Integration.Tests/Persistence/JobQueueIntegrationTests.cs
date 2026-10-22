@@ -627,6 +627,39 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task AnAttempt_WhoseCleanUpAfterAFailureAlsoFails_IsCountedAsAnError_NotAsASuccess()
+    {
+        await using Env env = await StartAsync();
+        await env.EnqueueAsync("cut-off");
+        env.Probe.KillOwnConnection = true;
+        var outcomes = new List<string>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "sakerwatch_jobs_total")
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            foreach (KeyValuePair<string, object?> tag in tags)
+            {
+                if (tag.Key == "outcome")
+                {
+                    outcomes.Add((string)tag.Value!);
+                }
+            }
+        });
+        listener.Start();
+
+        Func<Task> run = () => env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        await run.Should().ThrowAsync<Exception>("the rollback of a connection that is gone throws too");
+        outcomes.Should().Equal("error");
+    }
+
+    [Fact]
     public async Task QueueGauges_ReportDepthAgeInFlightAndDeadJobs()
     {
         await using Env env = await StartAsync();

@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using SakerWatch.BuildingBlocks.Observability.Logging;
 using Serilog;
+using Serilog.Core;
 using Serilog.Events;
 
 namespace SakerWatch.Observability.Tests;
@@ -84,6 +85,35 @@ public sealed class RedactionTests
 
         string text = sink.RenderedText();
         text.Should().NotContain("hunter2").And.Contain("Host=db");
+    }
+
+    [Fact]
+    public void TheExceptionOfAnEvent_IsScrubbedBySinksBehindTheDefaults()
+    {
+        var collected = new CollectingSink();
+        using Logger logger = new LoggerConfiguration().WriteTo.Sink(new ScrubbingSink(collected)).CreateLogger();
+        var failure = new InvalidOperationException(
+            "could not connect: Host=db;Username=app;Password=hunter2;Database=saker",
+            new InvalidOperationException("Key (email)=(ana@example.com) already exists; Authorization: Bearer abcdef123456789"));
+
+        logger.Error(failure, "Database call failed");
+
+        Exception seen = collected.Events.Single().Exception!;
+        string text = seen.ToString() + seen.Message;
+        text.Should().NotContain("hunter2").And.NotContain("ana@example.com").And.NotContain("abcdef123456789");
+        text.Should().Contain("Host=db").And.Contain("InvalidOperationException", "the type of the original stays in the text");
+        seen.Should().BeOfType<ScrubbedException>().Which.OriginalType.Should().Be(typeof(InvalidOperationException).FullName);
+    }
+
+    [Fact]
+    public void AnEventWithoutAnException_PassesThroughUntouched()
+    {
+        var collected = new CollectingSink();
+        using Logger logger = new LoggerConfiguration().WriteTo.Sink(new ScrubbingSink(collected)).CreateLogger();
+
+        logger.Information("Plain {Value}", 1);
+
+        collected.Events.Single().Exception.Should().BeNull();
     }
 
     [Fact]

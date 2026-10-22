@@ -79,6 +79,13 @@ internal static class WebTestServer
                     {
                         endpoints.MapSakerHealth();
                         endpoints.MapGet("/ok", () => Results.Ok(new { ok = true }));
+                        endpoints.MapGet("/denied", () => Results.Unauthorized());
+                        endpoints.MapGet("/abandoned", (HttpContext http) =>
+                        {
+                            // The client has gone away: the request is marked aborted, and the work it was doing is cancelled.
+                            http.RequestAborted = new CancellationToken(canceled: true);
+                            throw new OperationCanceledException(http.RequestAborted);
+                        });
                         endpoints.MapGet("/boom", () => { throw new InvalidOperationException("secret internal detail"); });
                         endpoints.MapGet("/expensive", () => Results.Ok()).RequireRateLimiting(RateLimitPolicies.Expensive);
                         endpoints.MapGet("/fail/{type}", (ErrorType type) =>

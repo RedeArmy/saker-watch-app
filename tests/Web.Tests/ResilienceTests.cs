@@ -35,6 +35,38 @@ public sealed class ResilienceTests
         return services.BuildServiceProvider();
     }
 
+    [Theory]
+    [InlineData(nameof(HttpClientResilienceOptions.AttemptTimeout), 1)]
+    [InlineData(nameof(HttpClientResilienceOptions.TotalTimeout), 5)]
+    [InlineData(nameof(HttpClientResilienceOptions.CircuitBreakDuration), 100)]
+    public void Options_AValueTheResiliencePipelineWouldRefuse_FailsValidationAtStartup(string property, int milliseconds)
+    {
+        var options = new HttpClientResilienceOptions { AllowedHosts = ["api.provider.test"] };
+        typeof(HttpClientResilienceOptions).GetProperty(property)!.SetValue(options, TimeSpan.FromMilliseconds(milliseconds));
+
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        bool valid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            options, new System.ComponentModel.DataAnnotations.ValidationContext(options), results, validateAllProperties: true);
+
+        valid.Should().BeFalse();
+        results.Should().ContainSingle().Which.MemberNames.Should().Contain(property);
+    }
+
+    [Fact]
+    public async Task Options_TheSmallestValuesThePipelineAccepts_PassValidationAndBuildTheClient()
+    {
+        using ServiceProvider provider = Build(new ScriptedHandler(HttpStatusCode.OK), o =>
+        {
+            o.AttemptTimeout = TimeSpan.FromMilliseconds(10);
+            o.TotalTimeout = TimeSpan.FromMilliseconds(10);
+            o.CircuitBreakDuration = TimeSpan.FromMilliseconds(500);
+        });
+
+        Func<Task> call = () => provider.GetRequiredService<IHttpClientFactory>().CreateClient(_clientName).GetAsync("quote");
+
+        await call.Should().NotThrowAsync<System.ComponentModel.DataAnnotations.ValidationException>();
+    }
+
     [Fact]
     public async Task Get_TransientServerErrors_AreRetriedUntilSuccess()
     {

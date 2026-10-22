@@ -124,7 +124,8 @@ public sealed partial class JobProcessor
         activity?.SetTag("saker.job.key", job.Key);
         activity?.SetTag("saker.origin_trace_id", job.TraceId);
         long start = _timeProvider.GetTimestamp();
-        string outcome = "success";
+        // Unset until the attempt ends: if the clean-up after a failure throws (the database is down), it is counted as an error and not as a success.
+        string? outcome = null;
         try
         {
             object payload = DeserializePayload(job);
@@ -136,6 +137,7 @@ public sealed partial class JobProcessor
             await InvokeAsync(scope.ServiceProvider, payload, new JobContext(job.Id, job.Key, job.Attempts, job.MaxAttempts, job.CorrelationId, job.UserId), leaseToken.Token);
             await CompleteAsync(session, job, leaseToken.Token);
             await session.CommitAsync(CancellationToken.None);
+            outcome = "success";
         }
         catch (LeaseLostException)
         {
@@ -171,7 +173,7 @@ public sealed partial class JobProcessor
         {
             await stopHeartbeat.CancelAsync();
             await heartbeat;
-            TagList tags = new() { { "type", job.Type }, { "outcome", outcome } };
+            TagList tags = new() { { "type", job.Type }, { "outcome", outcome ?? "error" } };
             _jobs.Add(1, tags);
             _duration.Record(_timeProvider.GetElapsedTime(start).TotalSeconds, tags);
         }

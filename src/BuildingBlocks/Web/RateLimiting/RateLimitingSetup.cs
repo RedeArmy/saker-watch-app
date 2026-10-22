@@ -30,8 +30,8 @@ public sealed class RateLimitingOptions
     public int ExpensivePermitLimit { get; set; } = 10;
 
     /// <summary>
-    /// Requests per window and client address (an IPv6 client counts by its /64) before authentication. It stops floods of invalid tokens, which would otherwise cost
-    /// signature validation each; it is higher than <see cref="PermitLimit"/> because several users may share an address.
+    /// Requests that authentication refuses (401) per window and client address (an IPv6 client counts by its /64). It stops floods of invalid tokens,
+    /// which would otherwise cost signature validation each; requests that are authenticated do not count, so users that share an address do not use it up.
     /// </summary>
     [Range(1, 1_000_000)]
     public int PreAuthenticationPermitLimit { get; set; } = 600;
@@ -90,7 +90,8 @@ public static class RateLimitingSetup
     }
 
     /// <summary>
-    /// Adds the limiter that runs before authentication, keyed by client IP only (no token has been looked at yet). Place it after
+    /// Adds the limiter that runs before authentication, keyed by client IP only (no token has been looked at yet) and charged for each request that
+    /// authentication then answers with 401, so authenticated traffic never uses it up. Place it after
     /// <c>UseRouting</c> so endpoints that opt out with <c>DisableRateLimiting</c> (health probes) are skipped.
     /// </summary>
     public static IApplicationBuilder UseSakerPreAuthenticationRateLimiting(this IApplicationBuilder app)
@@ -99,18 +100,30 @@ public static class RateLimitingSetup
 
         return app.Use(async (context, next) =>
         {
-            if (context.GetEndpoint()?.Metadata.GetMetadata<DisableRateLimitingAttribute>() is null)
+            if (context.GetEndpoint()?.Metadata.GetMetadata<DisableRateLimitingAttribute>() is not null)
             {
-                using RateLimitLease lease = await context.RequestServices.GetRequiredService<PreAuthenticationRateLimiter>()
-                    .AcquireAsync(context, context.RequestAborted);
-                if (!lease.IsAcquired)
+                await next(context);
+                return;
+            }
+
+            var limiter = context.RequestServices.GetRequiredService<PreAuthenticationRateLimiter>();
+            using (RateLimitLease open = limiter.Peek(context))
+            {
+                if (!open.IsAcquired)
                 {
-                    await WriteRejectionAsync(context, lease, "pre-authentication");
+                    await WriteRejectionAsync(context, open, "pre-authentication");
                     return;
                 }
             }
 
             await next(context);
+
+            // Only a request that authentication refused is counted: the allowance is for floods of missing or invalid tokens. Counting every
+            // request would make all users behind one address (the BFF, or the proxy until ForwardedHeaders is set, A-023) share one bucket.
+            if (context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+            {
+                using RateLimitLease counted = limiter.Take(context);
+            }
         });
     }
 
@@ -185,7 +198,7 @@ public static class ClientAddressKey
     }
 }
 
-/// <summary>Fixed-window limiter per client IP for requests that have not been authenticated yet.</summary>
+/// <summary>Fixed-window limiter per client IP for the requests that authentication refuses (a missing or invalid token).</summary>
 public sealed class PreAuthenticationRateLimiter : IDisposable
 {
     private readonly PartitionedRateLimiter<HttpContext> _limiter;
@@ -207,9 +220,11 @@ public sealed class PreAuthenticationRateLimiter : IDisposable
             }));
     }
 
+    /// <summary>Asks whether the caller's address still has allowance, without using any: a lease that is acquired means yes.</summary>
+    public RateLimitLease Peek(HttpContext context) => _limiter.AttemptAcquire(context, 0);
+
     /// <summary>Takes one permit for the caller's address.</summary>
-    public ValueTask<RateLimitLease> AcquireAsync(HttpContext context, CancellationToken cancellationToken) =>
-        _limiter.AcquireAsync(context, 1, cancellationToken);
+    public RateLimitLease Take(HttpContext context) => _limiter.AttemptAcquire(context, 1);
 
     /// <inheritdoc />
     public void Dispose() => _limiter.Dispose();

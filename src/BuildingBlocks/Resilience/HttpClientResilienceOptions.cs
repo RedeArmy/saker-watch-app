@@ -18,12 +18,12 @@ public sealed class HttpClientResilienceOptions
     /// <summary>Permit plain <c>http</c>. Only for local fakes; production clients stay HTTPS-only.</summary>
     public bool AllowInsecureHttp { get; set; }
 
-    /// <summary>Timeout of a single attempt.</summary>
-    [Range(typeof(TimeSpan), "00:00:00.001", "00:05:00")]
+    /// <summary>Timeout of a single attempt. At least 10 ms, the least the resilience pipeline accepts.</summary>
+    [Range(typeof(TimeSpan), "00:00:00.010", "00:05:00")]
     public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
-    /// <summary>Timeout of the whole call including retries.</summary>
-    [Range(typeof(TimeSpan), "00:00:00.001", "00:10:00")]
+    /// <summary>Timeout of the whole call including retries. At least 10 ms, the least the resilience pipeline accepts.</summary>
+    [Range(typeof(TimeSpan), "00:00:00.010", "00:10:00")]
     public TimeSpan TotalTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>Retries after the first attempt (idempotent methods only).</summary>
@@ -42,8 +42,8 @@ public sealed class HttpClientResilienceOptions
     [Range(2, 10_000)]
     public int CircuitMinimumThroughput { get; set; } = 10;
 
-    /// <summary>How long the circuit stays open.</summary>
-    [Range(typeof(TimeSpan), "00:00:00.001", "01:00:00")]
+    /// <summary>How long the circuit stays open. At least half a second, the least the resilience pipeline accepts.</summary>
+    [Range(typeof(TimeSpan), "00:00:00.500", "01:00:00")]
     public TimeSpan CircuitBreakDuration { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>

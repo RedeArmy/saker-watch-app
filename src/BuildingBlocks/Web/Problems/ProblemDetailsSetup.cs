@@ -34,11 +34,15 @@ public static class ProblemDetailsSetup
 /// <param name="logger">Logger for the unhandled exception.</param>
 internal sealed partial class GlobalExceptionHandler(IProblemDetailsService problems, ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
+    private const int _clientClosedRequest = 499;
+
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
         {
-            // The client went away; nothing to report and no response to write.
+            // The client went away; nothing to report and no body to write. The status is the one nginx made usual for it (there is no standard one),
+            // so request logs and metrics do not count the abandoned request as a 200.
+            httpContext.Response.StatusCode = _clientClosedRequest;
             return true;
         }
 
