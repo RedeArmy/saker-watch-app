@@ -58,11 +58,18 @@ public sealed class StockDirectoryTests
 
         public bool Throw { get; set; }
 
+        public bool ListingTaken { get; set; }
+
         public Task<StockId> RegisterAsync(Stock stock, string provider, ProviderListingKey providerKey, DateTimeOffset now, CancellationToken cancellationToken)
         {
             if (Throw)
             {
                 throw new InvalidOperationException("the database is down");
+            }
+
+            if (ListingTaken)
+            {
+                throw new ProviderListingTakenException();
             }
 
             Registered.Add((stock, provider, providerKey));
@@ -563,5 +570,18 @@ public sealed class StockDirectoryTests
         await act.Should().ThrowAsync<InvalidOperationException>();
         (rig.Unit.Committed, rig.Unit.RolledBack).Should().Be((0, 1));
         rig.Jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheProvidersListingIsAlreadyAnotherStocksAlias_IsAConflict_NothingIsQueued_AndTheUnitIsRolledBack()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+        rig.Registry.ListingTaken = true;
+
+        Error error = (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+
+        (error.Code, error.Type).Should().Be((StockDirectory.ProviderListingTakenCode, ErrorType.Conflict));
+        rig.Jobs.Queued.Should().BeEmpty();
+        (rig.Unit.Committed, rig.Unit.RolledBack).Should().Be((0, 1));
     }
 }

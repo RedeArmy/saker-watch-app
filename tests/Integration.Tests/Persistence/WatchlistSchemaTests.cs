@@ -1,7 +1,9 @@
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using SakerWatch.Hosts.Migrator;
 using SakerWatch.Integration.Tests.Infrastructure;
+using SakerWatch.Watchlist.Infrastructure.Persistence;
 
 namespace SakerWatch.Integration.Tests.Persistence;
 
@@ -68,7 +70,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
         int first = await step.RunAsync(CancellationToken.None);
         int second = await step.RunAsync(CancellationToken.None);
 
-        first.Should().Be(3);
+        first.Should().Be(typeof(WatchlistDbContext).Assembly.GetTypes().Count(type => type is { IsAbstract: false } && type.IsSubclassOf(typeof(Migration))), "every migration of the assembly is applied once");
         second.Should().Be(0);
     }
 
@@ -429,5 +431,65 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
         (await api.AsUserScalarAsync<long>(ana, "SELECT count(*) FROM watchlist.watchlist_items")).Should().Be(1);
         (await api.AsUserScalarAsync<long>(ben, "SELECT count(*) FROM watchlist.portfolios")).Should().Be(0);
         (await api.AsUserScalarAsync<long>(ana, "SELECT count(*) FROM watchlist.portfolio_items")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AtTheWatchlistCeiling_AddingAStockAlreadyThere_IsAQuietNoOp_AndANewOneIsStillRefused()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        var held = Guid.CreateVersion7();
+        await db.Api.AsUserExecuteAsync(user, _insertItem, Item(Guid.CreateVersion7(), user, held));
+        await db.Api.AsUserExecuteAsync(
+            user,
+            "INSERT INTO watchlist.watchlist_items (id, user_id, stock_id, created_at, updated_at) SELECT gen_random_uuid(), @user, gen_random_uuid(), now(), now() FROM generate_series(1, 499)",
+            ("user", user));
+        const string onConflict = _insertItem + " ON CONFLICT (user_id, stock_id) DO NOTHING";
+
+        int again = await db.Api.AsUserExecuteAsync(user, onConflict, Item(Guid.CreateVersion7(), user, held));
+
+        again.Should().Be(0, "the stock is already there, so the statement does nothing and the ceiling is not the answer");
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, onConflict, Item(Guid.CreateVersion7(), user)), "23514", "ck_watchlist_items_max_per_user");
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.watchlist_items WHERE user_id = @user", ("user", user))).Should().Be(500);
+    }
+
+    [Fact]
+    public async Task AtThePortfolioCeiling_CreatingOneWithAnExistingName_IsAQuietNoOp_AndANewNameIsStillRefused()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        for (int i = 0; i < 20; i++)
+        {
+            await AddPortfolioAsync(db, user, $"P{i}");
+        }
+
+        const string onConflict = _insertPortfolio + " ON CONFLICT (user_id, lower(name)) DO NOTHING";
+        int sameName = await db.Api.AsUserExecuteAsync(user, onConflict, Portfolio(Guid.CreateVersion7(), user, "p3"));
+
+        sameName.Should().Be(0);
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, onConflict, Portfolio(Guid.CreateVersion7(), user, "A new one")), "23514", "ck_portfolios_max_per_user");
+    }
+
+    [Fact]
+    public async Task AtThePortfolioMembershipCeiling_AddingAMemberAlreadyThere_IsAQuietNoOp_AndANewMemberIsStillRefused()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        Guid portfolio = await AddPortfolioAsync(db, user);
+        await db.Api.AsUserExecuteAsync(
+            user,
+            "INSERT INTO watchlist.watchlist_items (id, user_id, stock_id, created_at, updated_at) SELECT gen_random_uuid(), @user, gen_random_uuid(), now(), now() FROM generate_series(1, 101)",
+            ("user", user));
+        Guid[] items = [.. await ItemsOfAsync(db, user)];
+        foreach (Guid item in items.Take(100))
+        {
+            await db.Api.AsUserExecuteAsync(user, _insertMember, ("portfolio", portfolio), ("item", item), ("user", user));
+        }
+
+        const string onConflict = _insertMember + " ON CONFLICT (portfolio_id, watchlist_item_id) DO NOTHING";
+        int again = await db.Api.AsUserExecuteAsync(user, onConflict, ("portfolio", portfolio), ("item", items[0]), ("user", user));
+
+        again.Should().Be(0);
+        await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, onConflict, ("portfolio", portfolio), ("item", items[100]), ("user", user)), "23514", "ck_portfolio_items_max_per_portfolio");
     }
 }

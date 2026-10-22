@@ -65,9 +65,35 @@ public interface ISearchCache
 /// <param name="DelistedAt">When the instrument stopped trading, or <see langword="null"/> while it trades.</param>
 public sealed record CatalogListing(StockId Id, Mic Market, Ticker Ticker, string Name, CurrencyCode Currency, AssetType AssetType, bool IsActive, DateTimeOffset? DelistedAt = null);
 
+/// <summary>The provider's listing is already the alias of another stock of the catalog, so it cannot be registered as a new one (ADR-0045).</summary>
+public sealed class ProviderListingTakenException : Exception
+{
+    /// <summary>Creates the exception.</summary>
+    public ProviderListingTakenException()
+        : base("The provider listing is already the alias of another stock.")
+    {
+    }
+
+    /// <summary>Creates the exception with a message.</summary>
+    /// <param name="message">What happened.</param>
+    public ProviderListingTakenException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Creates the exception with a message and its cause.</summary>
+    /// <param name="message">What happened.</param>
+    /// <param name="innerException">The database error.</param>
+    public ProviderListingTakenException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
 /// <summary>
 /// Puts a validated stock in the shared catalog. The implementation is idempotent on <c>(market, ticker)</c> and never changes a stock that
-/// already exists: it returns the id of whichever row holds the key.
+/// already exists: it returns the id of whichever row holds the key. When the provider's listing is already the alias of another stock it throws
+/// <see cref="ProviderListingTakenException"/> and nothing is registered.
 /// </summary>
 public interface IStockRegistry
 {

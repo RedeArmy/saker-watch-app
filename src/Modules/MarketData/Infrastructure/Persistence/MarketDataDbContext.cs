@@ -51,6 +51,7 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
                 t.HasCheckConstraint("ck_stocks_name", "char_length(name) BETWEEN 1 AND 200");
                 t.HasCheckConstraint("ck_stocks_asset_type", "asset_type IN ('equity', 'etf', 'other')");
                 t.HasCheckConstraint("ck_stocks_delisted", "delisted_at IS NULL OR NOT is_active");
+                t.HasCheckConstraint("ck_stocks_time_zone", "time_zone ~ '^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$'");
             });
             e.HasKey(x => x.Id);
             e.Property(x => x.MarketMic).HasMaxLength(4).IsFixedLength();
@@ -74,7 +75,12 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
 
         modelBuilder.Entity<SymbolAliasRow>(e =>
         {
-            e.ToTable("symbol_aliases");
+            e.ToTable("symbol_aliases", t =>
+            {
+                t.HasCheckConstraint("ck_symbol_aliases_provider", "provider ~ '^[a-z0-9_]{1,32}$'");
+                t.HasCheckConstraint("ck_symbol_aliases_provider_mic", "provider_mic ~ '^[A-Za-z0-9]{1,16}$'");
+                t.HasCheckConstraint("ck_symbol_aliases_provider_symbol", "provider_symbol ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,31}$'");
+            });
             e.HasKey(x => new { x.Provider, x.ProviderMic, x.ProviderSymbol });
             e.Property(x => x.Provider).HasMaxLength(32);
             e.Property(x => x.ProviderMic).HasMaxLength(16);
@@ -148,7 +154,8 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
             e.Property(x => x.Base).HasMaxLength(3).IsFixedLength();
             e.Property(x => x.Quote).HasMaxLength(3).IsFixedLength();
             e.Property(x => x.Source).HasMaxLength(32);
-            e.Property(x => x.Rate).HasPrecision(20, 10);
+            // As wide as the domain allows a rate to be (1e-12 to 1e12), so no accepted rate can overflow the column.
+            e.Property(x => x.Rate).HasPrecision(30, 12);
         });
 
         modelBuilder.Entity<FxRateRejectedRow>(e =>

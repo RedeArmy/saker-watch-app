@@ -45,6 +45,9 @@ public sealed partial class StockDirectory(
     /// <summary>Code of the failure when the shared search budget is spent.</summary>
     public const string SearchBusyCode = "marketdata.search.busy";
 
+    /// <summary>Code of the failure when the provider's listing is already the alias of another stock of the catalog.</summary>
+    public const string ProviderListingTakenCode = "marketdata.stock.provider_listing_taken";
+
     /// <summary>Code of the failure when the user has put the most new stocks in the catalog that one day allows.</summary>
     public const string RegistrationLimitCode = "marketdata.stock.registration_limit";
 
@@ -167,6 +170,7 @@ public sealed partial class StockDirectory(
     {
         SearchBusyCode => "busy",
         RegistrationLimitCode => "limit",
+        ProviderListingTakenCode => "conflict",
         ProviderUnavailableCode => "unavailable",
         StockNotFoundCode => "not_found",
         MarketNotAvailableCode => "market_not_available",
@@ -269,7 +273,16 @@ public sealed partial class StockDirectory(
             return limited;
         }
 
-        StockId id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
+        StockId id;
+        try
+        {
+            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
+        }
+        catch (ProviderListingTakenException)
+        {
+            return Error.Conflict(ProviderListingTakenCode, $"{ticker} on {market} is already known to the provider as another stock of the catalog. Ask the owner to look at it.");
+        }
+
         return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType));
     }
 }

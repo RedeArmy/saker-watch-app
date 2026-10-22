@@ -148,4 +148,21 @@ public sealed class FxRefreshIntegrationTests(TimescalePostgresFixture postgres)
             return rate;
         }
     }
+
+    [Fact]
+    public async Task EveryRateTheDomainAccepts_FitsTheColumn_FromTheSmallestToTheLargest()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        decimal[] rates = [0.000000000001m, 0.00000000005m, 7.64572m, 9_999_999_999.9999999999m, 1_000_000_000_000m];
+        FxRate[] domain = [.. rates.Select((rate, i) => FxRate.Create(_usd, CurrencyCode.Parse("JPY"), new DateOnly(2026, 10, 1 + i), rate, "banguat").Value)];
+
+        await using var session = new DbSession(Options.Create(new PostgresOptions { Postgres = db.Worker }), new AnonymousCurrentUser());
+        await session.BeginAsync(CancellationToken.None);
+        await new FxRateStore(session).UpsertAsync(domain, new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), CancellationToken.None);
+        await session.CommitAsync(CancellationToken.None);
+
+        (await db.Admin.ScalarAsync<decimal>("SELECT min(rate) FROM marketdata.fx_rates")).Should().Be(0.000000000001m);
+        (await db.Admin.ScalarAsync<decimal>("SELECT max(rate) FROM marketdata.fx_rates")).Should().Be(1_000_000_000_000m);
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.fx_rates")).Should().Be(rates.Length, "a rate the domain lets in must never fail the whole batch");
+    }
 }

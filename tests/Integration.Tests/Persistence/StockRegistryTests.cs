@@ -84,7 +84,7 @@ public sealed class StockRegistryTests(TimescalePostgresFixture postgres) : ICla
         await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(id));
         await db.Admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET status = 'ok', last_success_at = now()");
 
-        await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(Guid.CreateVersion7(), provider: "iTick", pmic: "US", psymbol: "AAPL.US"));
+        await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(Guid.CreateVersion7(), provider: "itick", pmic: "US", psymbol: "AAPL.US"));
 
         (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.symbol_aliases WHERE stock_id = @id", ("id", id))).Should().Be(2);
         (await db.Admin.ScalarAsync<string>("SELECT status FROM marketdata.ingestion_state")).Should().Be("ok", "registering again never resets a listing's ingestion state");
@@ -161,5 +161,97 @@ public sealed class StockRegistryTests(TimescalePostgresFixture postgres) : ICla
         CatalogListing? other = await InSessionAsync(db.Api, session => new StockCatalog(session).FindByKeyAsync(Mic.Parse("XNAS"), Ticker.Parse("ADR1"), CancellationToken.None));
 
         (etf!.AssetType, other!.AssetType).Should().Be((AssetType.Etf, AssetType.Other));
+    }
+
+    [Fact]
+    public async Task WhenTheProvidersListingIsAlreadyTheAliasOfAnotherStock_NothingIsRegistered_AndTheViolationNamesTheKey()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var first = Guid.CreateVersion7();
+        await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(first));
+
+        Func<Task> act = () => db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(ticker: "AAPL2", name: "Another", pmic: "XNGS", psymbol: "AAPL"));
+
+        PostgresException error = (await act.Should().ThrowAsync<PostgresException>()).Which;
+        (error.SqlState, error.ConstraintName).Should().Be(("23505", "pk_symbol_aliases"));
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1, "the registration that failed left no stock without an alias");
+        (await db.Admin.ScalarAsync<Guid>("SELECT stock_id FROM marketdata.symbol_aliases")).Should().Be(first);
+    }
+
+    [Fact]
+    public async Task TheSameStockRegisteringItsOwnAliasAgain_IsStillIdempotent()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var first = Guid.CreateVersion7();
+        await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(first));
+
+        Guid? again = await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args());
+
+        again.Should().Be(first);
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.symbol_aliases")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TwoParallelRegistrationsOfTheSameAliasForDifferentStocks_LeaveExactlyOneStock()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        Task<Guid>[] calls =
+        [
+            db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(ticker: "AAA", psymbol: "SAME")),
+            db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, Args(ticker: "BBB", psymbol: "SAME")),
+        ];
+        int failed = 0;
+        foreach (Task<Guid> call in calls)
+        {
+            try
+            {
+                await call;
+            }
+            catch (PostgresException error) when (error.SqlState == "23505")
+            {
+                failed++;
+            }
+        }
+
+        failed.Should().Be(1);
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(1);
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.symbol_aliases")).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("provider", "Twelve Data")]
+    [InlineData("provider", "twelve-data")]
+    [InlineData("pmic", "XN GS")]
+    [InlineData("pmic", "<script>")]
+    [InlineData("psymbol", "AAPL; DROP")]
+    [InlineData("psymbol", "-AAPL")]
+    [InlineData("psymbol", "A\nB")]
+    [InlineData("tz", "Not A Zone")]
+    [InlineData("tz", "../etc/passwd")]
+    [InlineData("tz", "a/b/c/d")]
+    public async Task HostileTextForTheAliasOrTheTimeZone_IsRefusedByTheDatabase_EvenWhenTheApiRoleCallsTheFunctionDirectly(string field, string value)
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        (string Name, object? Value)[] args = [.. Args().Select(arg => arg.Name == field ? (arg.Name, (object?)value) : arg)];
+
+        await ExpectAsync(() => db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, args), "23514");
+        (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("BRK.B", "XNYS", "America/New_York")]
+    [InlineData("BF-B", "XNYS", "America/New_York")]
+    [InlineData("0700", "XHKG", "Asia/Hong_Kong")]
+    [InlineData("SHOP", "XTSE", "America/Argentina/Buenos_Aires")]
+    [InlineData("A/B", "NEOE", "UTC")]
+    public async Task WhatProvidersReallySend_StillFitsTheChecks(string symbol, string mic, string zone)
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        (string Name, object? Value)[] args = [.. Args(ticker: "X1", psymbol: symbol, pmic: mic).Select(arg => arg.Name == "tz" ? (arg.Name, (object?)zone) : arg)];
+
+        Guid? id = await db.Api.AsUserScalarAsync<Guid>(Guid.CreateVersion7(), _call, args);
+
+        id.Should().NotBeNull();
     }
 }

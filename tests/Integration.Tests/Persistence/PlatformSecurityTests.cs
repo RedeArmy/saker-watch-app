@@ -358,10 +358,10 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE c.relkind = 'r' AND n.nspname IN ('platform', 'identity', 'marketdata', 'watchlist') AND NOT c.relrowsecurity
               AND has_table_privilege('api_role', c.oid, 'SELECT, UPDATE, DELETE')
-              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'user_id' AND NOT a.attisdropped)
+              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname IN ('user_id', 'owner_id', 'account_id') AND NOT a.attisdropped)
             """);
 
-        without.Should().BeNull("a table the API can read or change and that holds a user_id is user-owned and needs a policy (the rules of data and migrations); queue and outbox rows carry the id as a label, and the API can only insert into the outbox");
+        without.Should().BeNull("a table the API can read or change and that holds a user_id (or owner_id, or account_id) is user-owned and needs a policy (the rules of data and migrations); queue and outbox rows carry the id as a label, and the API can only insert into the outbox");
     }
 
     [Fact]
