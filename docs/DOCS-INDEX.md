@@ -27,6 +27,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0012-ci-cd-and-deployment.md | ADR 0012 | Eder | approved | 0 | 2026-10-12 |
 | docs/runbooks/provider-outage.md | Runbook provider-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/listing-lifecycle.md | Runbook listing-lifecycle | Eder | draft | 2 | 2026-10-20 |
+| docs/runbooks/cache.md | Runbook cache of the daily numbers | Eder | draft | 2 | 2026-10-21 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | draft | 5 | 2026-10-15 |
 | docs/runbooks/restore.md | Runbook restore | Eder | stub | 5 | 2026-10-12 |
@@ -98,6 +99,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0041-cache-of-the-daily-numbers.md | ADR 0041 | Eder | draft | 2 | 2026-10-21 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | draft | 2 | 2026-10-21 |
+| docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | draft | 1 | 2026-10-12 |

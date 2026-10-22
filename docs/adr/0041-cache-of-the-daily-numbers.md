@@ -32,5 +32,5 @@ What must not happen: a user sees a number that the database would not give, or 
 - Prices edited by hand in `price_daily` do not change the stamp. The runbook says what to do (delete the `v1:perf:*` keys, or bump `RedisKeys.Version`).
 - A change to the exchange calendars (they decide the previous trading day of the one-day window) is not in the key; it takes effect when the listing next loads or its keys expire. Calendars change with a release, so the release note must say so.
 - Memory: about 1 KB per listing and day, a few hundred kilobytes for 500 listings; keys of the previous days expire on their own.
-- Redis holds derived, public market data: no user id, no portfolio, no watchlist content. A user's list is assembled from it on each request, so isolation is as before (ADR-0031). No new trust boundary.
+- The runbook `docs/runbooks/cache.md` says how to read, empty and turn off the cache. Redis holds derived, public market data: no user id, no portfolio, no watchlist content. A user's list is assembled from it on each request, so isolation is as before (ADR-0031). No new trust boundary.
 - The numbers of the cache and of the database are the same by construction and by a test over a real database and a real Redis (a second read computes nothing, a load in between does).

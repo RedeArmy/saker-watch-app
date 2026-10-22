@@ -100,7 +100,7 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
   api_pid=$!
   local ready=0
   for _ in $(seq 1 60); do
-    [[ "$(curl -s -o /dev/null -w '%{http_code}' "$api_url/health/ready")" == "200" ]] && { ready=1; break; }
+    curl -s -f -o /dev/null "$api_url/health/ready" && { ready=1; break; }
     sleep 1
   done
   [[ "$ready" -eq 1 ]] || { log "the API did not become ready (see api-$label.log)"; stop_api; return 1; }

@@ -26,4 +26,4 @@ The Phase 3 screens need two things the API did not give: a stock detail with a 
 ## Consequences
 - The Phase 3 detail chart and the table's sparklines need no further backend work.
 - A chart of a stock that is delisted or whose data stopped shows what is stored, with the stale status; how a delisted stock is marked is the subject of a later part.
-- Weekly and monthly points are computed on read; if that ever costs too much, the daily numbers cache of milestone 2.8 is where it is solved.
+- Weekly and monthly points are computed on read; if that ever costs too much, the daily numbers cache of milestone 2.8 is where it is solved. ADR-0041 caches the windows, not the series; the load baseline (docs/reports/phase-2-load-baseline.md) has the sparklines of 500 stocks at 242 ms p95, inside the 300 ms budget, so nothing more was done.
