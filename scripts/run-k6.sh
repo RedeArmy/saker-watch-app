@@ -152,6 +152,24 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
 run_mode cache-on true a "${K6_ENFORCE:-0}"
 run_mode cache-off false b 0
 
+# The settings the numbers were taken with go into the results themselves, so a figure never travels without the budget it was judged against.
+budget="${K6_P95_BUDGET_MS:-300}"
+{
+  echo "## Run settings"
+  echo
+  echo "- date (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ) · commit: $(git rev-parse --short HEAD 2>/dev/null || echo unknown) · machine: $(nproc) CPUs"
+  echo "- per scenario: ${K6_PHASE_SECONDS:-30} s, of which the first ${K6_WARMUP_SECONDS:-5} s are warm-up and left out"
+  if [[ "${K6_ENFORCE:-0}" == "1" ]]; then
+    echo "- budgets enforced (cache on only): p95 < ${budget} ms and under 1 % failures"
+  else
+    echo "- budgets not enforced (K6_ENFORCE is not 1): reporting only"
+  fi
+  if [[ "$budget" != "300" ]]; then
+    echo "- **the budget was overridden with K6_P95_BUDGET_MS=${budget}; ADR-0033 says 300 ms.** Write the new value and why (the machine) wherever these results are kept or quoted."
+  fi
+  echo
+} | tee -a "$out/results.md"
+
 log "results"
 if [[ -s "$out/summary-cache-on.json" && -s "$out/summary-cache-off.json" ]]; then
   (cd "$out" && K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" K6_WARMUP_SECONDS="${K6_WARMUP_SECONDS:-5}" python3 -I "$repo/scripts/load/summarize.py" "performance cache on=summary-cache-on.json" "performance cache off=summary-cache-off.json") | tee -a "$out/results.md"
