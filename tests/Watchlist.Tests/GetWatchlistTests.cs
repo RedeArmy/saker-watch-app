@@ -57,7 +57,7 @@ public sealed class GetWatchlistTests
         public Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PortfolioMember>>([.. held![id.Value].Select((stock, position) => new PortfolioMember(stock, position, _now))]);
 
-        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> RemoveMemberAsync(Guid userId, PortfolioId id, Guid stockId, CancellationToken cancellationToken) => throw new NotSupportedException();
 

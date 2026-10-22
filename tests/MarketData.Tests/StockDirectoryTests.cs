@@ -77,14 +77,27 @@ public sealed class StockDirectoryTests
         }
     }
 
-    private sealed class Budget(bool grant = true) : IProviderCallBudget
+    private sealed class Budget(bool grant = true, bool unreachable = false) : IProviderCallBudget
     {
         public List<(string Provider, BudgetLimits Limits, int Credits)> Spent { get; } = [];
+
+        public List<(string Provider, int Credits)> Released { get; } = [];
 
         public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken)
         {
             Spent.Add((provider, limits, credits));
+            if (unreachable)
+            {
+                return Task.FromResult(BudgetDecision.AllowedUncounted);
+            }
+
             return Task.FromResult(grant ? BudgetDecision.Allowed : new BudgetDecision(false, TimeSpan.FromSeconds(41.2)));
+        }
+
+        public Task ReleaseAsync(string provider, int credits, CancellationToken cancellationToken)
+        {
+            Released.Add((provider, credits));
+            return Task.CompletedTask;
         }
     }
 
@@ -165,7 +178,9 @@ public sealed class StockDirectoryTests
         StockLookupOptions? lookup = null,
         string[]? markets = null,
         bool quotaLeft = true,
-        Guid? user = null)
+        Guid? user = null,
+        bool quotaUnreachable = false,
+        RegistrationFallback? fallback = null)
     {
         var provider = new Provider(answer);
         var catalog = new Catalog();
@@ -178,13 +193,13 @@ public sealed class StockDirectoryTests
             [provider],
             Options.Create(new MarketDataProvidersOptions { Markets = (markets ?? ["XNAS", "XNYS"]).ToDictionary(m => m, _ => "fake") }));
         var search = new ProviderSearch(budget, cache, Options.Create(lookup ?? new StockLookupOptions()), NullLogger<ProviderSearch>.Instance);
-        var quota = new Budget(quotaLeft);
+        var quota = new Budget(quotaLeft, quotaUnreachable);
         var unit = new Unit();
         var registration = new StockRegistration(
             registry,
             jobs,
             Options.Create(new IngestionOptions()),
-            new RegistrationQuota(quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions())),
+            new RegistrationQuota(quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions()), fallback ?? new RegistrationFallback(), clock),
             unit,
             NullLogger<StockRegistration>.Instance);
         var directory = new StockDirectory(catalog, search, registration, router, ExchangeCalendars.Default(), new TimeProviderIdGenerator(clock), clock);
@@ -539,6 +554,78 @@ public sealed class StockDirectoryTests
     }
 
     [Fact]
+    public async Task Ensure_WhenAnotherRequestRegisteredTheSameStockFirst_GivesTheRegistrationBack()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), existingId: Guid.CreateVersion7());
+
+        await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        rig.Quota.Spent.Should().ContainSingle();
+        rig.Quota.Released.Should().Equal((RegistrationQuota.BudgetKey(_user), 1));
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheProvidersListingBelongsToAnotherStock_GivesTheRegistrationBack()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+        rig.Registry.ListingTaken = true;
+
+        Error error = (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+
+        error.Code.Should().Be(StockDirectory.ProviderListingTakenCode);
+        rig.Quota.Released.Should().Equal((RegistrationQuota.BudgetKey(_user), 1));
+    }
+
+    [Fact]
+    public async Task Ensure_ANewStock_KeepsTheRegistration()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+
+        await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        rig.Quota.Released.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Reserve_WhileTheSharedBudgetIsDown_CountsInTheProcess_AndHoldsTheCap()
+    {
+        var lookup = new StockLookupOptions { RegistrationsPerUserPerDay = 2 };
+        var fallback = new RegistrationFallback();
+        Rig first = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: lookup, quotaUnreachable: true, fallback: fallback);
+        Rig second = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: lookup, quotaUnreachable: true, fallback: fallback);
+        Rig third = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: lookup, quotaUnreachable: true, fallback: fallback);
+
+        Error? one = (await first.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error;
+        Error? two = (await second.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error;
+        Error three = (await third.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+
+        (one, two).Should().Be(((Error?)null, (Error?)null));
+        (three.Code, three.Type).Should().Be((StockDirectory.RegistrationLimitCode, ErrorType.TooManyRequests), "the third registration of the day is over the cap although Redis counted none");
+        third.Registry.Registered.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Fallback_CountsPerUserAndDay_ReleasesOne_AndForgetsAtMidnight()
+    {
+        var fallback = new RegistrationFallback();
+        var ana = Guid.CreateVersion7();
+        var luis = Guid.CreateVersion7();
+        var noon = new DateTimeOffset(2026, 10, 22, 12, 0, 0, TimeSpan.Zero);
+
+        fallback.TryTake(ana, 1, noon).Granted.Should().BeTrue();
+        BudgetDecision over = fallback.TryTake(ana, 1, noon);
+        fallback.TryTake(luis, 1, noon).Granted.Should().BeTrue("another user has their own count");
+        fallback.Release(ana, noon);
+        bool afterRelease = fallback.TryTake(ana, 1, noon).Granted;
+        BudgetDecision nextDay = fallback.TryTake(ana, 1, noon.AddDays(1));
+
+        over.Granted.Should().BeFalse();
+        over.RetryAfter.Should().Be(TimeSpan.FromHours(12));
+        afterRelease.Should().BeTrue();
+        nextDay.Granted.Should().BeTrue("the count of a day is not the count of the next");
+    }
+
+    [Fact]
     public async Task Search_WhenTheProviderIsRateLimitedForAnHour_TellsTheUserAtMostFiveMinutes()
     {
         Rig rig = Build(_ => ProviderErrors.RateLimited("fake", TimeSpan.FromHours(1)));
@@ -553,7 +640,7 @@ public sealed class StockDirectoryTests
     public async Task Reserve_ForACallWithNoUser_IsNotLimited_AndSpendsNothing()
     {
         var quota = new Budget(grant: false);
-        var registration = new RegistrationQuota(quota, new User(null), Options.Create(new StockLookupOptions()));
+        var registration = new RegistrationQuota(quota, new User(null), Options.Create(new StockLookupOptions()), new RegistrationFallback(), TimeProvider.System);
 
         (await registration.ReserveAsync(CancellationToken.None)).Should().BeNull();
         quota.Spent.Should().BeEmpty();

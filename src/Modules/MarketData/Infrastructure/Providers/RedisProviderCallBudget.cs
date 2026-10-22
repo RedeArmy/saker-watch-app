@@ -55,7 +55,7 @@ public sealed partial class RedisProviderCallBudget(IConnectionMultiplexer redis
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
             LogBudgetUnavailable(provider, ex.GetType().Name);
-            return BudgetDecision.Allowed;
+            return BudgetDecision.AllowedUncounted;
         }
     }
 

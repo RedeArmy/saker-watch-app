@@ -32,5 +32,8 @@ The day counters are named by UTC day, so yesterday's disappear on their own.
 - A user needs more than 20 new stocks in a day: raise `MarketData__Lookup__RegistrationsPerUserPerDay` for everybody, or wait for the next UTC day. There is no per-user override.
 - A paid plan has no daily cap: set `TwelveData__CreditsPerDay` large and the lanes stop binding in practice; keep the registration cap.
 
+## The registration cap and Redis
+A registration that creates no stock (the stock was registered by someone else a moment earlier, or the provider's listing belongs to another stock and the answer is `409`) gives its slot back, so only a new stock in the catalog counts against the 20. While Redis cannot be reached the cap is counted in each API process (`RegistrationFallback`, per user and UTC day), so it holds per replica instead of not at all; the plan's credits and the searches keep going through uncounted and the provider enforces its own limit (ADR-0047).
+
 ## A user reports "you have added the most new stocks allowed for today"
 Expected: the answer is `429` with `Retry-After` until 00:00 UTC. Stocks that are already in the catalog (any other user's) still go in. If the stock is wanted today, the owner can raise the cap and restart; otherwise tomorrow.

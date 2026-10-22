@@ -11,6 +11,14 @@ namespace SakerWatch.MarketData.Domain.Performance;
 /// </summary>
 public static class PerformanceCalculator
 {
+    /// <summary>
+    /// The version of the calculation: part of every key of the performance cache (ADR-0041, ADR-0047), so a report computed by an older rule is a
+    /// miss and never served as the current one. Raise it whenever a change makes the same prices give another report (the target dates, the gap
+    /// rule, how a change is computed, the calendars' idea of the previous trading day). <c>PerformanceCalculatorVersionTests</c> pins the behavior
+    /// this number stands for and fails, with that instruction, when the behavior changes without it.
+    /// </summary>
+    public const int Version = 1;
+
     /// <summary>Distance, in days, a baseline may lie before its target for every window but the first (the longest closures around holidays).</summary>
     public const int DefaultMaxGapDays = 10;
 

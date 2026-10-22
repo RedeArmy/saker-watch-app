@@ -4,6 +4,7 @@ using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.Watchlist.Application;
+using SakerWatch.Watchlist.Domain;
 using SakerWatch.Watchlist.Domain.Portfolios;
 using SakerWatch.Watchlist.Infrastructure.Persistence;
 
@@ -55,7 +56,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
     }
 
     private static Task<MemberAdd> PutAsync(MigratedDatabase db, Guid user, Portfolio portfolio, Guid stock) =>
-        AsAsync(db, user, repository => repository.AddMemberAsync(user, portfolio.Id, stock, _now, CancellationToken.None));
+        AsAsync(db, user, repository => repository.AddMemberAsync(user, portfolio.Id, stock, WatchlistLimits.Defaults.MaxItemsPerPortfolio, _now, CancellationToken.None));
 
     private static Task<long> CountAsync(MigratedDatabase db, string table, string where = "true") =>
         db.Admin.ScalarAsync<long>($"SELECT count(*) FROM watchlist.{table} WHERE {where}");
@@ -182,7 +183,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         MemberAdd notFollowed = await PutAsync(db, alice, mine, Guid.CreateVersion7());
         MemberAdd someoneElses = await PutAsync(db, alice, mine, bobs[0]);
         MemberAdd intoTheirs = await PutAsync(db, alice, theirs, followed[0]);
-        MemberAdd intoMissing = await AsAsync(db, alice, r => r.AddMemberAsync(alice, PortfolioId.Create(Guid.CreateVersion7()), followed[0], _now, CancellationToken.None));
+        MemberAdd intoMissing = await AsAsync(db, alice, r => r.AddMemberAsync(alice, PortfolioId.Create(Guid.CreateVersion7()), followed[0], WatchlistLimits.Defaults.MaxItemsPerPortfolio, _now, CancellationToken.None));
 
         added.Should().AllBeEquivalentTo(MemberAdd.Added);
         (again, notFollowed, someoneElses, intoTheirs, intoMissing).Should().Be(
@@ -316,7 +317,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         await using DbSession adding = Session(db, user);
         await adding.BeginAsync(CancellationToken.None);
         var addingRepository = new PortfolioRepository(adding);
-        (await addingRepository.AddMemberAsync(user, other.Id, a, _now, CancellationToken.None)).Should().Be(MemberAdd.Added);
+        (await addingRepository.AddMemberAsync(user, other.Id, a, WatchlistLimits.Defaults.MaxItemsPerPortfolio, _now, CancellationToken.None)).Should().Be(MemberAdd.Added);
 
         // The delete starts while the membership is uncommitted: it must wait for it, then see it.
         Task<bool> deleting = AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, CancellationToken.None));
@@ -412,5 +413,39 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         {
             await Task.Delay(10, bound.Token);
         }
+    }
+
+    [Fact]
+    public async Task AddMember_HoldsTheConfiguredLimit_BelowTheCeiling_AndLetsAMemberThrough()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        Portfolio portfolio = await AddAsync(db, user, "Corto");
+        Guid[] stocks = await FollowAsync(db, user, 3);
+        Task<MemberAdd> Add(Guid stock) => AsAsync(db, user, r => r.AddMemberAsync(user, portfolio.Id, stock, maxMembers: 2, _now, CancellationToken.None));
+
+        MemberAdd first = await Add(stocks[0]);
+        MemberAdd second = await Add(stocks[1]);
+        MemberAdd third = await Add(stocks[2]);
+        MemberAdd again = await Add(stocks[0]);
+
+        (first, second, third, again).Should().Be((MemberAdd.Added, MemberAdd.Added, MemberAdd.LimitReached, MemberAdd.AlreadyThere), "a member of a full portfolio is not a new member");
+        (await CountAsync(db, "portfolio_items", $"portfolio_id = '{portfolio.Id.Value}'")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task AddMember_ParallelAddsAtTheLimit_LetOnlyTheLimitIn()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        Portfolio portfolio = await AddAsync(db, user, "Carrera");
+        Guid[] stocks = await FollowAsync(db, user, 6);
+
+        MemberAdd[] results = await Task.WhenAll(stocks.Select(stock =>
+            AsAsync(db, user, r => r.AddMemberAsync(user, portfolio.Id, stock, maxMembers: 3, _now, CancellationToken.None))));
+
+        results.Count(result => result == MemberAdd.Added).Should().Be(3);
+        results.Count(result => result == MemberAdd.LimitReached).Should().Be(3);
+        (await CountAsync(db, "portfolio_items", $"portfolio_id = '{portfolio.Id.Value}'")).Should().Be(3);
     }
 }

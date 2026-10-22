@@ -63,7 +63,8 @@ public sealed class PutWatchlistItemValidator : AbstractValidator<PutWatchlistIt
 /// <summary>
 /// Registers the stock if needed, then adds or updates the item in a unit of work of its own. Registering a stock asks a provider, which can
 /// take as long as the client's timeout, so the pipeline does not hold a connection and a transaction around it (ADR-0044): the stock is
-/// found or registered first, in short units of work of its own, and the item is written in one that opens after.
+/// found or registered first, in short units of work of its own, and the item is written in one that opens after. If that write then fails, the
+/// registered stock stays in the catalog: it is valid and shared, it is bounded by the daily cap of the user and the next user finds it ready (ADR-0047).
 /// </summary>
 public sealed class PutWatchlistItemHandler(
     ICurrentUser currentUser,

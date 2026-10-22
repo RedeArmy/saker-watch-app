@@ -8,10 +8,15 @@ public sealed record BudgetLimits(int PerMinute, int PerDay);
 /// <summary>The answer to a request for credits.</summary>
 /// <param name="Granted">True when the credits were reserved and the call may go ahead.</param>
 /// <param name="RetryAfter">When denied, how long until the exhausted window ends.</param>
-public sealed record BudgetDecision(bool Granted, TimeSpan RetryAfter)
+/// <param name="Degraded">True when the call was let through only because the shared budget could not be reached: nothing was counted, so a caller that
+/// must hold a cap anyway (a per-user limit) counts for itself.</param>
+public sealed record BudgetDecision(bool Granted, TimeSpan RetryAfter, bool Degraded = false)
 {
     /// <summary>The credits were reserved.</summary>
     public static BudgetDecision Allowed { get; } = new(true, TimeSpan.Zero);
+
+    /// <summary>The budget could not be reached, so the call is let through uncounted.</summary>
+    public static BudgetDecision AllowedUncounted { get; } = new(true, TimeSpan.Zero, Degraded: true);
 }
 
 /// <summary>

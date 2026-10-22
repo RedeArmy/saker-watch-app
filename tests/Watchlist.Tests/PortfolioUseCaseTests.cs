@@ -58,6 +58,8 @@ public sealed class PortfolioUseCaseTests
 
         public MemberAdd? ForcedMember { get; set; }
 
+        public int? MaxMembersSeen { get; private set; }
+
         public bool OrderAccepted { get; set; } = true;
 
         public int Updates { get; private set; }
@@ -113,8 +115,9 @@ public sealed class PortfolioUseCaseTests
         public Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PortfolioMember>>(Members.GetValueOrDefault(id) ?? []);
 
-        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken)
+        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken)
         {
+            MaxMembersSeen = maxMembers;
             if (ForcedMember is { } forced)
             {
                 return Task.FromResult(forced);
@@ -297,7 +300,7 @@ public sealed class PortfolioUseCaseTests
         (Repository repo, FakeTimeProvider clock) = World();
         PortfolioView portfolio = await CreateAsync(repo);
         repo.OnWatchlist.Add(_apple.Id);
-        var handler = new PutPortfolioItemHandler(new User(_user), new Directory(_apple, _cola), repo, clock);
+        var handler = new PutPortfolioItemHandler(new User(_user), new Directory(_apple, _cola), repo, Options.Create(new WatchlistOptions()), clock);
 
         Result<PutPortfolioItemResult> first = await handler.Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
         Result<PutPortfolioItemResult> again = await handler.Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
@@ -308,11 +311,24 @@ public sealed class PortfolioUseCaseTests
     }
 
     [Fact]
+    public async Task PutItem_AsksTheRepositoryToHoldTheConfiguredLimit_NotTheCeiling()
+    {
+        (Repository repo, FakeTimeProvider clock) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        repo.OnWatchlist.Add(_apple.Id);
+        var handler = new PutPortfolioItemHandler(new User(_user), new Directory(_apple), repo, Options.Create(new WatchlistOptions { MaxItemsPerPortfolio = 7 }), clock);
+
+        await handler.Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
+
+        repo.MaxMembersSeen.Should().Be(7, "Watchlist:Limits:MaxItemsPerPortfolio is the limit of the portfolio; the 100 of the database is only the ceiling behind it");
+    }
+
+    [Fact]
     public async Task PutItem_OfAStockNotOnTheWatchlist_OrNotInTheCatalog_IsNotFound_WithTheSameAdvice()
     {
         (Repository repo, FakeTimeProvider clock) = World();
         PortfolioView portfolio = await CreateAsync(repo);
-        var handler = new PutPortfolioItemHandler(new User(_user), new Directory(_apple), repo, clock);
+        var handler = new PutPortfolioItemHandler(new User(_user), new Directory(_apple), repo, Options.Create(new WatchlistOptions()), clock);
 
         Result<PutPortfolioItemResult> notFollowed = await handler.Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
         Result<PutPortfolioItemResult> unknown = await handler.Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "ZZZZ"), CancellationToken.None);
@@ -330,11 +346,11 @@ public sealed class PortfolioUseCaseTests
         var invalid = new Directory();
         var stocks = new Directory(_apple);
 
-        Result<PutPortfolioItemResult> missing = await new PutPortfolioItemHandler(new User(_user), stocks, repo, clock).Handle(new PutPortfolioItemCommand(Guid.CreateVersion7(), "XNAS", "AAPL"), CancellationToken.None);
+        Result<PutPortfolioItemResult> missing = await new PutPortfolioItemHandler(new User(_user), stocks, repo, Options.Create(new WatchlistOptions()), clock).Handle(new PutPortfolioItemCommand(Guid.CreateVersion7(), "XNAS", "AAPL"), CancellationToken.None);
         repo.ForcedMember = MemberAdd.LimitReached;
-        Result<PutPortfolioItemResult> full = await new PutPortfolioItemHandler(new User(_user), stocks, repo, clock).Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
+        Result<PutPortfolioItemResult> full = await new PutPortfolioItemHandler(new User(_user), stocks, repo, Options.Create(new WatchlistOptions()), clock).Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
         repo.ForcedMember = MemberAdd.PortfolioNotFound;
-        Result<PutPortfolioItemResult> raced = await new PutPortfolioItemHandler(new User(_user), stocks, repo, clock).Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
+        Result<PutPortfolioItemResult> raced = await new PutPortfolioItemHandler(new User(_user), stocks, repo, Options.Create(new WatchlistOptions()), clock).Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
 
         missing.Error!.Code.Should().Be(PortfolioErrors.NotFound);
         full.Error!.Code.Should().Be(PortfolioErrors.ItemLimitReached);
@@ -348,7 +364,7 @@ public sealed class PortfolioUseCaseTests
         (Repository repo, _) = World();
         PortfolioView portfolio = await CreateAsync(repo);
         repo.OnWatchlist.Add(_apple.Id);
-        await new PutPortfolioItemHandler(new User(_user), new Directory(_apple), repo, new FakeTimeProvider(_now)).Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
+        await new PutPortfolioItemHandler(new User(_user), new Directory(_apple), repo, Options.Create(new WatchlistOptions()), new FakeTimeProvider(_now)).Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
         var handler = new RemovePortfolioItemHandler(new User(_user), new Directory(_apple), repo);
 
         Result first = await handler.Handle(new RemovePortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
@@ -543,7 +559,7 @@ public sealed class PortfolioUseCaseTests
             (await new GetPortfolioHandler(anon, repo, new Market()).Handle(new GetPortfolioQuery(id), CancellationToken.None)).Error,
             (await new PreviewPortfolioDeletionHandler(anon, repo, new Market()).Handle(new PreviewPortfolioDeletionQuery(id), CancellationToken.None)).Error,
             (await new DeletePortfolioHandler(anon, repo).Handle(new DeletePortfolioCommand(id, true), CancellationToken.None)).Error,
-            (await new PutPortfolioItemHandler(anon, new Directory(), repo, clock).Handle(new PutPortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
+            (await new PutPortfolioItemHandler(anon, new Directory(), repo, Options.Create(new WatchlistOptions()), clock).Handle(new PutPortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
             (await new RemovePortfolioItemHandler(anon, new Directory(), repo).Handle(new RemovePortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
             (await new ReorderPortfolioItemsHandler(anon, new Directory(), repo).Handle(new ReorderPortfolioItemsCommand(id, []), CancellationToken.None)).Error,
         ];

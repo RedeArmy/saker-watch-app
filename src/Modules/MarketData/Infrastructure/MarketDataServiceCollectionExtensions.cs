@@ -71,6 +71,7 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddSingleton<ISearchCache, RedisSearchCache>();
         services.TryAddScoped<StockCatalog>();
         services.TryAddScoped<IStockCatalog>(provider => new UnitScopedStockCatalog(provider.GetRequiredService<StockCatalog>(), provider.GetRequiredService<IUnitOfWork>()));
+        services.TryAddSingleton<RegistrationFallback>();
         services.TryAddScoped<RegistrationQuota>();
         services.TryAddScoped<IStockRegistry, StockRegistry>();
         services.TryAddScoped<ProviderSearch>();

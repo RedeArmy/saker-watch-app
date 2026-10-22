@@ -189,7 +189,9 @@ public sealed class ProviderCallBudgetTests : IAsyncLifetime
         await using ConnectionMultiplexer down = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:1,abortConnect=false,connectTimeout=300,syncTimeout=300,asyncTimeout=300");
         var budget = new RedisProviderCallBudget(down, Clock(), NullLogger<RedisProviderCallBudget>.Instance);
 
-        (await budget.TryAcquireAsync("p11", _freePlan, 1, CancellationToken.None)).Granted.Should().BeTrue();
+        BudgetDecision decision = await budget.TryAcquireAsync("p11", _freePlan, 1, CancellationToken.None);
+
+        (decision.Granted, decision.Degraded).Should().Be((true, true), "it is let through, and says that nothing was counted so a caller with a cap of its own can count for itself");
     }
 
     [Fact]

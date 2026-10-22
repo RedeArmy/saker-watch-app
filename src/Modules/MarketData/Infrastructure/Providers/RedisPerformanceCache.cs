@@ -11,7 +11,7 @@ using StackExchange.Redis;
 namespace SakerWatch.MarketData.Infrastructure.Providers;
 
 /// <summary>
-/// <see cref="IPerformanceCache"/> over Redis (ADR-0041): one string per listing under <c>v1:perf:{stock}:{stamp}:{maxGap}</c>. The report is stored as
+/// <see cref="IPerformanceCache"/> over Redis (ADR-0041): one string per listing under <c>v1:perf:{stock}:{stamp}:{maxGap}:c{calculation version}</c> (the version of <see cref="PerformanceCalculator"/>, so a change of the rules is a new key). The report is stored as
 /// text (dates ISO, decimals invariant) and the changes are not stored at all: they are rebuilt from the two closes by the same function the
 /// calculator uses, so the cache cannot hold a number the calculator would not produce. Nothing here is authoritative: a Redis failure, an entry
 /// that cannot be read or a version bump is a miss, never an error for the request.
@@ -83,7 +83,8 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
         "perf",
         key.Stock.Value.ToString("D", CultureInfo.InvariantCulture),
         key.Stamp.UtcTicks.ToString(CultureInfo.InvariantCulture),
-        key.MaxGapDays.ToString(CultureInfo.InvariantCulture));
+        key.MaxGapDays.ToString(CultureInfo.InvariantCulture),
+        "c" + PerformanceCalculator.Version.ToString(CultureInfo.InvariantCulture));
 
     private static string Write(PerformanceReport report) => JsonSerializer.Serialize(new Stored(
         _format,

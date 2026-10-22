@@ -280,7 +280,15 @@ public sealed partial class StockDirectory(
         }
         catch (ProviderListingTakenException)
         {
+            await registration.ReleaseAsync(cancellationToken);
             return Error.Conflict(ProviderListingTakenCode, $"{ticker} on {market} is already known to the provider as another stock of the catalog. Ask the owner to look at it.");
+        }
+
+        // Another request registered the same stock first (the registry answers with the id of the row that holds the market and ticker): this one
+        // created nothing, so it did not use one of the user's new registrations.
+        if (id != stock.Value.Id)
+        {
+            await registration.ReleaseAsync(cancellationToken);
         }
 
         return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType));

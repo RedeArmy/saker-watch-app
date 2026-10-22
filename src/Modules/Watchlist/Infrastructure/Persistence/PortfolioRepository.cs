@@ -165,13 +165,28 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     }
 
     /// <inheritdoc />
-    public async Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken)
+    public async Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await LockAsync(_membersLockKey + id.Value, cancellationToken);
         Guid? item = await ItemOfAsync(userId, stockId, cancellationToken);
         if (item is null)
         {
             return MemberAdd.ItemNotOnWatchlist;
+        }
+
+        // The configured limit, under the lock just taken. A stock that is a member already is not a new member, so it passes: the insert below then does nothing.
+        await using (NpgsqlCommand count = Command(
+            "SELECT count(*), coalesce(bool_or(watchlist_item_id = @item), false) FROM watchlist.portfolio_items WHERE portfolio_id = @id AND user_id = @user"))
+        {
+            count.Parameters.AddWithValue("item", item.Value);
+            count.Parameters.AddWithValue("id", id.Value);
+            count.Parameters.AddWithValue("user", userId);
+            await using NpgsqlDataReader reader = await count.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            if (reader.GetInt64(0) >= maxMembers && !reader.GetBoolean(1))
+            {
+                return MemberAdd.LimitReached;
+            }
         }
 
         await using NpgsqlCommand command = Command(

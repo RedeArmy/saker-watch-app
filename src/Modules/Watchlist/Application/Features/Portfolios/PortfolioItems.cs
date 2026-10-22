@@ -1,4 +1,5 @@
 using FluentValidation;
+using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
@@ -51,7 +52,7 @@ public sealed class PutPortfolioItemValidator : AbstractValidator<PutPortfolioIt
 }
 
 /// <summary>Finds the stock in the catalog and puts it in the portfolio, when the caller's watchlist holds it.</summary>
-public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDirectory stocks, IPortfolioRepository portfolios, TimeProvider clock)
+public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDirectory stocks, IPortfolioRepository portfolios, IOptions<WatchlistOptions> options, TimeProvider clock)
     : IRequestHandler<PutPortfolioItemCommand, Result<PutPortfolioItemResult>>
 {
     /// <inheritdoc />
@@ -75,7 +76,7 @@ public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDire
             return stock.Error!.Type == ErrorType.NotFound ? NotOnWatchlist() : stock.Error;
         }
 
-        MemberAdd added = await portfolios.AddMemberAsync(userId, id, stock.Value.Id, clock.GetUtcNow(), cancellationToken);
+        MemberAdd added = await portfolios.AddMemberAsync(userId, id, stock.Value.Id, options.Value.MaxItemsPerPortfolio, clock.GetUtcNow(), cancellationToken);
         switch (added)
         {
             case MemberAdd.ItemNotOnWatchlist:

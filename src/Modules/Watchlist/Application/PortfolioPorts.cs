@@ -83,8 +83,11 @@ public interface IPortfolioRepository
     /// <summary>The stocks of a portfolio by position.</summary>
     Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken);
 
-    /// <summary>Puts the user's watchlist stock in the portfolio, at the end.</summary>
-    Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>
+    /// Puts the user's watchlist stock in the portfolio, at the end, unless the portfolio already holds <paramref name="maxMembers"/> stocks (the configured
+    /// limit, checked under the portfolio's lock so that parallel adds cannot both pass it; the database ceiling is the backstop behind it).
+    /// </summary>
+    Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken);
 
     /// <summary>Takes the stock out of the portfolio (it stays on the watchlist). Returns whether it was there.</summary>
     Task<bool> RemoveMemberAsync(Guid userId, PortfolioId id, Guid stockId, CancellationToken cancellationToken);

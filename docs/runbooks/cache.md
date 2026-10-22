@@ -4,7 +4,7 @@
 - **Owner:** Eder · **Status:** approved · **Target phase:** 2
 
 ## How it works, in two lines
-The windows of a listing are kept in Redis under `v1:perf:{stockId}:{stamp}:{maxGapDays}`, where `stamp` is the UTC ticks of `marketdata.ingestion_state.last_success_at`. A load of data for the listing makes a new stamp and so a new key; the old key is never read again and expires after 26 hours. Nothing is deleted by the application, and a failure of Redis is a miss that reads PostgreSQL.
+The windows of a listing are kept in Redis under `v1:perf:{stockId}:{stamp}:{maxGapDays}:c{version}`, where `version` is `PerformanceCalculator.Version` (raised in the same commit as any change of the rules of the windows, so a report made by the old rules is a miss and not served as the current one: ADR-0047) and `stamp` is the UTC ticks of `marketdata.ingestion_state.last_success_at`. A load of data for the listing makes a new stamp and so a new key; the old key is never read again and expires after 26 hours. Nothing is deleted by the application, and a failure of Redis is a miss that reads PostgreSQL.
 
 ## Signals
 | Signal | Meaning |

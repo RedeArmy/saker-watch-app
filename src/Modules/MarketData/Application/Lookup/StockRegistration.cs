@@ -11,14 +11,21 @@ using SakerWatch.MarketData.Domain.Stocks;
 namespace SakerWatch.MarketData.Application.Lookup;
 
 /// <summary>
-/// The registrations of new stocks one user may make in a UTC day (ADR-0043). The count is the shared Redis budget under a key of the user, so it
-/// holds across replicas, and like the other budgets it lets the call through when Redis is unreachable. A call with no user (a job) is not limited.
+/// The registrations of new stocks one user may make in a UTC day (ADR-0043, ADR-0047). The count is the shared Redis budget under a key of the user,
+/// so it holds across replicas. When Redis cannot be reached the shared budget lets the call through uncounted, and the quota then counts for itself in
+/// <see cref="RegistrationFallback"/>: the cap holds per process instead of not at all, so a user cannot drain the provider's credits while Redis is down.
+/// A slot taken for a registration that did not create a stock (it already existed, or conflicted) is given back. A call with no user (a job) is not limited.
 /// </summary>
 /// <param name="budget">The shared budget.</param>
 /// <param name="currentUser">The caller.</param>
 /// <param name="lookup">The daily cap.</param>
-public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser currentUser, IOptions<StockLookupOptions> lookup)
+/// <param name="fallback">The count kept by this process for when the shared budget is down.</param>
+/// <param name="clock">The clock; the day is the UTC one.</param>
+public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser currentUser, IOptions<StockLookupOptions> lookup, RegistrationFallback fallback, TimeProvider clock)
 {
+    private bool _tookFromFallback;
+    private bool _holdsSlot;
+
     /// <summary>Takes one of the caller's registrations of the day, or says how long until they come back.</summary>
     public async Task<Error?> ReserveAsync(CancellationToken cancellationToken)
     {
@@ -29,6 +36,13 @@ public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser c
 
         int cap = lookup.Value.RegistrationsPerUserPerDay;
         BudgetDecision decision = await budget.TryAcquireAsync(BudgetKey(user), new BudgetLimits(cap, cap), 1, cancellationToken);
+        if (decision.Granted && decision.Degraded)
+        {
+            decision = fallback.TryTake(user, cap, clock.GetUtcNow());
+            _tookFromFallback = decision.Granted;
+        }
+
+        _holdsSlot = decision.Granted;
         return decision.Granted
             ? null
             : Error.TooManyRequests(
@@ -37,8 +51,77 @@ public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser c
                 (int)Math.Ceiling(decision.RetryAfter.TotalSeconds));
     }
 
+    /// <summary>Gives back the slot taken by <see cref="ReserveAsync"/> when the registration did not create a stock. Nothing happens if none is held.</summary>
+    public async Task ReleaseAsync(CancellationToken cancellationToken)
+    {
+        if (!_holdsSlot || currentUser.UserId is not { } user)
+        {
+            return;
+        }
+
+        _holdsSlot = false;
+        if (_tookFromFallback)
+        {
+            fallback.Release(user, clock.GetUtcNow());
+            _tookFromFallback = false;
+            return;
+        }
+
+        await budget.ReleaseAsync(BudgetKey(user), 1, cancellationToken);
+    }
+
     /// <summary>The budget key of a user's registrations: letters, digits and underscores, as a Redis key segment needs.</summary>
     public static string BudgetKey(Guid user) => "register_" + user.ToString("N");
+}
+
+/// <summary>
+/// The registrations each user made today as this process counts them, used only while the shared budget is unreachable (ADR-0047). The count is per
+/// process, so with several replicas the cap holds per replica; that is the bound while Redis is down, and a day later every count is forgotten.
+/// </summary>
+public sealed class RegistrationFallback
+{
+    private const int _pruneAbove = 10_000;
+
+    private readonly Lock _gate = new();
+    private readonly Dictionary<Guid, (DateOnly Day, int Count)> _counts = [];
+
+    /// <summary>Takes one registration of <paramref name="user"/> for the UTC day of <paramref name="now"/>, or says how long until the day ends.</summary>
+    public BudgetDecision TryTake(Guid user, int cap, DateTimeOffset now)
+    {
+        DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
+        lock (_gate)
+        {
+            if (_counts.Count > _pruneAbove)
+            {
+                foreach (Guid old in _counts.Where(entry => entry.Value.Day != day).Select(entry => entry.Key).ToList())
+                {
+                    _counts.Remove(old);
+                }
+            }
+
+            int used = _counts.TryGetValue(user, out (DateOnly Day, int Count) known) && known.Day == day ? known.Count : 0;
+            if (used >= cap)
+            {
+                return new BudgetDecision(false, now.UtcDateTime.Date.AddDays(1) - now.UtcDateTime);
+            }
+
+            _counts[user] = (day, used + 1);
+            return BudgetDecision.Allowed;
+        }
+    }
+
+    /// <summary>Gives back one registration of <paramref name="user"/> for the UTC day of <paramref name="now"/>.</summary>
+    public void Release(Guid user, DateTimeOffset now)
+    {
+        DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
+        lock (_gate)
+        {
+            if (_counts.TryGetValue(user, out (DateOnly Day, int Count) known) && known.Day == day && known.Count > 0)
+            {
+                _counts[user] = (day, known.Count - 1);
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -56,6 +139,9 @@ public sealed partial class StockRegistration(
 {
     /// <summary>Takes one of the caller's registrations of the day (<see cref="RegistrationQuota"/>).</summary>
     public Task<Error?> ReserveAsync(CancellationToken cancellationToken) => quota.ReserveAsync(cancellationToken);
+
+    /// <summary>Gives back the registration taken by <see cref="ReserveAsync"/> when no stock was created (<see cref="RegistrationQuota.ReleaseAsync"/>).</summary>
+    public Task ReleaseAsync(CancellationToken cancellationToken) => quota.ReleaseAsync(cancellationToken);
 
     /// <summary>Registers <paramref name="stock"/> and queues its history; returns the id of the stock that holds its market and ticker.</summary>
     public async Task<StockId> RegisterAsync(Stock stock, string provider, ProviderListingKey providerKey, DateTimeOffset now, CancellationToken cancellationToken)

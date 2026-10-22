@@ -58,7 +58,7 @@ public sealed class GetSparklinesTests
         public Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PortfolioMember>>([.. members.Select((stock, position) => new PortfolioMember(stock, position, _now))]);
 
-        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> RemoveMemberAsync(Guid userId, PortfolioId id, Guid stockId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
