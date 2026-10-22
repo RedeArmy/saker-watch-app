@@ -98,9 +98,9 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0038-price-history-and-sparklines.md | ADR 0038 | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0039-listing-lifecycle.md | ADR 0039 | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0040-company-profiles-and-filings.md | ADR 0040 | Eder | approved | 2 | 2026-10-21 |
-| docs/adr/0041-cache-of-the-daily-numbers.md | ADR 0041 | Eder | draft | 2 | 2026-10-21 |
-| docs/adr/0042-exchange-rate-guard.md | ADR 0042 | Eder | draft | 2 | 2026-10-22 |
-| docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0041-cache-of-the-daily-numbers.md | ADR 0041 | Eder | approved | 2 | 2026-10-22 |
+| docs/adr/0042-exchange-rate-guard.md | ADR 0042 | Eder | approved | 2 | 2026-10-22 |
+| docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | draft | 2 | 2026-10-21 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |

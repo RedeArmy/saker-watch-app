@@ -1,6 +1,6 @@
 # ADR-0043: Provider credit lanes and a daily cap on new stocks
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 

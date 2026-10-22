@@ -1,6 +1,6 @@
 # ADR-0042: A guard for the exchange rate
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 

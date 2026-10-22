@@ -1,6 +1,6 @@
 # ADR-0041: A cache for the daily numbers
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-21
 - **Deciders:** Eder
 
