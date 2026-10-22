@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Application.Deployment;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
@@ -15,16 +16,23 @@ namespace SakerWatch.MarketData.Application.Lookup;
 /// <summary>
 /// The registrations of new stocks one user may make in a UTC day (ADR-0043, ADR-0047). The count is the shared Redis budget under a key of the user,
 /// so it holds across replicas. When Redis cannot be reached the shared budget lets the call through uncounted, and the quota then counts for itself in
-/// <see cref="RegistrationFallback"/>: each process holds its share of the cap (<see cref="StockLookupOptions.ApiReplicas"/>), so together they cannot pass it
+/// <see cref="RegistrationFallback"/>: each process holds its share of the cap (<see cref="DeploymentOptions.ApiReplicas"/>), so together they cannot pass it
 /// and a user cannot drain the provider's credits while Redis is down.
 /// A slot taken for a registration that did not create a stock (it already existed, or conflicted) is given back. A call with no user (a job) is not limited.
 /// </summary>
 /// <param name="budget">The shared budget.</param>
 /// <param name="currentUser">The caller.</param>
 /// <param name="lookup">The daily cap.</param>
+/// <param name="instances">How many API processes there are.</param>
 /// <param name="fallback">The count kept by this process for when the shared budget is down.</param>
 /// <param name="clock">The clock; the day is the UTC one.</param>
-public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser currentUser, IOptions<StockLookupOptions> lookup, RegistrationFallback fallback, TimeProvider clock)
+public sealed class RegistrationQuota(
+    IProviderCallBudget budget,
+    ICurrentUser currentUser,
+    IOptions<StockLookupOptions> lookup,
+    IApiInstances instances,
+    RegistrationFallback fallback,
+    TimeProvider clock)
 {
     private static readonly Counter<long> _decisions = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_registration_quota_total",
@@ -48,7 +56,7 @@ public sealed class RegistrationQuota(IProviderCallBudget budget, ICurrentUser c
         {
             // Each of the processes holds its share of the cap, so that together they cannot pass it.
             source = "process";
-            decision = fallback.TryTake(user, Math.Max(1, cap / lookup.Value.ApiReplicas), clock.GetUtcNow());
+            decision = fallback.TryTake(user, Math.Max(1, cap / instances.Count), clock.GetUtcNow());
             _tookFromFallback = decision.Granted;
         }
 

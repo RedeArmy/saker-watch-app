@@ -131,6 +131,7 @@ public sealed partial class RefreshStockHandler(
         int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
         await ingestion.RecordSuccessAsync(id, now, cancellationToken);
         _rows.Add(written, new KeyValuePair<string, object?>("operation", "refresh"));
+        await followUps.QueueWarmAsync(listing.Value.Stock.Market, now, cancellationToken);
         Count("completed");
     }
 

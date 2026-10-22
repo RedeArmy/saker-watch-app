@@ -108,6 +108,25 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
     }
 
     [Fact]
+    public async Task Refresh_WithTheCacheOn_QueuesTheWarmingOfTheSliceOfThatLoad()
+    {
+        World world = await SetUpAsync(postgres);
+        await BackfillAsync(world);
+        world.Jobs.Queued.Clear();
+        world.Time.Advance(TimeSpan.FromHours(36));
+        var cache = Options.Create(new SakerWatch.MarketData.Application.Prices.PerformanceCacheOptions());
+
+        await InSessionAsync(world, session =>
+            new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), new FollowUpJobs(world.Jobs, Options.Create(new IngestionOptions()), world.Time, cache), LifecycleFor(session, world), Options.Create(new IngestionOptions()), world.Time, NullLogger<RefreshStockHandler>.Instance)
+                .HandleAsync(new RefreshStockJob(world.Id.Value, new DateOnly(2026, 10, 16)), Context(), CancellationToken.None));
+
+        (string key, object payload, _) = world.Jobs.Queued.Should().ContainSingle().Subject;
+        (DateTimeOffset from, DateTimeOffset to) = WarmPerformanceJob.SliceOf(world.Time.GetUtcNow(), 15);
+        key.Should().Be(WarmPerformanceJob.KeyFor(Mic.Parse("XNAS"), from));
+        payload.Should().Be(new WarmPerformanceJob("XNAS", from, to));
+    }
+
+    [Fact]
     public async Task Refresh_RunTwice_LeavesTheSameRows_AndQueuesNothing()
     {
         World world = await SetUpAsync(postgres);

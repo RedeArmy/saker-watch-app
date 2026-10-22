@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using SakerWatch.BuildingBlocks.Application.Deployment;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.BuildingBlocks.Kernel.Results;
@@ -180,7 +181,8 @@ public sealed class StockDirectoryTests
         bool quotaLeft = true,
         Guid? user = null,
         bool quotaUnreachable = false,
-        RegistrationFallback? fallback = null)
+        RegistrationFallback? fallback = null,
+        int replicas = 1)
     {
         var provider = new Provider(answer);
         var catalog = new Catalog();
@@ -199,7 +201,7 @@ public sealed class StockDirectoryTests
             registry,
             jobs,
             Options.Create(new IngestionOptions()),
-            new RegistrationQuota(quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions()), fallback ?? new RegistrationFallback(), clock),
+            new RegistrationQuota(quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions()), new DeclaredApiInstances(Options.Create(new DeploymentOptions { ApiReplicas = replicas })), fallback ?? new RegistrationFallback(), clock),
             unit,
             NullLogger<StockRegistration>.Instance);
         var directory = new StockDirectory(catalog, search, registration, router, ExchangeCalendars.Default(), new TimeProviderIdGenerator(clock), clock);
@@ -611,13 +613,13 @@ public sealed class StockDirectoryTests
     [InlineData(2, 5, 1)]
     public async Task Reserve_WhileTheSharedBudgetIsDown_EachProcessHoldsItsShareOfTheCap(int cap, int replicas, int share)
     {
-        var lookup = new StockLookupOptions { RegistrationsPerUserPerDay = cap, ApiReplicas = replicas };
+        var lookup = new StockLookupOptions { RegistrationsPerUserPerDay = cap };
         var fallback = new RegistrationFallback();
         int granted = 0;
 
         for (int i = 0; i < cap + 2; i++)
         {
-            Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: lookup, quotaUnreachable: true, fallback: fallback);
+            Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: lookup, quotaUnreachable: true, fallback: fallback, replicas: replicas);
             granted += (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).IsSuccess ? 1 : 0;
         }
 
@@ -661,7 +663,7 @@ public sealed class StockDirectoryTests
     public async Task Reserve_ForACallWithNoUser_IsNotLimited_AndSpendsNothing()
     {
         var quota = new Budget(grant: false);
-        var registration = new RegistrationQuota(quota, new User(null), Options.Create(new StockLookupOptions()), new RegistrationFallback(), TimeProvider.System);
+        var registration = new RegistrationQuota(quota, new User(null), Options.Create(new StockLookupOptions()), new DeclaredApiInstances(Options.Create(new DeploymentOptions())), new RegistrationFallback(), TimeProvider.System);
 
         (await registration.ReserveAsync(CancellationToken.None)).Should().BeNull();
         quota.Spent.Should().BeEmpty();

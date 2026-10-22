@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using SakerWatch.BuildingBlocks.Application.Deployment;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Web.Correlation;
+using SakerWatch.BuildingBlocks.Web.Deployment;
 using SakerWatch.BuildingBlocks.Web.Health;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
 using SakerWatch.BuildingBlocks.Web.Json;
@@ -29,6 +32,10 @@ public static class WebSetup
         services.ConfigureHttpJsonOptions(json => json.SerializerOptions.Converters.Add(new DecimalAsStringConverter()));
         services.AddSakerProblemDetails();
         services.AddSakerRateLimiting(configuration);
+        // The API processes count each other through Redis where there is one; the count replaces the declared one (ADR-0048).
+        services.AddSingleton<ApiInstanceRegistry>();
+        services.Replace(ServiceDescriptor.Singleton<IApiInstances>(provider => provider.GetRequiredService<ApiInstanceRegistry>()));
+        services.AddHostedService(provider => provider.GetRequiredService<ApiInstanceRegistry>());
         services.AddSakerForwardedHeaders(configuration);
         services.AddSakerCors(configuration);
         services.AddHsts(options =>

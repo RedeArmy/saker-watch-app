@@ -56,6 +56,16 @@ Latencies in milliseconds; every request answered 200 (0.00 % errors in all ten 
 
 Run of 2026-10-22 with enforcement on (30 s per scenario, 5 s of warm-up): every p95 with the cache on was at most 213 ms (the sparklines), the five endpoints answered 200 in all requests, and the run exited 0.
 
+## The first read after a load (the warming job, ADR-0048)
+Every nightly load gives a listing a new stamp, so the first read of the costly view after it used to compute the windows of the 500 listings. `scripts/run-k6.sh` measures that (`K6_FIRST_READ_CYCLES`, 5 by default; `K6_ONLY_FIRST_READ=1` runs only this part): it renews the stamps of the 500 listings as a load does, reads the costly view once (a user who follows all 500), and repeats with the warming job run first by a real worker (its refresh turned off). Run of 2026-10-22, same machine, 5 reads each:
+
+| | median | slowest | keys the read had to write |
+|---|---|---|---|
+| no warming: the first user computes the windows | 448 ms | 682 ms | 500 |
+| after the warming job | 80 ms | 93 ms | 0 |
+
+The first read without warming is above the 300 ms budget of ADR-0033 and the one after the job is inside it, 5.6 times faster; the job does the same work in the worker, off the request. The sample is five reads per case on one machine, with the API's code already running (a first request of a new process costs a second or more more, with or without the job). The 80 ms is the cost of a read that finds everything: sorting 500 listings by a window and answering the page.
+
 ## What changed after the measurement
 The figures were taken before the follow-ups of the security review (ADR-0042 to ADR-0044). They do not touch the five paths measured, except that every catalog read now opens a short unit of work that joins the one the request already holds (a counter, not a connection), so no change is expected; repeat `scripts/run-k6.sh` before relying on a difference of a few milliseconds.
 

@@ -93,6 +93,7 @@ public sealed partial class BackfillStockHandler(
 
         int written = await prices.UpsertAsync(id, listing.Value.Provider.Name, merged.Value.Points, now, cancellationToken);
         await state.RecordSuccessAsync(id, now, cancellationToken);
+        await waiter.QueueWarmAsync(listing.Value.Stock.Market, now, cancellationToken);
 
         _backfills.Add(1, Outcome("completed"));
         _rows.Add(written, new KeyValuePair<string, object?>("operation", "backfill"));
