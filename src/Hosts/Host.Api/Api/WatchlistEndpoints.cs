@@ -130,7 +130,8 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/watchlist/sparklines", SparklinesAsync)
             .WithName("GetWatchlistSparklines")
@@ -144,7 +145,8 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/watchlist/items/{market}/{ticker}", PutAsync)
             .WithName("PutWatchlistItem")
@@ -176,7 +178,8 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> ListAsync(ISender sender, [AsParameters] WatchlistListParameters query, CancellationToken cancellationToken)

@@ -37,7 +37,8 @@ internal static class MeEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/me/preferences", UpdatePreferencesAsync)
             .WithName("UpdateMyPreferences")
@@ -54,7 +55,8 @@ internal static class MeEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> GetMeAsync(ISender sender, CancellationToken cancellationToken)

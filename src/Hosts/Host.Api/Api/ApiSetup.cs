@@ -80,6 +80,8 @@ internal static class ApiSetup
                     ];
                 }
 
+                DescribeFailures(operation);
+
                 if (context.Description.ActionDescriptor.EndpointMetadata.OfType<RequiresIdempotencyKeyMetadata>().Any())
                 {
                     operation.Parameters ??= [];
@@ -97,6 +99,33 @@ internal static class ApiSetup
             });
         });
         return services;
+    }
+
+    // What the two failures that any endpoint can answer with mean for the caller. 500 is a defect on our side: the body has the correlation and trace ids to
+    // quote and never the cause. 503 is "not now": the database refused to wait (a lock timeout, a deadlock) or a provider the request needed is unavailable;
+    // nothing was committed, so the request can be sent again after the seconds in Retry-After (a mutating request carries its Idempotency-Key).
+    private static void DescribeFailures(OpenApiOperation operation)
+    {
+        if (operation.Responses is null)
+        {
+            return;
+        }
+
+        if (operation.Responses.TryGetValue("500", out IOpenApiResponse? unexpected) && unexpected is OpenApiResponse internalError)
+        {
+            internalError.Description = "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.";
+        }
+
+        if (operation.Responses.TryGetValue("503", out IOpenApiResponse? busy) && busy is OpenApiResponse unavailable)
+        {
+            unavailable.Description = "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.";
+            unavailable.Headers ??= new Dictionary<string, IOpenApiHeader>();
+            unavailable.Headers["Retry-After"] = new OpenApiHeader
+            {
+                Description = "Seconds to wait before sending the request again.",
+                Schema = new OpenApiSchema { Type = JsonSchemaType.Integer, Minimum = "0" },
+            };
+        }
     }
 
     /// <summary>The versioned group every endpoint of version 1 is mapped on.</summary>

@@ -108,7 +108,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios", ListAsync)
             .WithName("ListPortfolios")
@@ -120,7 +121,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/order", ReorderAsync)
             .WithName("ReorderPortfolios")
@@ -134,7 +136,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios/{id:guid}", GetAsync)
             .WithName("GetPortfolio")
@@ -147,7 +150,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios/{id:guid}/metrics", MetricsAsync)
             .WithName("GetPortfolioMetrics")
@@ -160,7 +164,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/{id:guid}", UpdateAsync)
             .WithName("UpdatePortfolio")
@@ -176,7 +181,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios/{id:guid}/deletion-preview", PreviewAsync)
             .WithName("PreviewPortfolioDeletion")
@@ -188,7 +194,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapDelete("/portfolios/{id:guid}", DeleteAsync)
             .WithName("DeletePortfolio")
@@ -201,7 +208,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/{id:guid}/items/{market}/{ticker}", PutItemAsync)
             .WithName("PutPortfolioItem")
@@ -217,7 +225,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapDelete("/portfolios/{id:guid}/items/{market}/{ticker}", RemoveItemAsync)
             .WithName("RemovePortfolioItem")
@@ -231,7 +240,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/{id:guid}/items/order", ReorderItemsAsync)
             .WithName("ReorderPortfolioItems")
@@ -246,7 +256,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static PortfolioResponse ToResponse(PortfolioView p) => new(p.Id, p.Name, p.Description, p.Position, p.ItemCount, p.CreatedAt, p.UpdatedAt);

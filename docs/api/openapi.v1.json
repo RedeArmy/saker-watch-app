@@ -66,7 +66,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -195,7 +214,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -282,7 +320,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -292,7 +330,16 @@
             }
           },
           "503": {
-            "description": "Service Unavailable",
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -418,7 +465,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -595,7 +661,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -710,7 +795,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -853,7 +957,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -863,7 +967,16 @@
             }
           },
           "503": {
-            "description": "Service Unavailable",
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -951,7 +1064,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1076,7 +1208,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1144,7 +1295,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1230,7 +1400,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1322,7 +1511,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1445,7 +1653,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1534,7 +1761,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1626,7 +1872,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1715,7 +1980,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1852,7 +2136,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1960,7 +2263,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -2068,7 +2390,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -2181,7 +2522,26 @@
             }
           },
           "500": {
-            "description": "Internal Server Error",
+            "description": "Unexpected error on our side. The problem carries a correlationId and a traceId to quote when reporting it, and never the cause.",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Busy or a dependency is unavailable: nothing was committed and the request can be sent again after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before sending the request again.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
