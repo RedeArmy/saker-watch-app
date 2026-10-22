@@ -326,6 +326,45 @@ public sealed class PlatformSecurityTests(TimescalePostgresFixture postgres) : I
     }
 
     [Fact]
+    public async Task RuntimeLogins_OwnNothing_AndCannotBypassRowLevelSecurity()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        foreach (string connection in new[] { db.Api, db.Worker })
+        {
+            string login = (await connection.ScalarAsync<string>("SELECT current_user"))!;
+
+            (await db.Admin.ScalarAsync<bool>("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = @login", ("login", login))).Should().BeFalse();
+            // ENABLE without FORCE exempts the owner of a table (ADR-0010): no runtime login may be, or belong to, that owner.
+            string? owned = await db.Admin.ScalarAsync<string>(
+                """
+                SELECT string_agg(n.nspname || '.' || c.relname, ', ')
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relkind = 'r' AND c.relrowsecurity AND pg_has_role(@login, c.relowner, 'USAGE')
+                """,
+                ("login", login));
+            owned.Should().BeNull("a runtime login that owns a table with row-level security would read every user's rows (ADR-0010)");
+        }
+    }
+
+    [Fact]
+    public async Task AnyTableWithAUserId_HasRowLevelSecurity_OrTheApiRoleCanOnlyInsertInto()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        string? without = await db.Admin.ScalarAsync<string>(
+            """
+            SELECT string_agg(n.nspname || '.' || c.relname, ', ')
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r' AND n.nspname IN ('platform', 'identity', 'marketdata', 'watchlist') AND NOT c.relrowsecurity
+              AND has_table_privilege('api_role', c.oid, 'SELECT, UPDATE, DELETE')
+              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'user_id' AND NOT a.attisdropped)
+            """);
+
+        without.Should().BeNull("a table the API can read or change and that holds a user_id is user-owned and needs a policy (the rules of data and migrations); queue and outbox rows carry the id as a label, and the API can only insert into the outbox");
+    }
+
+    [Fact]
     public async Task NoFunctionOfTheApplicationSchemas_IsExecutableByPublic()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
