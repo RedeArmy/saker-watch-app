@@ -1,7 +1,7 @@
 # Glossary (ubiquitous language)
 
 - **Purpose:** shared vocabulary; code names match these terms (ADR-0013).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (grows with each module)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1 (grows with each module)
 
 | Term | Meaning |
 |---|---|
@@ -24,3 +24,14 @@
 | Lease | Time-limited claim of a job by a worker, protected by a fencing token |
 | Soft-deleted | A user in `pending_deletion` during the 30-day grace period |
 | Calculation | The partial-purchase computation (also called calculator); "partial share" in prose means a fractional share |
+| Portfolio | A named group of the user's watchlist stocks (many to many, optional); at most 20 per user and 100 stocks each (ADR-0026) |
+| Delisted | A stock that no longer trades: inactive, with the moment it stopped; its last price and history are kept and it never goes stale (ADR-0039) |
+| Ticker history | The tickers a stock used to have, kept so an old ticker still finds the stock after a change of ticker (ADR-0039) |
+| Provider fault | Many symbols of one market unknown to the provider at once: taken as a failure of the provider, so nothing is delisted automatically (ADR-0044) |
+| Sparkline | A small price chart of the last stored days of a stock, drawn from adjusted closes (ADR-0038) |
+| Money kit | `Money`, `ExchangeRate`, `Shares` and `RelativeChange`: exact `decimal` values that are rounded only for display (ADR-0037) |
+| Broker fee (`feePercent`) | The optional commission of the calculator, a percentage of the value of the shares; with an amount, the amount is the total paid, fee included (ADR-0036) |
+| Stamp | `ingestion_state.last_success_at` of a listing: the version of its data, part of the key of its cached performance windows (ADR-0041) |
+| Rate guard | The screening of the exchange rates before they are stored (band, daily change, no silent rewrite); a refused rate is kept apart and never served (ADR-0042) |
+| Credit lane | Whose share of the provider's daily credits a call spends: the scheduled refresh, or the on-demand history of a new stock, which has an allowance of its own (ADR-0043) |
+

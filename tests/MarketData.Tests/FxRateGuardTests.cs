@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
 using SakerWatch.MarketData.Application.Fx;
@@ -135,4 +136,33 @@ public sealed class FxRateGuardTests
 
         new FxGuardOptionsValidator().Validate(null, options).Succeeded.Should().Be(valid);
     }
+
+    [Fact]
+    public void Options_SettingOnlyTheMaxOfTheDefaultBandFromConfiguration_KeepsTheDefaultMin()
+    {
+        // What the runbook tells the operator to do: MARKETDATA__FX__GUARD__BANDS__USDGTQ__MAX=15 and nothing else.
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["MarketData:Fx:Guard:Bands:USDGTQ:Max"] = "15" })
+            .Build();
+        var options = new FxGuardOptions();
+
+        configuration.GetSection(FxGuardOptions.SectionName).Bind(options);
+
+        options.Bands["USDGTQ"].Should().BeEquivalentTo(new FxBandOptions { Min = 5m, Max = 15m });
+        new FxGuardOptionsValidator().Validate(null, options).Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Options_ABandForAnotherPairFromConfiguration_IsAddedToTheDefault()
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["MarketData:Fx:Guard:Bands:EURUSD:Min"] = "0.5", ["MarketData:Fx:Guard:Bands:EURUSD:Max"] = "2" })
+            .Build();
+        var options = new FxGuardOptions();
+
+        configuration.GetSection(FxGuardOptions.SectionName).Bind(options);
+
+        options.ToSettings().Bands.Keys.Should().BeEquivalentTo("USDGTQ", "EURUSD");
+    }
 }
+

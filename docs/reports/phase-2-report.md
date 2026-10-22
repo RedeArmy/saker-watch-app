@@ -17,7 +17,7 @@
 | 2.5 | One performance calculator (eight windows, edge rules of ADR-0030: splits, short histories, holes), a PostgreSQL reader that finds nine prices per listing, no invented numbers |
 | 2.6 | Watchlist and portfolios: on-demand stock registration, the list with performance, filters, sort and paging with ETag, portfolio management and metrics, row-level security |
 | 2.7 | The money kit (exact `Money`, typed `ExchangeRate`, `Shares`, `RelativeChange`, rounding only for display; ADR-0037), the partial-purchase calculator and `POST /v1/calculations/partial-purchase`; follow-ups: optional broker fee, price history and sparklines (ADR-0038), the life of a listing: delisting, relisting and a change of ticker (ADR-0039), company profiles and filings from the SEC behind ports, a fake and an adapter that is off (ADR-0040) |
-| 2.8 | The cache of the daily numbers in Redis (ADR-0041), a price-only read for the calculator, the k6 baseline with the cache on and off, the cache runbook, threat T51 |
+| 2.8 | The cache of the daily numbers in Redis (ADR-0041), a price-only read for the calculator, the k6 baseline with the cache on and off, the cache runbook, threat T51; and the follow-ups of the security and migration reviews: the exchange rate guard (ADR-0042), provider credit lanes and a daily cap on new stocks (ADR-0043), delisting judged against the whole market, no transaction held while a provider is asked and no HTTP retries for Twelve Data (ADR-0044), the owner exemption from `FORCE` row-level security (ADR-0010) |
 
 Also in this phase: the worker smoke test (`scripts/smoke-worker.sh`), the freshness sampler fix (its database reads had no open connection, so its gauges were never measured), the listing-lifecycle runbook, and Dependabot bumps of the compose images and packages.
 
@@ -37,7 +37,7 @@ Also in this phase: the worker smoke test (`scripts/smoke-worker.sh`), the fresh
 | `dotnet format --verify-no-changes` | clean |
 | `bash tests/hooks/run.sh` | 60/60 |
 | `bash scripts/check-docs-index.sh`, `check-todos.sh` | OK |
-| `dotnet test` (with coverage, as CI runs it) | 1 966 passed, 0 failed, 4 skipped (the opt-in live checks and the scale test): Calculator 73, Application 184, Architecture 15, Identity 76, Contract 13, Observability 41, MarketData 664, Watchlist 135, Web 127, Integration 638 (real PostgreSQL/Timescale, MongoDB and Redis through Testcontainers; 19 minutes on this machine) |
+| `dotnet test` (with coverage, as CI runs it) | 1 970 passed, 0 failed, 4 skipped (the opt-in live checks and the scale test): Calculator 73, Application 184, Architecture 17, Identity 76, Contract 13, Observability 41, MarketData 666, Watchlist 135, Web 127, Integration 638 (real PostgreSQL/Timescale, MongoDB and Redis through Testcontainers; 19 minutes on this machine) |
 | Coverage gate (`scripts/check-coverage.py 85`) | passes for the ten gated assemblies: MarketData.Application 99.3 %, MarketData.Domain 99.2 %, Watchlist.Application 98.0 %, Watchlist.Domain 99.5 %, Calculator.Application 96.3 %, Calculator.Domain 92.5 %, Kernel 95.1 %, Identity.Application 100 %, Retention.Application 98.5 % |
 | `dotnet list package --vulnerable --include-transitive` | no vulnerable packages |
 | `docker compose config` of the dev and observability profiles | valid |
@@ -66,7 +66,7 @@ Added: 0027 market data providers and licensing, 0028 FX source and conversion p
 0026 to 0044 are all accepted by the owner (2026-10-19, 2026-10-21 and 2026-10-22). The notes in 0030, 0033, 0035 and 0038 that said "caching arrives with 2.8" now point to it.
 
 ## 6. DOCS-INDEX status
-82 approved, 16 draft, 4 stub (at the Phase 1 gate: 57, 11 and 4). The stubs are the runbooks `provider-outage`, `llm-outage`, `restore` and `key-rotation`, all with target phase 5, so none is past its target. The drafts with target phase 2 are the runbooks `listing-lifecycle`, `cache`, `fx-rates` and `provider-quota`, `docs/reports/phase-2-load-baseline.md` and this report; they move to approved with the owner's review at the gate. This report and the Phase 2 pointer are updated only after the owner approves.
+97 approved, 1 draft, 4 stub (at the Phase 1 gate: 57 approved, 11 draft, 4 stub). The stubs are the runbooks `provider-outage`, `llm-outage`, `restore` and `key-rotation`, all with target phase 5, so none is past its target. The 15 documents in review were read against the code on 2026-10-22 and corrected where they were wrong (the observability catalog, the API guide, the data model, the glossary, the local development guide, the queue and Sonar runbooks, the load baseline and the four Phase 2 runbooks: `listing-lifecycle`, `cache`, `fx-rates`, `provider-quota`); the owner approved them on 2026-10-22. This report stays a draft until `code-reviewer` has run and the gate is decided, and the Phase 2 pointer is updated only after the owner approves.
 
 ## 7. Review findings and disposition
 `security-auditor` and `migration-reviewer` ran on 2026-10-21 over `7b5a90d..HEAD`; **`code-reviewer` is still pending** by decision of the owner, so the gate is not proposed yet. Neither reviewer found a blocker: the security audit has 0 critical, 0 high, 2 medium, 8 low and 3 informational findings; the migration review approves with changes.
@@ -116,7 +116,6 @@ What was done during the phase is not a substitute for the formal reviews, but i
 ## 8. Open questions and Phase 3 plan
 Open questions for the owner:
 - Run `code-reviewer`, which is pending.
-- Review the drafts above.
 - Put `SONAR_TOKEN` in the Dependabot secret store, and exclude `**/Migrations/**` from Sonar's duplication detection (`sonar.cpd.exclusions`).
 - Which markets after the US, and when (A-027); whether the SEC adapter is turned on before Phase 4 (it needs the identity of the owner as the contact).
 - Whether the sparklines need their own cache before the Phase 3 screens, or the baseline is enough.

@@ -1,7 +1,7 @@
 # Runbook — exchange rate guard
 
 - **Purpose:** what to do when the daily USD/GTQ refresh keeps a rate apart, or when a real change of the rate is being refused (ADR-0042).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 2
+- **Owner:** Eder · **Status:** approved · **Target phase:** 2
 
 ## Signals
 | Signal | Meaning |

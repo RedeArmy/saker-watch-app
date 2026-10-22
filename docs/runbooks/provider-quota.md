@@ -1,7 +1,7 @@
 # Runbook — provider credit lanes and the registration cap
 
 - **Purpose:** what to do when new stocks stay `pending`, when users hit the daily limit of new stocks, or when the daily refresh runs out of credits (ADR-0043).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 2
+- **Owner:** Eder · **Status:** approved · **Target phase:** 2
 
 ## How the day is shared (Twelve Data free plan: 800 credits a day, 8 a minute)
 | Work | Lane | What limits it |

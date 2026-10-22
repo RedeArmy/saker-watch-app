@@ -10,9 +10,9 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/pr-faq.md | PR-FAQ | Eder | approved | 0 | 2026-10-12 |
 | docs/rfc/0001-design-doc.md | RFC / design doc | Eder | approved | 0 | 2026-10-12 |
 | docs/assumptions.md | Assumptions | Eder | approved | 0 | 2026-10-12 |
-| docs/clavaris-contract.md | Clavaris integration contract | Eder | draft | 1 | 2026-10-12 |
+| docs/clavaris-contract.md | Clavaris integration contract | Eder | approved | 1 | 2026-10-22 |
 | docs/threat-model/threat-model-v1.md | STRIDE threat model | Eder | approved | 0 | 2026-10-12 |
-| docs/api/README.md | API guidelines | Eder | draft | 1 | 2026-10-12 |
+| docs/api/README.md | API guidelines | Eder | approved | 1 | 2026-10-22 |
 | docs/templates/adr-template.md | ADR template | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0001-naming-and-ip-note.md | ADR 0001 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0003-modular-monolith.md | ADR 0003 | Eder | approved | 0 | 2026-10-12 |
@@ -26,12 +26,12 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0011-test-stack.md | ADR 0011 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0012-ci-cd-and-deployment.md | ADR 0012 | Eder | approved | 0 | 2026-10-12 |
 | docs/runbooks/provider-outage.md | Runbook provider-outage | Eder | stub | 5 | 2026-10-12 |
-| docs/runbooks/listing-lifecycle.md | Runbook listing-lifecycle | Eder | draft | 2 | 2026-10-20 |
-| docs/runbooks/cache.md | Runbook cache of the daily numbers | Eder | draft | 2 | 2026-10-21 |
-| docs/runbooks/fx-rates.md | Runbook exchange rate guard | Eder | draft | 2 | 2026-10-22 |
-| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | draft | 2 | 2026-10-22 |
+| docs/runbooks/listing-lifecycle.md | Runbook listing-lifecycle | Eder | approved | 2 | 2026-10-22 |
+| docs/runbooks/cache.md | Runbook cache of the daily numbers | Eder | approved | 2 | 2026-10-22 |
+| docs/runbooks/fx-rates.md | Runbook exchange rate guard | Eder | approved | 2 | 2026-10-22 |
+| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | approved | 2 | 2026-10-22 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
-| docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | draft | 5 | 2026-10-15 |
+| docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | approved | 5 | 2026-10-22 |
 | docs/runbooks/restore.md | Runbook restore | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/key-rotation.md | Runbook key-rotation | Eder | stub | 5 | 2026-10-12 |
 | README.md | Local setup (10 minutes) | Eder | approved | 0 | 2026-10-12 |
@@ -68,13 +68,13 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | tests/load/baseline.js | k6 scenarios of the Phase 2 read paths | Eder | approved | 2 | 2026-10-21 |
 | docs/adr/0016-observability-and-traceability.md | ADR 0016 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | approved | 0 | 2026-10-12 |
-| docs/observability/README.md | Observability catalog | Eder | draft | 1 | 2026-10-12 |
+| docs/observability/README.md | Observability catalog | Eder | approved | 1 | 2026-10-22 |
 | docs/adr/0018-multi-market-and-multi-currency.md | ADR 0018 | Eder | approved | 0 | 2026-10-12 |
 | deploy/docker-compose.no-avx.yml | Dev override: Mongo 4.4 for CPUs without AVX | Eder | approved | 0 | 2026-10-12 |
 | docs/product-spec.md | Product specification | Eder | approved | 0 | 2026-10-12 |
-| docs/data-model.md | Data model and retention | Eder | draft | 1 | 2026-10-12 |
+| docs/data-model.md | Data model and retention | Eder | approved | 1 | 2026-10-22 |
 | docs/roadmap.md | Roadmap and phase gates | Eder | approved | 0 | 2026-10-12 |
-| docs/glossary.md | Glossary | Eder | draft | 1 | 2026-10-12 |
+| docs/glossary.md | Glossary | Eder | approved | 1 | 2026-10-22 |
 | BannedSymbols.txt | Banned APIs enforced by the compiler | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0019-quality-gates-sonarcloud.md | ADR 0019 | Eder | approved | 1 | 2026-10-16 |
 | docs/adr/0020-phase-1-tooling-and-dispatcher.md | ADR 0020 | Eder | approved | 1 | 2026-10-16 |
@@ -103,9 +103,9 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0044-provider-and-registration-hardening.md | ADR 0044 | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
-| docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | draft | 2 | 2026-10-21 |
+| docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |
-| docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | draft | 1 | 2026-10-12 |
-| docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | draft | 1 | 2026-10-12 |
-| docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | draft | 1 | 2026-10-12 |
-| docs/runbooks/local-development.md | Local development: infrastructure, migrations and runtime logins | Eder | draft | 1 | 2026-10-13 |
+| docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | approved | 1 | 2026-10-22 |
+| docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | approved | 1 | 2026-10-22 |
+| docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | approved | 1 | 2026-10-22 |
+| docs/runbooks/local-development.md | Local development: infrastructure, migrations and runtime logins | Eder | approved | 1 | 2026-10-22 |

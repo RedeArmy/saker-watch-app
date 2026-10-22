@@ -1,7 +1,7 @@
 # Runbook — listing lifecycle
 
 - **Purpose:** change the life of a listing in the shared catalog: it stopped trading, it trades again, or it has a new ticker (ADR-0039).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 2
+- **Owner:** Eder · **Status:** approved · **Target phase:** 2
 
 ## When
 - The logs show `The stock {Market} {Ticker} was marked delisted by ingestion` (event 2601) and the stock did not really stop trading: relist it.

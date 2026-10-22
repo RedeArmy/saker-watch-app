@@ -1,7 +1,7 @@
 # Phase 2 load baseline
 
 - **Purpose:** the first measurement of the Phase 2 read paths with k6, with the performance cache (ADR-0041) on and off, so later changes have a figure to be compared with. It is a baseline of one machine, not a promise about production.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 2
+- **Owner:** Eder · **Status:** approved · **Target phase:** 2
 - **How to repeat it:** `LOAD_NOAVX=1 bash scripts/run-k6.sh` (leave `LOAD_NOAVX` out on a CPU with AVX). It needs docker, python3, openssl and a built solution, and it removes everything it creates.
 
 ## What was measured
@@ -45,6 +45,9 @@ Latencies in milliseconds; every request answered 200 (0.00 % errors in all ten 
 - **The sparklines do not use the cache** (ADR-0038 computes them from the stored series on read) and sit at 240 ms p95 in both runs. They are inside the budget on their own, but they are the slowest path now, and a watchlist page that asks for the list and the sparklines together would spend both. If the screen needs them in the same budget, caching the series per listing under the same stamp is the next step; it is not done here.
 - **The calculator** did not change with the cache because it no longer reads the windows (milestone 2.8b); its half-second maximum with the cache off is a single slow request in a run of 2 400.
 - Tail latencies (p99 up to 285 ms with the cache on) leave little room: the figures are for 4 users on 3 CPUs shared with k6, the API and the three databases. A deployed instance has other limits.
+
+## What changed after the measurement
+The figures were taken before the follow-ups of the security review (ADR-0042 to ADR-0044). They do not touch the five paths measured, except that every catalog read now opens a short unit of work that joins the one the request already holds (a counter, not a connection), so no change is expected; repeat `scripts/run-k6.sh` before relying on a difference of a few milliseconds.
 
 ## What this does not say
 - It says nothing about production hardware or the network, nor about many users at once: 4 virtual users in a closed loop measure latency under light concurrency, not capacity. An arrival-rate test is the next measurement if capacity matters.

@@ -1,7 +1,7 @@
 # Data model and retention
 
 - **Purpose:** entities per store and the retention policy enforced by the Retention module.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (refined as modules are built)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1 (refined as modules are built)
 
 ## 1. PostgreSQL (source of truth, schema per module)
 - `identity.users`: internal `id` UUIDv7, `external_issuer`, `external_subject` (unique pair), `email`, `display_name`, `locale`, `status` (`active | pending_deletion | deleted`), `deletion_requested_at`, `deletion_due_at`, timestamps. `identity.deletion_tombstones`: `(user_id, external_issuer, external_subject, created_at, idp_deleted_at)` kept until the identity-provider deletion succeeds (ADR-0009). The IdP subject is never a foreign key elsewhere (ADR-0009).
@@ -29,6 +29,12 @@
 | `platform.audit_log` triggers | triggers | everyone, owner included | reject UPDATE, DELETE and TRUNCATE (append-only) |
 | `platform.outbox_messages` | grants | `api_role` insert; `worker_role` full | the API writes events with the state change; the worker publishes and purges |
 | `platform.inbox_messages`, `platform.job_queue` | grants | `worker_role` | consumer dedupe and job leases |
+| `watchlist.watchlist_items`, `watchlist.portfolios`, `watchlist.portfolio_items` policies `watchlist_items_owner`, `portfolios_owner`, `portfolio_items_owner` | RLS policies | `api_role` | `FOR ALL` with `USING` and `WITH CHECK` on `user_id = app.current_user_id` (an empty user sees and writes nothing); the API has `SELECT`, `INSERT`, `UPDATE`, `DELETE`; the worker has no grant on these tables. A membership row carries the user and its foreign keys are composite `(id, user_id)`, so a portfolio can never hold another user's item even for a connection that bypasses the policies (migrations `CreateWatchlist`, `WatchlistSecurity`) |
+| `watchlist.enforce_item_limit()`, `enforce_portfolio_limit()`, `enforce_portfolio_item_limit()` and triggers `watchlist_items_limit`, `portfolios_limit`, `portfolio_items_limit` | functions and triggers | `api_role` (run as the caller) | ceilings of 500 stocks, 20 portfolios and 100 stocks per portfolio: each trigger takes a transaction-level advisory lock for the owner (or the portfolio) before it counts, so parallel inserts are counted one after the other; the error carries the constraint name the application maps. Not executable by `PUBLIC` |
+| `watchlist.tracked_stock_ids()` | security-definer function | `worker_role` only | the one cross-user read of the worker (ADR-0010): the distinct stock ids on any watchlist, no user id and no note; `search_path` pinned with `pg_temp` last (migration `PinWatchlistSearchPaths`); relies on the table owner being exempt from the policies (ADR-0010, "The table owner and FORCE") |
+| `marketdata.register_stock(...)` | security-definer function | `api_role` only | the only way a request puts a stock in the shared catalog (ADR-0032): inserts the stock, its provider alias and a pending `ingestion_state`, never updates an existing row, idempotent under parallel calls; `api_role` has no `INSERT` on `stocks`; `search_path` pinned |
+| `marketdata.*` shared tables (`stocks`, `symbol_aliases`, `corporate_actions`, `price_daily`, `fx_rates`, `ingestion_state`, `ticker_history`) | grants | `api_role` read; `worker_role` read, insert and update (delete only on `ticker_history`) | shared, not user-owned, so no row-level security; nobody else deletes |
+| `marketdata.fx_rates_rejected` | grants | `worker_role` read, insert and update; `api_role` nothing | rates the guard did not believe (ADR-0042): nothing served to a user can come from here |
 
 ## 2. MongoDB (heavy, variable, write-once documents)
 All documents carry `schemaVersion` and `createdAt`; indexes (including TTL) come from versioned migrations.

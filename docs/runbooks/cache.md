@@ -1,7 +1,7 @@
 # Runbook — cache of the daily numbers
 
 - **Purpose:** what to do when the performance windows come from the cache and look wrong, when Redis is down, or when the cache has to be turned off or emptied (ADR-0041).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 2
+- **Owner:** Eder · **Status:** approved · **Target phase:** 2
 
 ## How it works, in two lines
 The windows of a listing are kept in Redis under `v1:perf:{stockId}:{stamp}:{maxGapDays}`, where `stamp` is the UTC ticks of `marketdata.ingestion_state.last_success_at`. A load of data for the listing makes a new stamp and so a new key; the old key is never read again and expires after 26 hours. Nothing is deleted by the application, and a failure of Redis is a miss that reads PostgreSQL.

@@ -1,13 +1,13 @@
 # Observability catalog
 
 - **Purpose:** concrete telemetry contract: identifiers, metric names, log events, SLOs, alerts (ADR-0016).
-- **Owner:** Eder · **Status:** draft · **Target phase:** 1 (dashboards/alerts: 5)
+- **Owner:** Eder · **Status:** approved · **Target phase:** 1 (dashboards/alerts: 5)
 
 ## Identifiers
 `traceparent` (W3C) · `X-Correlation-Id` (echoed on every response and ProblemDetails) · `trace_id`/`correlation_id` columns on jobs, outbox, audit log and Mongo documents.
 
 ## Metric prefixes
-This table is the starter set; ADR-0016 section 4 defines the complete mandatory sets, which are added here as each module is built.
+This table is the starter set; ADR-0016 section 4 defines the complete mandatory sets, which are added here as each module is built. The metrics of the modules that exist are listed in the next table; those marked "planned" belong to a later phase and are not emitted yet (a test of the catalog compares the code with this document: every `sakerwatch_` name in the code is here).
 
 `sakerwatch_http_*`, `sakerwatch_jobs_*`, `sakerwatch_idempotency_*`, `sakerwatch_provider_*`, `sakerwatch_price_*`, `sakerwatch_llm_*`, `sakerwatch_watchlist_*`, `sakerwatch_analysis_*`, `sakerwatch_retention_*`. Labels: low cardinality only.
 
@@ -15,7 +15,7 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 |---|---|---|
 | `sakerwatch_<module>_usecase_duration_seconds` (histogram, meter `SakerWatch`) | usecase, outcome=success\|failure\|cancelled\|exception, error_type (failures only) | RED per use case; module = second namespace segment, `platform` for building blocks |
 | `sakerwatch_http_rate_limited_total` (counter) | policy=global\|expensive\|pre-authentication | requests rejected by the rate limiter |
-| `sakerwatch_http_server_duration_seconds` (histogram) | route, method, status_class | RED latency/error |
+| HTTP server latency and errors | route, method, status | not a `sakerwatch_` metric: they come from the ASP.NET Core instrumentation (`http.server.request.duration`, exported by the backend under its own name); the rate limiter has its own counter above |
 | `sakerwatch_outbox_messages_total` (counter) | outcome=published\|retry\|dead | outbox delivery health; `dead` > 0 pages a human |
 | `sakerwatch_auth_attempts_total` (counter) | outcome=success\|<refusal reason> (Malformed, InvalidSignature, UnknownKey, UnsupportedAlgorithm, Expired, NotYetValid, InvalidIssuer, InvalidAudience, MissingSubject, NotAnAccessToken, KeyDiscoveryFailed, Invalid) | access token validation; a spike of refusals or any `KeyDiscoveryFailed` is a symptom |
 | `sakerwatch_provider_calls_total` (counter) | provider, operation=search\|daily\|fx_daily\|tickers\|profile\|filings, outcome=success\|ratelimited\|transient\|planrestricted\|symbolnotfound\|permanent | calls to external market data providers by outcome; a run of `ratelimited` means the free budget is spent, `planrestricted` means a market is routed to a plan that does not include it |
@@ -36,11 +36,8 @@ This table is the starter set; ADR-0016 section 4 defines the complete mandatory
 | `sakerwatch_jobs_total` (counter), `sakerwatch_jobs_duration_seconds` (histogram) | type, outcome=success\|retry\|dead\|lease_lost\|released | job attempts |
 | `sakerwatch_jobs_dead_letter_total` (counter) | none | poison messages |
 | `sakerwatch_idempotency_events_total` (counter) | outcome=claimed\|replay\|mismatch\|conflict (`takeover` is reserved for cross-store operations, ADR-0022) | idempotency health |
-| `sakerwatch_provider_call_duration_seconds` (histogram) | provider, outcome | provider health |
-| `sakerwatch_price_staleness_seconds` (gauge) | market | freshness SLO |
-| `sakerwatch_llm_tokens_total` (counter) | direction=in\|out, model | cost/capacity |
-| `sakerwatch_llm_run_total` (counter) | outcome | pipeline health |
-| `sakerwatch_retention_deleted_total` (counter) | policy, dry_run | retention evidence |
+| `sakerwatch_llm_tokens_total` (counter, planned for Phase 4) | direction=in\|out, model | cost/capacity |
+| `sakerwatch_llm_run_total` (counter, planned for Phase 4) | outcome | pipeline health |
 
 ## Log events
 Each module reserves an EventId range (Identity 1000s, MarketData 2000s, Watchlist 3000s, Analysis 4000s, Signals 5000s, Calculator 6000s, Retention 7000s, Platform 9000s); events are listed here when introduced.
