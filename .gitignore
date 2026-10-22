@@ -6,6 +6,9 @@ secrets/
 *.pem
 *.key
 
+# Database backups (scripts/dev-backup.sh): data, never committed
+backups/
+
 # .NET
 bin/
 obj/

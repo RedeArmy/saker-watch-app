@@ -60,6 +60,14 @@ done
 check "the three services are healthy" 3 "$healthy"
 [[ "$healthy" -ge 3 ]] || exit 1
 
+# The image reports healthy while its init server is still up, and then restarts: wait until the real one answers three times in a row.
+steady=0
+for _ in $(seq 1 60); do
+  if "${compose[@]}" exec -T postgres psql -U saker_admin -d saker -At -c 'SELECT 1' >/dev/null 2>&1; then steady=$((steady + 1)); else steady=0; fi
+  [[ "$steady" -ge 3 ]] && break
+  sleep 1
+done
+
 CONNECTIONSTRINGS__POSTGRESADMIN="Host=127.0.0.1;Port=$POSTGRES_PORT;Database=saker;Username=saker_admin;Password=$POSTGRES_PASSWORD" \
 CONNECTIONSTRINGS__MONGOADMIN="mongodb://saker_admin:$MONGO_PASSWORD@127.0.0.1:$MONGO_PORT/?authSource=admin" \
   dotnet run --no-build --project src/Hosts/Host.Migrator >"$out/migrator.log" 2>&1
