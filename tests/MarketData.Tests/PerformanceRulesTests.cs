@@ -1,5 +1,7 @@
 using AwesomeAssertions;
 using SakerWatch.MarketData.Domain.Performance;
+using SakerWatch.MarketData.Infrastructure.Persistence;
+using SakerWatch.MarketData.Infrastructure.Providers;
 
 namespace SakerWatch.MarketData.Tests;
 
@@ -43,5 +45,14 @@ public sealed class PerformanceRulesTests
 
         described.Should().Contain("OneDay=0.2@2026-11-25", "the day after Thanksgiving looks back to the Wednesday");
         described.Should().Contain("YearToDate=0.2@2026-12-31", "the first trading day of 2027 starts the year from the last day of 2026");
+    }
+
+    [Fact]
+    public void TheKeyTag_HoldsTheVersion_TheRulesAndTheStatementsThatReadTheCloses()
+    {
+        PerformanceReader.QueriesFingerprint.Should().MatchRegex("^[0-9a-f]{8}$");
+
+        RedisPerformanceCache.KeyTag.Should().Be($"{PerformanceRules.CacheTag}.{PerformanceReader.QueriesFingerprint}");
+        RedisPerformanceCache.KeyTag.Should().MatchRegex("^c[0-9]+\\.[0-9a-f]{8}\\.[0-9a-f]{8}$");
     }
 }

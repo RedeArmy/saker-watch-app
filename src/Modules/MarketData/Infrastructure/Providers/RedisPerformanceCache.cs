@@ -11,7 +11,7 @@ using StackExchange.Redis;
 namespace SakerWatch.MarketData.Infrastructure.Providers;
 
 /// <summary>
-/// <see cref="IPerformanceCache"/> over Redis (ADR-0041): one string per listing under <c>v1:perf:{stock}:{stamp}:{maxGap}:c{version}.{fingerprint}</c> (<see cref="PerformanceRules.CacheTag"/>: the version of the calculation and a fingerprint of what it does, so a change of the rules is a new key). The report is stored as
+/// <see cref="IPerformanceCache"/> over Redis (ADR-0041): one string per listing under <c>v1:perf:{stock}:{stamp}:{maxGap}:c{version}.{rules}.{queries}</c> (<see cref="KeyTag"/>: the version, a fingerprint of what the calculator does and one of the statements that read the closes, so a change of the rules is a new key). The report is stored as
 /// text (dates ISO, decimals invariant) and the changes are not stored at all: they are rebuilt from the two closes by the same function the
 /// calculator uses, so the cache cannot hold a number the calculator would not produce. Nothing here is authoritative: a Redis failure, an entry
 /// that cannot be read or a version bump is a miss, never an error for the request.
@@ -24,6 +24,13 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
     private const int _format = 1;
 
     private int _announced;
+
+    /// <summary>
+    /// The ending of every key (ADR-0047): the version and the fingerprint of the calculator's behavior (<see cref="PerformanceRules.CacheTag"/>) and the
+    /// fingerprint of the statements that read the closes (<see cref="Persistence.PerformanceReader.QueriesFingerprint"/>). Nothing that decides a
+    /// number can change without it changing, except a change nobody made visible: that raises <see cref="PerformanceCalculator.Version"/>.
+    /// </summary>
+    public static string KeyTag { get; } = $"{PerformanceRules.CacheTag}.{Persistence.PerformanceReader.QueriesFingerprint}";
 
     private sealed record StoredWindow(int Window, string? BaselineDate, string? BaselineClose, int? Gap);
 
@@ -88,7 +95,7 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
     {
         if (Interlocked.Exchange(ref _announced, 1) == 0)
         {
-            LogKeyTag(PerformanceRules.CacheTag);
+            LogKeyTag(KeyTag);
         }
     }
 
@@ -97,7 +104,7 @@ public sealed partial class RedisPerformanceCache(IConnectionMultiplexer redis, 
         key.Stock.Value.ToString("D", CultureInfo.InvariantCulture),
         key.Stamp.UtcTicks.ToString(CultureInfo.InvariantCulture),
         key.MaxGapDays.ToString(CultureInfo.InvariantCulture),
-        PerformanceRules.CacheTag);
+        KeyTag);
 
     private static string Write(PerformanceReport report) => JsonSerializer.Serialize(new Stored(
         _format,

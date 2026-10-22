@@ -12,10 +12,10 @@ namespace SakerWatch.MarketData.Domain.Performance;
 public static class PerformanceCalculator
 {
     /// <summary>
-    /// A version for the rules the cache cannot see by itself (ADR-0047). The key of the performance cache holds <see cref="PerformanceRules.CacheTag"/>,
-    /// which is this number and a fingerprint of what the calculator does with fixed inputs, so a change inside the calculator or the calendars makes new
-    /// keys without anyone remembering. Raise this number when a change makes the same prices give another report <i>outside</i> the calculator: how the
-    /// baseline close on or before a date is looked up in the database, or what is stored as the adjusted close.
+    /// A version for a change that no fingerprint shows (ADR-0047). The key of the performance cache holds <see cref="PerformanceRules.CacheTag"/>, a
+    /// fingerprint of what this calculator does with fixed inputs, and a fingerprint of the statements that read the closes, so a change of the rules
+    /// there makes new keys without anyone remembering. Raise this number to empty the cache on purpose, or when the rules change somewhere those two do not
+    /// look (for example a calendar of a market the fixed inputs do not use).
     /// </summary>
     public const int Version = 1;
 

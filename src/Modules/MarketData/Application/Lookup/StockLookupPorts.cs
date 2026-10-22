@@ -34,14 +34,6 @@ public sealed class StockLookupOptions
     /// </summary>
     [Range(1, 10_000)]
     public int RegistrationsPerUserPerDay { get; set; } = 20;
-
-    /// <summary>
-    /// How many API processes share the registration cap (ADR-0047). While Redis cannot be reached each process counts for itself, so each holds
-    /// <c>RegistrationsPerUserPerDay / ApiReplicas</c> (at least one) and together they cannot pass the cap. One today (a single API instance, ADR-0021):
-    /// raise it when the API is scaled out, together with the distributed limiter that ADR asks for.
-    /// </summary>
-    [Range(1, 64)]
-    public int ApiReplicas { get; set; } = 1;
 }
 
 /// <summary>A listing found at a provider, kept as the cache stores it: the provider's own code and symbol plus the text it reported.</summary>

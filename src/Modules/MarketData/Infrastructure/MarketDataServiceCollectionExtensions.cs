@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Application.Deployment;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
@@ -39,6 +40,7 @@ public static class MarketDataServiceCollectionExtensions
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
         services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
+        services.AddSakerDeployment(configuration);
         services.AddOptions<StockLookupOptions>().Bind(configuration.GetSection(StockLookupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddMarketDataApplication();
 
