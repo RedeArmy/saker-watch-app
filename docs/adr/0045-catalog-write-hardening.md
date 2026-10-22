@@ -1,6 +1,6 @@
 # ADR-0045: Hardening of what the API can write to the shared catalog
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 
