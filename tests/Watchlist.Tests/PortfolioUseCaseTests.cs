@@ -597,6 +597,22 @@ public sealed class PortfolioUseCaseTests
     }
 
     [Fact]
+    public async Task Metrics_CountEveryMember_SoTheFiguresAddUp_EvenWhenTheMarketCannotAnswerForOne()
+    {
+        (Repository repo, _) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        repo.Members[PortfolioId.Create(portfolio.Id)] = [new PortfolioMember(_apple.Id, 0, _now), new PortfolioMember(_cola.Id, 1, _now), new PortfolioMember(Guid.CreateVersion7(), 2, _now)];
+        var market = new SnapshotMarket(Snap(_apple, PriceStatuses.Current, null, ("1D", 0.10m)), Snap(_cola, PriceStatuses.Current, null, ("1D", 0.02m)));
+
+        PortfolioMetrics metrics = (await new GetPortfolioMetricsHandler(new User(_user), repo, market).Handle(new GetPortfolioMetricsQuery(portfolio.Id), CancellationToken.None)).Value;
+
+        metrics.StockCount.Should().Be(3);
+        metrics.Portfolio.ItemCount.Should().Be(3, "the portfolio and its metrics are read from the same members");
+        metrics.PriceStatuses.Should().Be(new PriceStatusCounts(2, 0, 1, 0), "the stock the market could not answer for is pending, so the counts add up to the stocks held");
+        metrics.Windows[0].Count.Should().Be(2, "the figures are over the stocks that have a number");
+    }
+
+    [Fact]
     public async Task Metrics_CountADelistedStockApart_KeepItsLastNumbers_AndItIsNeverStale()
     {
         (Repository repo, _) = World();
