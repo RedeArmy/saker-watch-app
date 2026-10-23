@@ -29,7 +29,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/runbooks/listing-lifecycle.md | Runbook listing-lifecycle | Eder | approved | 2 | 2026-10-22 |
 | docs/runbooks/cache.md | Runbook cache of the daily numbers | Eder | approved | 2 | 2026-10-22 |
 | docs/runbooks/fx-rates.md | Runbook exchange rate guard | Eder | approved | 2 | 2026-10-22 |
-| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | approved | 2 | 2026-10-22 |
+| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | approved | 2 | 2026-10-23 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | approved | 5 | 2026-10-22 |
 | docs/runbooks/restore.md | Runbook restore | Eder | approved | 5 | 2026-10-22 |
