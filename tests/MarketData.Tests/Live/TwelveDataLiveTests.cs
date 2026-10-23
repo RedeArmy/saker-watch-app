@@ -29,7 +29,7 @@ public sealed class TwelveDataLiveTests
 {
     private static readonly string _reportDirectory = Environment.GetEnvironmentVariable("SAKER_LIVE_REPORT_DIR") ?? "/tmp/saker-live-twelvedata";
 
-    private sealed class PacedBudget : IProviderCallBudget
+    internal sealed class PacedBudget : IProviderCallBudget
     {
         private readonly Queue<DateTimeOffset> _window = new();
 
@@ -72,7 +72,7 @@ public sealed class TwelveDataLiveTests
         }
     }
 
-    private sealed class CapturingStore : IProviderPayloadStore
+    internal sealed class CapturingStore : IProviderPayloadStore
     {
         public List<ProviderPayload> Stored { get; } = [];
 
