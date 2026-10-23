@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADR-0015: the only accepted TODO form is TODO(owner: <name>[, <ref>]): <text>; HACK and FIXME need the ref too.
 # Every marker is checked, so a line with one valid TODO and a second bare marker fails.
-# With file arguments it checks those files only (tests/hooks/run.sh uses that); without, every tracked source file.
+# With file arguments it checks those files only (the pre-commit hooks use that); without, every tracked source file.
 cd "$(dirname "$0")/.." || exit 2
 files() {
   if [[ $# -gt 0 ]]; then printf '%s\0' "$@"; else git ls-files -z 'src/*' 'tests/*' 'web/*' 'deploy/*' 'scripts/*' ':!scripts/check-todos.sh' ':!*.md'; fi

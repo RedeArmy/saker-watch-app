@@ -82,6 +82,30 @@ public sealed class WebBuildingBlockTests
         json.GetProperty("correlationId").GetString().Should().Be("trace-me");
         json.GetProperty("title").GetString().Should().Be("An unexpected error occurred.");
         json.GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:internal_error");
+        json.GetProperty("code").GetString().Should().Be("internal_error");
+    }
+
+    [Fact]
+    public async Task AProblemWithNoTypeAtAll_HasACodeMadeFromItsStatus()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync("/teapot");
+
+        JsonElement json = await ReadJson(response);
+        json.TryGetProperty("type", out _).Should().BeFalse("the problem was written with a status the framework has no type for");
+        json.GetProperty("code").GetString().Should().Be("http.418");
+    }
+
+    [Fact]
+    public async Task AProblemTheFrameworkWrites_HasACodeMadeFromItsStatus()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync("/no-such-route");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ReadJson(response)).GetProperty("code").GetString().Should().Be("http.404");
     }
 
     [Theory]
@@ -180,6 +204,7 @@ public sealed class WebBuildingBlockTests
         limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         limited.Headers.RetryAfter.Should().NotBeNull();
         json.GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:rate_limited");
+        json.GetProperty("code").GetString().Should().Be("rate_limited", "a client switches on code, whichever part of the pipeline wrote the problem");
         json.GetProperty("correlationId").GetString().Should().NotBeNullOrEmpty();
     }
 
@@ -238,6 +263,7 @@ public sealed class WebBuildingBlockTests
         response.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(1));
         JsonElement body = await ReadJson(response);
         body.GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:busy");
+        body.GetProperty("code").GetString().Should().Be("busy");
         (await response.Content.ReadAsStringAsync()).Should().NotContain("could not get the lock", "the message of the driver is never sent to the client");
     }
 

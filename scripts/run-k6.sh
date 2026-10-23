@@ -139,8 +139,11 @@ run_mode() { # run_mode <label> <cache enabled: true|false> <first byte of the u
     docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/tests/load:/scripts:ro" -v "$out:/out" \
       -e K6_BASE_URL="$api_url" -e K6_TOKENS="$tokens" -e K6_ENFORCE="$enforce" -e K6_PHASE_SECONDS="${K6_PHASE_SECONDS:-30}" \
       -e K6_WARMUP_SECONDS="${K6_WARMUP_SECONDS:-5}" -e K6_P95_BUDGET_MS="${K6_P95_BUDGET_MS:-300}" \
-      "$k6_image" run --quiet --summary-export="/out/summary-$label.json" /scripts/baseline.js >"$out/k6-$label.log" 2>&1
+      "$k6_image" run --quiet --summary-export="/out/summary-$label-attempt$attempt.json" /scripts/baseline.js >"$out/k6-$label-attempt$attempt.log" 2>&1
     status=$?
+    # The files without the attempt are the last run, the one the report and the verdict use; the first stays beside it to see what crossed.
+    cp "$out/summary-$label-attempt$attempt.json" "$out/summary-$label.json" 2>/dev/null
+    cp "$out/k6-$label-attempt$attempt.log" "$out/k6-$label.log"
     log "k6 ($label) exit code: $status"
     # 99 is k6's "a threshold was crossed": tried once more, and a failure of the run only if the second run crosses it too.
     [[ "$status" -eq 99 && "$enforce" == "1" && "$attempt" -eq 1 ]] || break

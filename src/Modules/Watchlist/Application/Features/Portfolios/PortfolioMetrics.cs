@@ -35,8 +35,8 @@ public sealed record PriceStatusCounts(int Current, int Stale, int Pending, int 
 
 /// <summary>The aggregate numbers of a portfolio. Informational only: nothing here is a recommendation.</summary>
 /// <param name="Portfolio">The portfolio.</param>
-/// <param name="StockCount">How many stocks it holds.</param>
-/// <param name="PriceStatuses">How many are in each price state.</param>
+/// <param name="StockCount">How many stocks it holds; the same number as <c>Portfolio.ItemCount</c> and the sum of <paramref name="PriceStatuses"/>.</param>
+/// <param name="PriceStatuses">How many are in each price state; a stock the market data cannot answer for is counted as pending.</param>
 /// <param name="StaleSince">The oldest moment a stale price went stale, or <see langword="null"/> when none is.</param>
 /// <param name="Windows">The eight windows, in order.</param>
 public sealed record PortfolioMetrics(PortfolioView Portfolio, int StockCount, PriceStatusCounts PriceStatuses, DateTimeOffset? StaleSince, IReadOnlyList<WindowMetrics> Windows);
@@ -62,6 +62,9 @@ public sealed class GetPortfolioMetricsHandler(ICurrentUser currentUser, IPortfo
         IReadOnlyList<PortfolioMember> members = await portfolios.MembersAsync(userId, id, cancellationToken);
         IReadOnlyDictionary<Guid, StockSnapshot> snapshots = await market.SnapshotsAsync([.. members.Select(member => member.StockId)], cancellationToken);
         StockSnapshot[] stocks = [.. members.Where(member => snapshots.ContainsKey(member.StockId)).Select(member => snapshots[member.StockId])];
+        // The count of stocks and the counts of states come from the members read here, so they add up to it and to the portfolio's own count even if the
+        // stock list changed between the two reads or the catalog could not answer for one: that one has no price to show, which is pending.
+        int unanswered = members.Count - stocks.Length;
 
         // The label that names the best and the worst is "MARKET:TICKER", unique in the catalog, so a tie is always broken the same way.
         var byLabel = stocks.ToDictionary(snapshot => Label(snapshot.Stock), snapshot => snapshot.Stock);
@@ -73,13 +76,13 @@ public sealed class GetPortfolioMetricsHandler(ICurrentUser currentUser, IPortfo
         var counts = new PriceStatusCounts(
             stocks.Count(s => s.PriceStatus == PriceStatuses.Current),
             stocks.Count(s => s.PriceStatus == PriceStatuses.Stale),
-            stocks.Count(s => s.PriceStatus == PriceStatuses.Pending),
+            stocks.Count(s => s.PriceStatus == PriceStatuses.Pending) + unanswered,
             stocks.Count(s => s.PriceStatus == PriceStatuses.Unavailable),
             stocks.Count(s => s.PriceStatus == PriceStatuses.Delisted));
         DateTimeOffset[] staleMoments = [.. stocks.Where(s => s.StaleSince is not null).Select(s => s.StaleSince!.Value)];
         DateTimeOffset? staleSince = staleMoments.Length == 0 ? null : staleMoments.Min();
 
-        return new PortfolioMetrics(PortfolioView.Of(found), stocks.Length, counts, staleSince, windows);
+        return new PortfolioMetrics(PortfolioView.Of(found) with { ItemCount = members.Count }, members.Count, counts, staleSince, windows);
     }
 
     private static string Label(StockSummary stock) => $"{stock.Market}:{stock.Ticker}";

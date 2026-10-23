@@ -12,7 +12,10 @@ import os
 import sys
 from pathlib import Path
 
-ENDPOINTS = ["watchlist_by_ticker", "watchlist_by_performance", "sparklines", "portfolio_metrics", "calculator"]
+ENDPOINTS = ["watchlist_by_ticker", "watchlist_by_performance", "sparklines", "watchlist_page", "portfolio_metrics", "calculator"]
+
+# The page scenario sends two requests at once and is judged on the time of the pair (page_ms), not on each request.
+REQUESTS_PER_ITERATION = {"watchlist_page": 2}
 
 
 def inside_here(name: str) -> Path:
@@ -25,14 +28,15 @@ def inside_here(name: str) -> Path:
 
 
 def row(metrics: dict, endpoint: str) -> str:
-    duration = metrics.get(f"http_req_duration{{endpoint:{endpoint},phase:steady}}", {})
+    timing = "page_ms" if endpoint == "watchlist_page" else "http_req_duration"
+    duration = metrics.get(f"{timing}{{endpoint:{endpoint},phase:steady}}", {})
     failed = metrics.get(f"http_req_failed{{endpoint:{endpoint},phase:steady}}", {})
     count = metrics.get(f"http_reqs{{endpoint:{endpoint},phase:steady}}", {})
     values = [duration.get(key) for key in ("avg", "med", "p(95)", "p(99)", "max")]
     cells = ["-" if value is None else f"{value:.1f}" for value in values]
     # The rate k6 exports is over the whole run, and each scenario runs for a fifth of it; the count over the steady part of the phase is what is wanted.
     seconds = max(1, int(os.environ.get("K6_PHASE_SECONDS", "30")) - int(os.environ.get("K6_WARMUP_SECONDS", "5")))
-    rate = count["count"] / seconds if "count" in count else None
+    rate = count["count"] / REQUESTS_PER_ITERATION.get(endpoint, 1) / seconds if "count" in count else None
     errors = failed.get("value", failed.get("rate"))
     return f"| {endpoint} | " + " | ".join(cells) + f" | {'-' if rate is None else f'{rate:.1f}'} | {'-' if errors is None else f'{errors * 100:.2f} %'} |"
 

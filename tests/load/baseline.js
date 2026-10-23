@@ -23,7 +23,7 @@ const stocks = 500;
 const portfolioStocks = 100;
 const vus = Number.parseInt(__ENV.K6_VUS || '4', 10);
 
-const scenarioNames = ['watchlist_by_ticker', 'watchlist_by_performance', 'sparklines', 'portfolio_metrics', 'calculator'];
+const scenarioNames = ['watchlist_by_ticker', 'watchlist_by_performance', 'sparklines', 'watchlist_page', 'portfolio_metrics', 'calculator'];
 
 export const options = {
   setupTimeout: '10m',
@@ -37,8 +37,9 @@ export const options = {
   }])),
   // The budget of the whole watchlist is 300 ms (ADR-0030, ADR-0033); the others are held to the same figure. It is judged on the steady part of
   // each scenario. The threshold on the count (always true) is what makes k6 keep the sub-metric of each endpoint for the report.
+  // The page scenario sends two requests at once; what a user waits for is the slower of them, so it is judged on page_ms and not on each request.
   thresholds: Object.fromEntries(scenarioNames.flatMap((name) => [
-    [`http_req_duration{endpoint:${name},phase:steady}`, enforce ? [`p(95)<${budgetMs}`] : []],
+    [name === 'watchlist_page' ? `page_ms{endpoint:${name},phase:steady}` : `http_req_duration{endpoint:${name},phase:steady}`, enforce ? [`p(95)<${budgetMs}`] : []],
     [`http_req_failed{endpoint:${name},phase:steady}`, enforce ? ['rate<0.01'] : []],
     [`http_reqs{endpoint:${name},phase:steady}`, ['count>=0']],
   ])),
@@ -46,6 +47,7 @@ export const options = {
 };
 
 const settled = new Trend('settled_ms');
+const pageTime = new Trend('page_ms', true);
 
 function headers(token, extra = {}) {
   return { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...extra } };
@@ -80,7 +82,7 @@ export function setup() {
 
     const created = http.post(
       `${base}/v1/portfolios`,
-      JSON.stringify({ name: `Load ${index}`, description: null }),
+      JSON.stringify({ name: `Load ${index} ${Date.now()}`, description: null }),  // a repeat of the run on the same stack must not meet the name of the first
       headers(token, { 'Idempotency-Key': `load-portfolio-${index}-${Date.now()}-0123456789` }));
     ok(created, 'create portfolio');
     const id = created.json('id');
@@ -126,6 +128,21 @@ export function watchlist_by_performance(data) {
 
 export function sparklines(data) {
   get(`${base}/v1/watchlist/sparklines?days=30`, pick(data).token, 'GET /v1/watchlist/sparklines');
+}
+
+// What the watchlist screen asks for when it opens (ADR-0038): the first page and the sparklines of every stock, together. The sparklines are not paged,
+// so this is the case the question "do they need a cache of their own?" is about.
+export function watchlist_page(data) {
+  const { token } = pick(data);
+  const tags = { phase: phase() };
+  const started = Date.now();
+  const [list, lines] = http.batch([
+    ['GET', `${base}/v1/watchlist?limit=50`, null, { ...headers(token), tags: { ...tags, name: 'GET /v1/watchlist' } }],
+    ['GET', `${base}/v1/watchlist/sparklines?days=30`, null, { ...headers(token), tags: { ...tags, name: 'GET /v1/watchlist/sparklines' } }],
+  ]);
+  pageTime.add(Date.now() - started, { endpoint: 'watchlist_page', ...tags });
+  check(list, { 'page list answered 200': (r) => r.status === 200 });
+  check(lines, { 'page sparklines answered 200': (r) => r.status === 200 });
 }
 
 export function portfolio_metrics(data) {

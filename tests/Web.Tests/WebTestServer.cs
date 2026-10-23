@@ -80,6 +80,7 @@ internal static class WebTestServer
                         endpoints.MapSakerHealth();
                         endpoints.MapGet("/ok", () => Results.Ok(new { ok = true }));
                         endpoints.MapGet("/denied", () => Results.Unauthorized());
+                        endpoints.MapGet("/teapot", () => Results.Problem(statusCode: 418));
                         endpoints.MapGet("/abandoned", (HttpContext http) =>
                         {
                             // The client has gone away: the request is marked aborted, and the work it was doing is cancelled.

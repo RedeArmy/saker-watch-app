@@ -9,7 +9,7 @@
 3. **Analyze new project** → select `saker-watch-app` → set the new-code definition to **Previous version** (or **Reference branch: main**) → **With GitHub Actions**. Note the **organization key** and **project key** shown on that page.
 4. **Administration → Analysis Method:** turn **Automatic Analysis OFF** (CI analysis is used because it provides coverage; both at once makes the scan fail).
 5. **My Account → Security:** generate a token (name it `saker-watch-ci`); copy it once.
-6. **Duplications:** *Administration → General Settings → Analysis Scope → Duplications Exclusions*: add `**/Migrations/**`. EF migrations are generated and each one repeats the shape of the others (a `Designer` file repeats the model snapshot), so Sonar reports them as duplicated code that no one can reasonably refactor.
+6. **Duplications:** *Administration → General Settings → Analysis Scope → Duplications Exclusions*: add `**/Migrations/**`. EF migrations are generated and each one repeats the shape of the others (a `Designer` file repeats the model snapshot), so Sonar reports them as duplicated code that no one can reasonably refactor. The same exclusion is also passed by the CI scanner (`/d:sonar.cpd.exclusions` in the `sonarcloud` job), so a scan does not depend on this setting having been made; the web setting keeps the project page consistent.
 7. **Quality Gate:** keep the built-in *Sonar way* (new code: no new bugs/vulnerabilities, hotspots reviewed, coverage >= 80 %, duplication <= 3 %) or create a stricter copy and assign it to the project.
 
 ## B. GitHub repository settings
@@ -50,5 +50,5 @@ Notes:
 - Optional extras (not enabled): *Require signed commits*; a second ruleset on tags `v*` (block deletion and force update) once releases start; *Require deployments to succeed* once a deploy environment exists. Code-scanning results as a merge rule need a public repository or Advanced Security (A-018).
 - Each required check is pinned to the GitHub Actions app (`integration_id` 15368), so no other app or API call can post a fake green status under the same name.
 - `docs/runbooks/github-ruleset-tags.json` (`protect-release-tags`) makes `v*` tags immutable; import it the same way before the first release.
-- Required check names are the workflow job ids in `.github/workflows/ci.yml`; renaming a job requires updating the ruleset.
+- Required check names are the workflow job ids in `.github/workflows/ci.yml`; renaming a job requires updating the ruleset. `scripts/check-ruleset.py` (a step of the `docs-and-config` job) fails when the ruleset requires a check that no job reports, so the file cannot drift from the workflow unseen. It was checked on 2026-10-23: the seven required checks (`docs-and-config`, `api-contract`, `secrets`, `dotnet`, `sonarcloud`, `codeql`, `trivy`) are the seven jobs. Importing the file into GitHub is still done by hand (section D, step 2), and so is adding `SONAR_TOKEN` to the Dependabot secret store (B.1).
 

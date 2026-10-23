@@ -12,7 +12,7 @@ namespace SakerWatch.BuildingBlocks.Web.Problems;
 public static class ProblemDetailsSetup
 {
     /// <summary>
-    /// Every problem response (validation, 404, 429, 500...) carries <c>correlationId</c> and <c>traceId</c>;
+    /// Every problem response (validation, 404, 429, 500...) carries <c>correlationId</c>, <c>traceId</c> and a <c>code</c> a client can switch on;
     /// unhandled exceptions become a generic 500 without stack trace or message.
     /// </summary>
     public static IServiceCollection AddSakerProblemDetails(this IServiceCollection services)
@@ -22,12 +22,20 @@ public static class ProblemDetailsSetup
         services.AddProblemDetails(options =>
             options.CustomizeProblemDetails = context =>
             {
+                // A failure that came from a Result has its code already. The ones raised by the pipeline (limiter, busy database, unhandled exception) name it
+                // only in the type, and the framework's own (an unknown route, a bad body) in neither, so the code is taken from the type or made from the status.
+                context.ProblemDetails.Extensions.TryAdd("code", CodeOf(context.ProblemDetails, context.HttpContext));
                 context.ProblemDetails.Extensions["correlationId"] = CorrelationIdMiddleware.Get(context.HttpContext);
                 context.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? context.HttpContext.TraceIdentifier;
             });
         services.AddExceptionHandler<GlobalExceptionHandler>();
         return services;
     }
+
+    private static string CodeOf(Microsoft.AspNetCore.Mvc.ProblemDetails problem, HttpContext http) =>
+        problem.Type is { } type && type.StartsWith(ResultHttpExtensions.ProblemTypeBase, StringComparison.Ordinal)
+            ? type[ResultHttpExtensions.ProblemTypeBase.Length..]
+            : $"http.{http.Response.StatusCode}";
 }
 
 /// <summary>Turns unhandled exceptions into a generic 500 ProblemDetails and logs the exception server-side.</summary>

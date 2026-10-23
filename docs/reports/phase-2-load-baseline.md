@@ -74,3 +74,20 @@ The figures were taken before the follow-ups of the security review (ADR-0042 to
 - The five users share the same 500 listings, which is the best case for the cache (one computation serves all of them). Users with different stocks would warm it more slowly, but each listing is still computed once a day.
 - The data is synthetic: smooth series with no holes, splits or stale listings.
 - The runs are one sample each; the trial runs before this one gave the same shape (cache on 165 ms p95 and off 904 ms for the costly sort with 15-second phases). Repeat it before relying on a difference of a few milliseconds.
+
+## The watchlist screen: the first page and the sparklines together (ADR-0050)
+The baseline measured each endpoint alone. The screen opens with two requests at once, the first page of the list and the sparklines of every stock, so `tests/load/baseline.js` has a sixth scenario, `watchlist_page`, that sends the pair with `http.batch` and is judged on the time of the pair (`page_ms`), the slower of the two, against the same 300 ms budget.
+
+Run of 2026-10-23 with enforcement on (commit `dccc94f` plus the scenario; 4 virtual users, 3 CPUs shared with k6 and the databases, 30 s per scenario of which the first 5 are warm-up; `LOAD_NOAVX=1`):
+
+| | avg ms | median ms | p95 ms | p99 ms | max ms | pages/s | errors |
+|---|---|---|---|---|---|---|---|
+| the page (list and sparklines together), cache on | 160.4 | 148.0 | 234.0 | 293.4 | 1508.0 | 24.8 | 0.00 % |
+| the page, cache off (reference) | 251.8 | 247.0 | 384.0 | 442.0 | 500.0 | 15.9 | 0.00 % |
+| the sparklines alone, cache on | 121.7 | 115.4 | 201.5 | 252.3 | 388.9 | 32.6 | 0.00 % |
+| the first page of the list alone, cache on | 63.2 | 58.9 | 104.1 | 138.1 | 221.1 | 62.6 | 0.00 % |
+
+- **With the cache that ships the page is inside the budget** (p95 234 ms, 66 ms of margin) and the enforced run exits 0. The pair costs more than its slower half (234 against 201 ms) because the two requests compete for the same database and CPU. With the performance cache off the pair is over the budget (384 ms), as the sort is.
+- **A second run the same day, after the retry of the script was repaired** (it overwrote the log of the first attempt and its setup failed on a portfolio name, so a crossing could never be repeated): the page at p95 243.4 ms (median 149.0, p99 299.4, 25.3 pages a second, no failures), the sparklines alone 223.9 ms, the list alone 91.1 ms; exit 0 at the first attempt. A third run crossed a budget at its first attempt and which one is not known. The two passing runs put the page 57 to 66 ms inside the budget.
+- **The maximum of 1.5 s is a single request** and does not show in the p99 (293 ms); it is the kind of spike the enforcement repeats once before it fails.
+- The sparklines do not use the cache and no decision to add one is taken (ADR-0050); the run also shows the other endpoints a little faster than the run of 2026-10-22 (watchlist sorted by a window 167 ms p95, portfolio metrics 89 ms), which is within the noise of one sample on this machine.

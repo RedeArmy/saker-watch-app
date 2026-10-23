@@ -17,11 +17,14 @@ namespace SakerWatch.MarketData.Tests.Live;
 /// series that moves on its own, most likely for low-priced stocks whose closes have few significant digits, would waste credits and leave stocks stale.
 /// The check fetches the last weeks of adjusted closes of a few symbols twice, <c>SAKER_LIVE_REWRITE_WAIT_MINUTES</c> apart (default 10), and compares
 /// the completed sessions; it also compares the first pass with the snapshot an earlier run left in the report directory, so running it again on another
-/// day covers a longer gap. About twelve credits a run. Symbols can be changed with <c>SAKER_LIVE_REWRITE_SYMBOLS</c> (<c>MIC:SYMBOL,...</c>).
+/// day covers a longer gap. About sixteen credits a run (eight symbols, two passes); the report says how many closed under $5, the case it exists for. Symbols can be changed with <c>SAKER_LIVE_REWRITE_SYMBOLS</c> (<c>MIC:SYMBOL,...</c>).
 /// </summary>
 public sealed class RewriteStabilityLiveTests
 {
-    private const string _defaultSymbols = "XNGS:AAPL,XNYS:KO,XNYS:F,ARCX:SPY,XNGS:SIRI,XNYS:NOK";
+    private const string _defaultSymbols = "XNGS:AAPL,XNYS:KO,XNYS:F,ARCX:SPY,XNGS:SIRI,XNYS:NOK,XNYS:RIG,XNYS:BB";
+
+    // Under this price one unit of the last place of a close is as large as the tolerance (docs/runbooks/provider-quota.md), the case the check is for.
+    private const decimal _cheap = 5m;
 
     private static readonly string _reportDirectory = Environment.GetEnvironmentVariable("SAKER_LIVE_REPORT_DIR") ?? "/tmp/saker-live-twelvedata";
 
@@ -68,6 +71,9 @@ public sealed class RewriteStabilityLiveTests
         Line($"\n## Second pass against the first, {wait.TotalMinutes} minutes later");
         crossings += Compare(first, second, tolerance);
 
+        int cheap = second.Values.Count(closes => closes.Count > 0 && decimal.Parse(closes.OrderBy(pair => pair.Key, StringComparer.Ordinal).Last().Value, CultureInfo.InvariantCulture) < _cheap);
+        Line($"\n## Coverage\n{cheap} of {second.Count} symbols closed under ${_cheap} on their last session. "
+            + (cheap == 0 ? "**None is cheap, so the case this check exists for was not tested:** name some with SAKER_LIVE_REWRITE_SYMBOLS and run it again." : "The low-priced case is covered."));
         Line($"\n## Result\n{(crossings == 0 ? "no completed session moved beyond the tolerance" : $"{crossings} closes moved beyond the tolerance without a corporate action: RewriteTolerance reads provider noise as a rewrite for them")}");
         await File.WriteAllTextAsync(Path.Combine(_reportDirectory, "rewrite-stability-report.md"), _report.ToString());
         first.Count.Should().BeGreaterThanOrEqualTo(3, "at least three symbols must have answered for the comparison to mean anything");
