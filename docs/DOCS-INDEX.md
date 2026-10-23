@@ -112,7 +112,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0047-registration-accounting-portfolio-limit-and-calculation-version.md | ADR 0047 | Eder | approved | 2 | 2026-10-23 |
 | docs/adr/0048-warming-the-performance-windows-and-the-number-of-api-processes.md | ADR 0048 | Eder | approved | 2 | 2026-10-23 |
 | docs/adr/0049-smaller-decisions-of-the-phase-2-review.md | ADR 0049 | Eder | approved | 2 | 2026-10-23 |
-| docs/adr/0050-no-sparkline-cache-before-the-screens.md | ADR 0050 | Eder | draft | 2 | 2026-10-23 |
+| docs/adr/0050-no-sparkline-cache-before-the-screens.md | ADR 0050 | Eder | approved | 2 | 2026-10-23 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-23 |
 | docs/api/errors.md | API error codes for the screens | Eder | draft | 2 | 2026-10-23 |
