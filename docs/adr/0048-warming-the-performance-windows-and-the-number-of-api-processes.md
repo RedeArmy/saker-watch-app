@@ -1,6 +1,6 @@
 # ADR-0048: Warming the performance windows, and counting the API processes
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 

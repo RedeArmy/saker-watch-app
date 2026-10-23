@@ -1,7 +1,7 @@
 # Runbook — running more than one API process
 
 - **Purpose:** what to set and what to check before the API runs as more than one process (ADR-0048). One process is the deployed shape (ADR-0021); this is for the day that changes.
-- **Owner:** Eder · **Status:** draft · **Target phase:** 5
+- **Owner:** Eder · **Status:** approved · **Target phase:** 5
 
 ## Before
 1. Say how many processes there will be: `Deployment__ApiReplicas=<n>` on every API process (1 to 64). It is the setting the shared counts start from. If it is left at 1 the processes see each other in Redis within seconds and count with the larger number, and log a warning (event 9110, `sakerwatch_deployment_api_instances{kind="observed"}` above `declared`): that is a mistake to fix, not a configuration to keep.
