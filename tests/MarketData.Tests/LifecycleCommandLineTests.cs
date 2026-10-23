@@ -7,6 +7,7 @@ using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lifecycle;
 using SakerWatch.MarketData.Application.Lookup;
+using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
 
@@ -44,7 +45,7 @@ public sealed class LifecycleCommandLineTests
 
         public Task<int> NoteSymbolNotFoundAsync(StockId stock, DateOnly day, DateTimeOffset at, CancellationToken cancellationToken) => Task.FromResult(1);
 
-        public Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken) => Task.FromResult(new NotFoundShare(0, 0));
+        public Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly since, CancellationToken cancellationToken) => Task.FromResult(new NotFoundShare(0, 0));
     }
 
     private sealed class Unit : IUnitOfWork
@@ -71,7 +72,7 @@ public sealed class LifecycleCommandLineTests
     private static (LifecycleCommandLine Line, Unit Unit) Build(bool breaks = false)
     {
         var unit = new Unit();
-        var lifecycle = new ListingLifecycle(new Catalog(), new Store(breaks), Options.Create(new IngestionOptions()), new FakeTimeProvider(new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero)), NullLogger<ListingLifecycle>.Instance);
+        var lifecycle = new ListingLifecycle(new Catalog(), new Store(breaks), ExchangeCalendars.Default(), Options.Create(new IngestionOptions()), new FakeTimeProvider(new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero)), NullLogger<ListingLifecycle>.Instance);
         return (new LifecycleCommandLine(new LifecycleCommandRunner(lifecycle, unit), NullLogger<LifecycleCommandLine>.Instance), unit);
     }
 

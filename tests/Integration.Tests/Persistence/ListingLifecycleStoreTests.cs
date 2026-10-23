@@ -9,6 +9,7 @@ using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lifecycle;
+using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
 using SakerWatch.MarketData.Infrastructure.Persistence;
@@ -171,9 +172,26 @@ public sealed class ListingLifecycleStoreTests(TimescalePostgresFixture postgres
         await db.Admin.ExecuteAsync("UPDATE marketdata.ingestion_state SET not_found_days = 4, last_not_found_on = '2026-10-19' WHERE stock_id = @id", ("id", stocks[3].Value));
         await db.Admin.ExecuteAsync("UPDATE marketdata.stocks SET is_active = false, delisted_at = now() WHERE id = @id", ("id", stocks[3].Value));
 
-        NotFoundShare share = await InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).NotFoundShareAsync(stocks[0], new DateOnly(2026, 10, 19), CancellationToken.None));
+        NotFoundShare share = await InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).NotFoundShareAsync(stocks[0], new DateOnly(2026, 10, 18), CancellationToken.None));
 
         share.Should().Be(new NotFoundShare(2, 5), "the delisted one is not active and the old streak is over");
+    }
+
+    [Fact]
+    public async Task TheShareOfTheMarketUnknownToTheProvider_CountsAStreakThatReachedFridayWhenTheCutoffIsFriday()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        StockId[] stocks = [.. await Task.WhenAll(Enumerable.Range(0, 3).Select(i => SeedStockAsync(db.Admin, $"W{i}")))];
+        foreach (StockId stock in stocks)
+        {
+            await db.Admin.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status, not_found_days, last_not_found_on) VALUES (@id, 'ok', 2, '2026-10-16')", ("id", stock.Value));
+        }
+
+        NotFoundShare monday = await InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).NotFoundShareAsync(stocks[0], new DateOnly(2026, 10, 16), CancellationToken.None));
+        NotFoundShare sunday = await InSessionAsync(db.Worker, session => new ListingLifecycleStore(session).NotFoundShareAsync(stocks[0], new DateOnly(2026, 10, 18), CancellationToken.None));
+
+        monday.InStreak.Should().Be(3, "the streak reached Friday, the session before Monday");
+        sunday.InStreak.Should().Be(0, "the calendar day before would have missed it");
     }
 
     [Fact]
@@ -197,7 +215,7 @@ public sealed class ListingLifecycleStoreTests(TimescalePostgresFixture postgres
 
         async Task<bool> RunAsync(params string[] args) => await InSessionlessAsync(db.Worker, async session =>
         {
-            var lifecycle = new ListingLifecycle(new StockCatalog(session), new ListingLifecycleStore(session), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
+            var lifecycle = new ListingLifecycle(new StockCatalog(session), new ListingLifecycleStore(session), ExchangeCalendars.Default(), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
             return (await new LifecycleCommandRunner(lifecycle, session).RunAsync(LifecycleCommand.Parse(args).Value, CancellationToken.None)).IsSuccess;
         });
 
@@ -221,7 +239,7 @@ public sealed class ListingLifecycleStoreTests(TimescalePostgresFixture postgres
 
         async Task<(bool Succeeded, string? Code)> RunAsync(params string[] args) => await InSessionlessAsync(db.Worker, async session =>
         {
-            var lifecycle = new ListingLifecycle(new StockCatalog(session), new ListingLifecycleStore(session), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
+            var lifecycle = new ListingLifecycle(new StockCatalog(session), new ListingLifecycleStore(session), ExchangeCalendars.Default(), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
             Result<LifecycleChange> result = await new LifecycleCommandRunner(lifecycle, session).RunAsync(LifecycleCommand.Parse(args).Value, CancellationToken.None);
             return (result.IsSuccess, result.Error?.Code);
         });

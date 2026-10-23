@@ -63,7 +63,7 @@ public sealed class DailyRefreshTests(TimescalePostgresFixture postgres) : IClas
             .HandleAsync(new RefreshStockJob(world.Id.Value, day), Context(), CancellationToken.None));
 
     private static ListingLifecycle LifecycleFor(DbSession session, World world, IngestionOptions? options = null) =>
-        new(new StockCatalog(session), new ListingLifecycleStore(session), Options.Create(options ?? new IngestionOptions()), world.Time, NullLogger<ListingLifecycle>.Instance);
+        new(new StockCatalog(session), new ListingLifecycleStore(session), ExchangeCalendars.Default(), Options.Create(options ?? new IngestionOptions()), world.Time, NullLogger<ListingLifecycle>.Instance);
 
     private static Task RefreshWithAsync(World world, DateOnly day, IngestionOptions settings) => InSessionAsync(world, session =>
         new RefreshStockHandler(IngestionFor(session, world), new PriceStore(session), WaiterFor(world), LifecycleFor(session, world, settings), Options.Create(settings), world.Time, NullLogger<RefreshStockHandler>.Instance)
