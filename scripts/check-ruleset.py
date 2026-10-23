@@ -29,8 +29,8 @@ def workflow_jobs() -> list[str]:
     jobs = text.split("\njobs:\n", 1)[1]
     # A job is a key at two spaces of indentation; its name: line, when it has one, is what the check is called.
     names = []
-    for match in re.finditer(r"^  ([a-z0-9_-]+):\n((?:    .*\n|\n)*)", jobs, re.M):
-        named = re.search(r"^    name: (.+)$", match.group(2), re.M)
+    for match in re.finditer(r"^ {2}([a-z0-9_-]+):\n((?: {4}.*\n|\n)*)", jobs, re.M):
+        named = re.search(r"^ {4}name: (.+)$", match.group(2), re.M)
         names.append(named.group(1).strip() if named else match.group(1))
     return names
 

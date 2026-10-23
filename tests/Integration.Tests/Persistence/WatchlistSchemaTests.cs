@@ -10,8 +10,11 @@ using SakerWatch.Watchlist.Infrastructure.Persistence;
 namespace SakerWatch.Integration.Tests.Persistence;
 
 [Trait("Category", "Integration")]
-public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
+public sealed partial class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
 {
+    [GeneratedRegex(@">= (\d+) THEN")]
+    private static partial Regex CeilingLiteral();
+
     private const string _insertItem =
         "INSERT INTO watchlist.watchlist_items (id, user_id, stock_id, notes, target_price, created_at, updated_at) VALUES (@id, @user, @stock, @notes, @target, now(), now())";
 
@@ -204,7 +207,7 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
 
         // The options are validated against LimitCeilings (WatchlistUseCaseTests); this ties the other side, the literal the database enforces.
         body.Should().NotBeNull("the function exists");
-        Regex.Matches(body, @">= (\d+) THEN").Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+        CeilingLiteral().Matches(body).Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
             .Should().Equal(ceiling);
     }
 

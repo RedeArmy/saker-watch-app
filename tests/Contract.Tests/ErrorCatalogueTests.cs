@@ -34,6 +34,9 @@ public sealed partial class ErrorCatalogueTests
         "marketdata.stock.time_zone_invalid",
     ];
 
+    [GeneratedRegex("`([^`]+)`")]
+    private static partial Regex InBackticks();
+
     [GeneratedRegex("^\\| ((?:`[^`]+`(?:, )?)+) \\|", RegexOptions.Multiline)]
     private static partial Regex CataloguedRow();
 
@@ -56,7 +59,7 @@ public sealed partial class ErrorCatalogueTests
         var codes = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match row in CataloguedRow().Matches(page))
         {
-            foreach (Match code in Regex.Matches(row.Groups[1].Value, "`([^`]+)`"))
+            foreach (Match code in InBackticks().Matches(row.Groups[1].Value))
             {
                 codes.Add(code.Groups[1].Value);
             }
