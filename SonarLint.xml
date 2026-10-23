@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Thresholds of the soft limits in .claude/rules/code-style.md for the Sonar analyzer (S138, lines of code of a method). -->
+<!-- Thresholds of the limits in docs/code-standards.md for the Sonar analyzer (S138, lines of code of a method). -->
 <AnalysisInput>
   <Rules>
     <Rule>

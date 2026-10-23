@@ -35,7 +35,7 @@ dotnet_diagnostic.CA2016.severity = warning
 dotnet_diagnostic.CA1062.severity = none
 
 [tests/**.cs]
-# Test names use Method_Scenario_Expected (rules/testing.md)
+# Test names use Method_Scenario_Expected (docs/code-standards.md)
 dotnet_diagnostic.CA1707.severity = none
 
 [src/**.cs]
@@ -44,7 +44,7 @@ dotnet_diagnostic.CA2254.severity = error
 dotnet_diagnostic.RS0030.severity = error
 # SonarCloud's quality profile (S1192) fails the CI build on repeated string literals; enable it locally so it fails before pushing
 dotnet_diagnostic.S1192.severity = error
-# Soft limit of .claude/rules/code-style.md: a method has at most 40 lines of code (threshold in SonarLint.xml). A method that needs more is marked
+# Limit of docs/code-standards.md: a method has at most 40 lines of code (threshold in SonarLint.xml). A method that needs more is marked
 # with [SuppressMessage] and a Justification (the list of those marks is the debt, and it may only shrink). The build enforces 7 parameters (S107), not the 5 of the guideline: aggregate factories and constructors legitimately take more
 dotnet_diagnostic.S138.severity = error
 # SonarCloud's quality profile also fails the CI build on more than 7 parameters (S107, the analyzer's default threshold); enable it locally so it fails before pushing

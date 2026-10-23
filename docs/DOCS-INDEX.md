@@ -116,6 +116,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0050-no-sparkline-cache-before-the-screens.md | ADR 0050 | Eder | approved | 2 | 2026-10-23 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-23 |
+| docs/code-standards.md | Code standards the build enforces and the guidelines kept by review | Eder | draft | 2 | 2026-10-23 |
 | docs/api/errors.md | API error codes for the screens | Eder | draft | 2 | 2026-10-23 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-23 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | approved | 1 | 2026-10-23 |
