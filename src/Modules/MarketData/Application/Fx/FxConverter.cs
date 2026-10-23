@@ -26,6 +26,9 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
     /// <summary>Code of the failure when no rate is stored for a step of the conversion.</summary>
     public const string RateUnavailableCode = "marketdata.fx.rate_unavailable";
 
+    /// <summary>Code of the failure when the rates of a conversion path cannot be multiplied into one rate within the allowed range.</summary>
+    public const string RatesNotCombinableCode = "marketdata.fx.rates_not_combinable";
+
     /// <summary>Code of the failure when the amount is negative or too large to convert.</summary>
     public const string AmountInvalidCode = "marketdata.fx.amount_invalid";
 
@@ -116,7 +119,7 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
             Result<ExchangeRate> chained = rate.Then(leg.Rate);
             if (!chained.IsSuccess)
             {
-                return Error.Validation(RateUnavailableCode, "The rates of the path cannot be combined.");
+                return Error.Validation(RatesNotCombinableCode, "The rates of the path cannot be combined.");
             }
 
             rate = chained.Value;
