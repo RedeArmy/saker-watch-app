@@ -29,11 +29,11 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/runbooks/listing-lifecycle.md | Runbook listing-lifecycle | Eder | approved | 2 | 2026-10-22 |
 | docs/runbooks/cache.md | Runbook cache of the daily numbers | Eder | approved | 2 | 2026-10-22 |
 | docs/runbooks/fx-rates.md | Runbook exchange rate guard | Eder | approved | 2 | 2026-10-22 |
-| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | approved | 2 | 2026-10-22 |
+| docs/runbooks/provider-quota.md | Runbook provider credit lanes and registration cap | Eder | approved | 2 | 2026-10-23 |
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | approved | 5 | 2026-10-22 |
 | docs/runbooks/restore.md | Runbook restore | Eder | approved | 5 | 2026-10-22 |
-| docs/runbooks/scaling-the-api.md | Runbook: running more than one API process | Eder | draft | 5 | 2026-10-22 |
+| docs/runbooks/scaling-the-api.md | Runbook: running more than one API process | Eder | approved | 5 | 2026-10-23 |
 | docs/runbooks/key-rotation.md | Runbook key-rotation | Eder | stub | 5 | 2026-10-12 |
 | README.md | Local setup (10 minutes) | Eder | approved | 0 | 2026-10-12 |
 | CONTRIBUTING.md | Contribution guide | Eder | approved | 0 | 2026-10-12 |
@@ -108,13 +108,13 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0044-provider-and-registration-hardening.md | ADR 0044 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0045-catalog-write-hardening.md | ADR 0045 | Eder | approved | 2 | 2026-10-22 |
-| docs/adr/0046-pre-authentication-limiter-charges-refused-requests.md | ADR 0046 | Eder | draft | 2 | 2026-10-22 |
-| docs/adr/0047-registration-accounting-portfolio-limit-and-calculation-version.md | ADR 0047 | Eder | draft | 2 | 2026-10-22 |
-| docs/adr/0048-warming-the-performance-windows-and-the-number-of-api-processes.md | ADR 0048 | Eder | draft | 2 | 2026-10-22 |
-| docs/adr/0049-smaller-decisions-of-the-phase-2-review.md | ADR 0049 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0046-pre-authentication-limiter-charges-refused-requests.md | ADR 0046 | Eder | approved | 2 | 2026-10-23 |
+| docs/adr/0047-registration-accounting-portfolio-limit-and-calculation-version.md | ADR 0047 | Eder | approved | 2 | 2026-10-23 |
+| docs/adr/0048-warming-the-performance-windows-and-the-number-of-api-processes.md | ADR 0048 | Eder | approved | 2 | 2026-10-23 |
+| docs/adr/0049-smaller-decisions-of-the-phase-2-review.md | ADR 0049 | Eder | approved | 2 | 2026-10-23 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-22 |
-| docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |
+| docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-23 |
 | docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | approved | 1 | 2026-10-22 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | approved | 1 | 2026-10-22 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | approved | 1 | 2026-10-22 |

@@ -142,16 +142,16 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
     }
 
     /// <inheritdoc />
-    public async Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken)
+    public async Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly since, CancellationToken cancellationToken)
     {
         await using NpgsqlCommand command = Command(
             """
-            SELECT count(*) FILTER (WHERE i.not_found_days > 0 AND i.last_not_found_on >= @day - 1), count(*)
+            SELECT count(*) FILTER (WHERE i.not_found_days > 0 AND i.last_not_found_on >= @since), count(*)
             FROM marketdata.stocks s
             LEFT JOIN marketdata.ingestion_state i ON i.stock_id = s.id
             WHERE s.is_active AND s.market_mic = (SELECT market_mic FROM marketdata.stocks WHERE id = @id)
             """,
-            [("id", stock.Value), ("day", day)]);
+            [("id", stock.Value), ("since", since)]);
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
         return new NotFoundShare((int)reader.GetInt64(0), (int)reader.GetInt64(1));

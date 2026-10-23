@@ -47,6 +47,23 @@ public sealed class SnapshotReadersTests(TimescalePostgresFixture postgres) : IC
     }
 
     [Fact]
+    public async Task ListIngestable_LeavesOutWhatFailedForGood_ButAsksAgainForWhatTheConfigurationStopped()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        StockId fine = await SeedStockAsync(db.Admin, "FINE");
+        StockId configuration = await SeedStockAsync(db.Admin, "CONF");
+        StockId forGood = await SeedStockAsync(db.Admin, "GONE");
+        foreach ((StockId stock, string code) in new[] { (configuration, "market_disabled"), (forGood, "series_truncated") })
+        {
+            await db.Admin.ExecuteAsync("INSERT INTO marketdata.ingestion_state (stock_id, status, failure_code) VALUES (@id, 'failed', @code)", ("id", stock.Value), ("code", code));
+        }
+
+        IReadOnlyList<StockId> ids = await InSessionAsync(db.Worker, session => new StockCatalog(session).ListIngestableAsync(SakerWatch.MarketData.Domain.Markets.Mic.Parse("XNAS"), CancellationToken.None));
+
+        ids.Should().BeEquivalentTo([fine, configuration]);
+    }
+
+    [Fact]
     public async Task FindMany_WithNothingAsked_ReadsNothing_AndManyIdsAreSplitIntoBatches()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

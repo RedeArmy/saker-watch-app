@@ -1,11 +1,11 @@
 # Phase 2 report — Market data, watchlist, calculator
 
 - **Purpose:** Phase Report for the Phase 2 gate (`/phase-report`): what was built and not, evidence, risks, review findings with their disposition, and the proposal for Phase 3.
-- **Owner:** Eder · **Status:** draft: `security-auditor` and `migration-reviewer` ran (the second time complete), every finding has a disposition and the owner's decisions are made; `code-reviewer` is not run yet, so the gate cannot be proposed for approval · **Target phase:** 2
-- **Range:** `7b5a90d` (end of Phase 1, 2026-10-16) to the head of `feat/phase-2-8-caching`. Milestones 2.0–2.7 and their follow-ups are merged to `main` (#38–#56); 2.8 is on its branch.
+- **Owner:** Eder · **Status:** draft: all three reviewers have run (`security-auditor` twice, `migration-reviewer` twice, `code-reviewer` in three parts), none found a blocker, every finding has a disposition and the owner's decisions on the gate are listed in section 8 · **Target phase:** 2
+- **Range:** `7b5a90d` (end of Phase 1, 2026-10-16) to `main` `89ef594` (2026-10-23) plus the commits of the gate branch that answer the final review (section 7). Milestones 2.0–2.8 and the full-repository review (#58) are merged to `main`.
 
 ## 1. Built
-48 commits since the Phase 1 gate (several are squashed pull requests that hold a whole milestone): by Conventional Commit type 16 feat, 9 fix, 6 build (Dependabot), 5 docs, 4 test, 4 style, 1 refactor, and 3 squashed pull requests. 339 files changed, about 37.8k lines added (source, tests, migrations, docs).
+56 commits since the Phase 1 gate (several are squashed pull requests that hold a whole milestone): by Conventional Commit type 15 feat, 13 fix, 6 build (Dependabot), 5 docs, 4 test, 4 style, 1 refactor, and 8 merge or squashed pull request subjects with no type. 427 files changed, about 48.3k lines added (source, tests, migrations, docs).
 
 | Milestone | Content |
 |---|---|
@@ -19,6 +19,8 @@
 | 2.7 | The money kit (exact `Money`, typed `ExchangeRate`, `Shares`, `RelativeChange`, rounding only for display; ADR-0037), the partial-purchase calculator and `POST /v1/calculations/partial-purchase`; follow-ups: optional broker fee, price history and sparklines (ADR-0038), the life of a listing: delisting, relisting and a change of ticker (ADR-0039), company profiles and filings from the SEC behind ports, a fake and an adapter that is off (ADR-0040) |
 | 2.8 | The cache of the daily numbers in Redis (ADR-0041), a price-only read for the calculator, the k6 baseline with the cache on and off, the cache runbook, threat T51; and the follow-ups of the security and migration reviews: the exchange rate guard (ADR-0042), provider credit lanes and a daily cap on new stocks (ADR-0043), delisting judged against the whole market, no transaction held while a provider is asked and no HTTP retries for Twelve Data (ADR-0044), the owner exemption from `FORCE` row-level security (ADR-0010) |
 
+| Review | The full-repository review after 2.8 (PR #58, ADR-0046 to ADR-0049), in five batches: provider budget refunds, exchange-rate level shifts, retried backfills and split-safe refreshes; the outbox running as the message's user, job outcomes, a pre-authentication limiter that charges refused requests, scrubbed log sinks; k6 budgets judged on the shipped configuration, Redis failing fast as `503`, `500`/`503` declared on every endpoint; registration accounting, a limit per portfolio, the calculation version and rules fingerprint in the cache key; warming the performance windows after a load, the number of API processes (`Deployment:ApiReplicas`) and sliding-window limiters in Redis that never wait; the portfolio-deletion token, the paired credit reservation, and the size limit of methods (Sonar S138/S107) as a build error |
+
 Also in this phase: the worker smoke test (`scripts/smoke-worker.sh`), the freshness sampler fix (its database reads had no open connection, so its gauges were never measured), the listing-lifecycle runbook, and Dependabot bumps of the compose images and packages.
 
 ## 2. Deliberately not built
@@ -30,24 +32,23 @@ Also in this phase: the worker smoke test (`scripts/smoke-worker.sh`), the fresh
 - Deployment, production Caddy, backups and restore drills, dashboards and alerts, retention policies for market data (Phase 5).
 - Quotas, onboarding, data export and account deletion (Phase 6).
 
-## 3. Test results (head of `feat/phase-2-8-caching`)
+## 3. Test results (head of the gate branch, on `main` `89ef594` plus four commits)
 | Check | Result |
 |---|---|
 | `dotnet build -warnaserror` | 0 warnings, 0 errors |
 | `dotnet format --verify-no-changes` | clean |
-| `bash tests/hooks/run.sh` | 60/60 |
+| `bash tests/hooks/run.sh` | 69/69 |
 | `bash scripts/check-docs-index.sh`, `check-todos.sh` | OK |
-| `dotnet test` (with coverage, as CI runs it) | 2 003 passed, 0 failed, 4 skipped (the opt-in live checks and the scale test): Calculator 73, Application 184, Architecture 17, Identity 76, Contract 13, Observability 41, MarketData 667, Watchlist 135, Web 127, Integration 670 (real PostgreSQL/Timescale, MongoDB and Redis through Testcontainers; 19 minutes on this machine) |
-| Coverage gate (`scripts/check-coverage.py 85`) | passes for the ten gated assemblies: MarketData.Application 99.3 %, MarketData.Domain 99.2 %, Watchlist.Application 98.0 %, Watchlist.Domain 99.5 %, Calculator.Application 96.3 %, Calculator.Domain 92.5 %, Kernel 95.1 %, Identity.Application 100 %, Retention.Application 98.5 % |
+| `dotnet test` (with coverage, as CI runs it) | 2 176 passed, 0 failed, 4 skipped (the opt-in live checks and the scale test): Calculator 76, Application 197, Architecture 18, Identity 76, Contract 13, Observability 45, MarketData 726 (3 skipped), Watchlist 160, Web 144, Integration 721 (1 skipped; real PostgreSQL/Timescale, MongoDB and Redis through Testcontainers; 11 min 42 s on this machine). A unit test of the lifecycle failed in that run because the commit that changed the guard had not updated its expected calls; it was fixed in the commit that carries this report and the MarketData suite passes (726) |
+| Coverage gate (`scripts/check-coverage.py 85`) | passes for the ten gated assemblies: BuildingBlocks.Application 99.6 %, BuildingBlocks.Kernel 95.6 %, MarketData.Application 98.5 %, MarketData.Domain 99.7 %, Watchlist.Application 96.9 %, Watchlist.Domain 99.5 %, Calculator.Application 96.4 %, Calculator.Domain 92.5 %, Identity.Application 100 %, Retention.Application 98.5 % |
 | `dotnet list package --vulnerable --include-transitive` | no vulnerable packages |
-| `docker compose config` of the dev and observability profiles | valid |
+| Worker smoke (`scripts/smoke-worker.sh`), `docker compose config` | last run 2026-10-21 (`ALL OK`) and not repeated: they need Docker stacks and the compose file needs `deploy/.env`; no change since touches them |
 | Live checks, run by hand and recorded in the ADRs | Twelve Data (five runs, ADR-0027), Banco de Guatemala (A-026), SEC EDGAR (A-028) |
-| Worker smoke (`scripts/smoke-worker.sh`) | `ALL OK`: start, graceful stop, no warning, the `marketdata` commands and their rows |
-| Load baseline (`scripts/run-k6.sh`, `docs/reports/phase-2-load-baseline.md`) | cache on: every path under 245 ms p95 (budget 300 ms); cache off: the watchlist sorted by a window at 849 ms p95; with `K6_ENFORCE=1` the run exits 0 with the cache and 99 without |
+| Load baseline (`scripts/run-k6.sh`, `docs/reports/phase-2-load-baseline.md`) | run of 2026-10-22 with enforcement: every p95 with the cache on at most 213 ms (budget 300 ms); the first read after a load 448 ms without the warming job and 80 ms with it (ADR-0048). Not repeated: the code paths measured did not change after it |
 
 Phase 2 exit criteria of the roadmap: performance math on fixtures including splits and short histories (ADR-0030, `PerformanceCalculatorTests`, `PerformanceReaderTests`), stale-data behavior (`PriceStatusRulesTests`, `FreshnessTests`), the provider-licensing ADR (ADR-0027) and the k6 baseline: all four have their evidence above.
 
-Could not run here: the CI-only jobs (`api-contract` against the base branch with the real `oasdiff` image was run by hand for 2.7, SonarCloud Quality Gate, CodeQL, Trivy, gitleaks, SBOM upload), because there is no GitHub access from this environment; and the findings SonarCloud reports on each push were fixed from the lists the owner pasted, not from the gate itself.
+Could not run here: the CI-only jobs (`api-contract` against the base branch with the real `oasdiff` image, SonarCloud Quality Gate, CodeQL, Trivy, gitleaks, SBOM upload), because there is no GitHub access from this environment; the findings SonarCloud reports on each push were fixed from the lists the owner pasted (the last two: S107 on `CallerRateLimiter`, and six style findings), not from the gate itself. Both rules are now errors in the local build (`.editorconfig`), so the same findings fail before a push.
 
 ## 4. Known risks
 - **One provider, free plan** (T38): 8 credits a minute and 800 a day, enforced per distinct call; 500 stocks fit only with the daily refresh and a careful backfill. Another market needs another provider (A-027) and the licensing check of ADR-0027.
@@ -58,18 +59,28 @@ Could not run here: the CI-only jobs (`api-contract` against the base branch wit
 - **Free-plan data quality:** a provider can rewrite its adjusted history (detected, and a full reload is queued) or answer "unknown symbol" for a stock that trades (a delisting needs the same answer on five different days, and every change is a row of `corporate_actions`).
 - **The EDGAR adapter has never run in production configuration:** it is off, and its identity must carry a contact before it is turned on (T50).
 - **CI jobs not seen from here:** SonarCloud needs `SONAR_TOKEN` in the Dependabot secret store too, or Dependabot pull requests fail the gate.
+- **Redis down:** the call budget, the search cache, the registration cap, the performance cache and the rate limiters all fail open or miss (T45, T51); the limiters and the registration cap count in each API process, so with N processes the effective limit is up to N times the setting for the time Redis is away (`Deployment:ApiReplicas` must be set when the API is scaled out, ADR-0047/0048, runbook `scaling-the-api`); the fall back is counted (`sakerwatch_http_rate_limiter_fallback_total`) but no alert rule exists yet (Phase 5).
+- **The pre-authentication limiter cannot tell clients apart until the proxy network is configured (A-023):** behind Caddy all clients would share one address and one flood of bad tokens would limit everyone. Not exploitable today (Caddy does not proxy to the API); a Phase 5 gate item.
+- **Odd credit limits idle one credit** of the minute or day for the history loads, because a load reserves its two credits together (ADR-0049); the host refuses limits below 2.
+- **A listing that failed for a reason other than the configuration stays out of the refresh** until the operator resets it with the SQL of the runbook `listing-lifecycle` (a first history load that gets a 404 is the example).
+- **A reload of a rewritten history draws on the on-demand allowance** (ADR-0043 by design, kept by the owner on 2026-10-23): when the daily refresh finds the adjusted history rewritten it writes nothing and queues the reload, so a stock whose reload waits goes stale until the reload completes, and the new stocks wait behind it. At the expected volume (about 4 reloads a day, 8 credits, peaks of 40 to 60 against an allowance of 200) this does not bind; the lane is a bulkhead: a provider that readjusts a whole market costs three days of reloads and leaves the refresh of the other stocks alone. `sakerwatch_marketdata_backfills_total{outcome="waiting"}` and `sakerwatch_marketdata_refreshes_total{outcome="reload_queued"}` show it, and the runbook `provider-quota` lists when to reopen the decision.
+- **Size debt:** the only methods over 40 lines are 7 declarative registrations, each with a justified `[SuppressMessage]` (`grep -rn S138 src`); the build also rejects more than 7 parameters.
+- **`.claude/` is not in the repository** (`.git/info/exclude`): the rules, hooks, agents and skills live on the owner's machine only.
 - Carried over from Phase 1: availability of Clavaris (T1/T33), `aud` equal to the client id (A-021), account state cached 5 minutes (T32), forwarded headers (A-023), the audit chain without an off-database anchor (T3).
 
 ## 5. ADRs added or changed
-Added: 0027 market data providers and licensing, 0028 FX source and conversion path, 0029 ingestion design, 0030 performance windows and edge rules, 0031 watchlist and portfolios storage, 0032 on-demand stock registration, 0033 watchlist read model, 0034 portfolio API, 0035 portfolio metrics, 0036 partial-purchase calculator, 0037 money kit, 0038 price history and sparklines, 0039 listing lifecycle, 0040 company profiles and filings, 0041 cache of the daily numbers, 0042 exchange rate guard, 0043 provider credit lanes, 0044 hardening of delisting, of the registration write and of the provider retries, 0045 hardening of what the API can write to the catalog. Changed: 0010 (the table owner and `FORCE`), 0026 (portfolios, from the decision of 2026-10-16 to accepted).
+Added: 0027 market data providers and licensing, 0028 FX source and conversion path, 0029 ingestion design, 0030 performance windows and edge rules, 0031 watchlist and portfolios storage, 0032 on-demand stock registration, 0033 watchlist read model, 0034 portfolio API, 0035 portfolio metrics, 0036 partial-purchase calculator, 0037 money kit, 0038 price history and sparklines, 0039 listing lifecycle, 0040 company profiles and filings, 0041 cache of the daily numbers, 0042 exchange rate guard, 0043 provider credit lanes, 0044 hardening of delisting, of the registration write and of the provider retries, 0045 hardening of what the API can write to the catalog, 0046 the pre-authentication limiter charges refused requests, 0047 registration accounting, the limit per portfolio and the calculation version, 0048 warming the performance windows and the number of API processes, 0049 smaller decisions of the review (deletion token, paired reservation, size limit, bounded idempotency wait). Changed: 0010 (the table owner and `FORCE`), 0026 (portfolios, from the decision of 2026-10-16 to accepted).
 
-0026 to 0045 are all accepted by the owner (2026-10-19, 2026-10-21 and 2026-10-22). The notes in 0030, 0033, 0035 and 0038 that said "caching arrives with 2.8" now point to it.
+0026 to 0045 are all accepted by the owner (2026-10-19, 2026-10-21 and 2026-10-22). **0046 to 0049 were analysed against the code on 2026-10-23 and accepted by the owner**: the analysis found ADR-0049 out of date (its decision on the deletion token still said `400`, and two decisions of the gate lived under Consequences), which was corrected before accepting; ADR-0021 now points to ADR-0048, which supersedes its "rate limiting stays in memory" for a deployment with more than one API process; the release of a credit across a minute boundary was added to ADR-0049 as a known limit. The notes in 0030, 0033, 0035 and 0038 that said "caching arrives with 2.8" now point to it.
 
 ## 6. DOCS-INDEX status
-102 approved, 1 draft, 3 stub (at the Phase 1 gate: 57 approved, 11 draft, 4 stub). The stubs are the runbooks `provider-outage`, `llm-outage` and `key-rotation`, all with target phase 5, so none is past its target (`restore` is approved: it has a procedure and a drill for the compose stack, and the deployed host stays in Phase 5). The 15 documents that were in review were read against the code on 2026-10-22 and corrected where they were wrong (the observability catalog, the API guide, the data model, the glossary, the local development guide, the queue and Sonar runbooks, the load baseline and the four Phase 2 runbooks); the owner approved them on 2026-10-22. The one draft is this report, which stays a draft until `code-reviewer` has run and the gate is decided; the Phase 2 pointer is updated only after the owner approves.
+107 approved, 2 draft, 3 stub (at the Phase 1 gate: 57 approved, 11 draft, 4 stub). The stubs are the runbooks `provider-outage`, `llm-outage` and `key-rotation`, all with target phase 5, so none is past its target. The drafts are `scripts/coverage-exempt.txt` and this report, which stays a draft until the gate is decided. The Phase 2 pointer in `CLAUDE.md` is updated only after the owner approves.
 
 ## 7. Review findings and disposition
-`security-auditor` and `migration-reviewer` ran on 2026-10-21 over `7b5a90d..HEAD`; **`code-reviewer` is still pending** by decision of the owner, so the gate is not proposed yet. Neither reviewer found a blocker: the security audit has 0 critical, 0 high, 2 medium, 8 low and 3 informational findings; the migration review approves with changes.
+`security-auditor` and `migration-reviewer` ran on 2026-10-21 over `7b5a90d..HEAD`; on 2026-10-23, at the end of the phase, `code-reviewer` ran over the whole range in three parts (MarketData and hosts; BuildingBlocks, Watchlist, Calculator, Identity and Retention; tests, scripts, deploy and CI) and `security-auditor` ran again over what changed since (`fb14d98..main`: ADR-0041 to ADR-0049). `migration-reviewer` was not run again: no migration changed since its second review. **None of the reviewers found a critical or high finding or a blocker.** Between them the final reviews raised 7 medium findings, of which the owner decided on 2026-10-23 to fix five and accept two; one of the five turned out to be a documented design and is reported as such (M3 below).
+
+### The full-repository review (PR #58)
+About 45 findings from a review of the whole repository at "high" depth, fixed in five batches on one branch (ADR-0046 to ADR-0049) and merged as #58. Dispositions that were not "fixed with a test": the shared Redis budget fails open when Redis is down (accepted, T45, now counted and divided among processes where it caps registrations); an options validation that a build without ICU cannot discriminate (test kept, noted); a suspected dead branch in `ClavarisAuthProvider.Scopes` that is not dead (typed JSON read answers only for arrays and objects: restored and commented); an accepted trade-off on the order of a refund (B2); no change for B7 and D10 after checking. The 14 commits of the branch are the evidence; each batch is self-contained.
 
 ### security-auditor
 | # | Finding | Disposition |
@@ -123,16 +134,42 @@ A fresh review of the eleven migrations of that moment (fifteen now, with the fo
 
 Verified meanwhile because the reviewer could not run a database: the first row of a new year opens a chunk of `price_daily` and the worker can write it, the API can read it and cannot write it (`PriceDaily_ANewYearlyChunk_...`). Still unverified without a real deployment: the cost of the queries on production-size tables, a Mongo index build on a populated collection, the restore, and the pre-migration state of the Oracle host.
 
-### code-reviewer
-Pending.
+### code-reviewer (2026-10-23, three parts)
+No critical or high finding; the reviewers read the code and did not run it.
+
+| # | Finding | Disposition |
+|---|---|---|
+| M1 | The guard that stops a provider fault from delisting stocks (ADR-0044) looked at "the day before", so on a Monday it looked at Sunday and missed streaks that reached Friday; the test encoded the flaw | **Fixed** (`7cae10d`): the lifecycle asks the market calendar for the previous session and passes it as the cutoff; unit tests for a Monday and for the day after Thanksgiving, an integration test with a streak that reached Friday |
+| M2 | A listing marked `failed` is out of every refresh with no way back: a first-load 404, or a market disabled for a moment, `no_calendar`, `no_symbol_alias` | **Fixed for the configuration codes** (`0c8353a`): the daily fan-out asks those listings again (no provider call while the cause stands) and the first run after the fix clears the mark; integration test. **Accepted for the rest** (a 404 on the first load of a stock the search had just found): the runbook `listing-lifecycle` has the reset SQL; a command for it is not built because a failed listing is rare and always worth a look first |
+| M3 | Reloads after a rewritten history and the daily retries draw on the on-demand allowance meant for new stocks | **Not changed, by design (ADR-0043)**: moving them to the scheduled lane would take credits from the daily refresh of every stock, which the allowance exists to protect; the cost is that a reloading stock stays stale until its reload completes and a new stock waits behind it, up to a day behind a cluster of dividends, and about three days if a provider readjusts a whole market. **Kept by the owner (2026-10-23)** after an analysis of the volume and of the failure each lane would have (the scheduled lane would let a mass rewrite spend the whole day's refresh); written as a known risk, with the signals and the conditions to reopen it in the runbook `provider-quota` |
+| M4 | The "in progress" answer of the idempotency claim depended on a `lock_timeout` set only by the dev login script | **Fixed** (`017f28d`): the claim bounds its own wait to 2 s when the login has none and puts the setting back; a test on a login with no `lock_timeout` fails without the fix |
+| M5 | `POST /v1/portfolios` lacked the parallel-identical and key-reuse-422 tests the rules require | **Fixed** (`707fc3c`): eight parallel requests with one key create one portfolio; the same key with another body is `422` and creates nothing more |
+| M6 | The worker smoke and the restore drill run only by hand | **Accepted**: both need Docker stacks; a CI job is a Phase 5 item with the deployment. The manual run (smoke `ALL OK` 2026-10-21, restore drill `ALL OK`) is recorded here |
+| L | Deferred to the start of Phase 3 or 5, none affects correctness today: a budget release that decrements the current window and not the reserved one (a credit too many in a minute at worst); the registration slot is not released on a transient database failure; the EDGAR client retries inside its pace gate (EDGAR is off); no bounds on `IngestionOptions` timespans; an operator `--provider-symbol` that breaks the new check constraint exits 3 with a stack trace; the worker command ignores Ctrl-C; the not-found streak counts days attempted; expired idempotency keys replay until the purge runs; `SensitiveText` misses `api-key`; the exception type may collapse to `ScrubbedException` in the OTLP export (unverified); `StockCount` of the portfolio metrics counts only stocks with a snapshot; the portfolio ceilings in the triggers are not tied to the options by a test; `HEAD` gets no `304`; a lease test of the Redis limiter can race on a slow runner; the Sonar token and the Mongo password reach an argument list in CI and in the dev backup scripts; images are not pinned by digest (already `TODO` for Phase 5) | Deferred, listed so none is lost |
+
+### security-auditor, second audit (2026-10-23, `fb14d98..main`)
+No critical or high finding.
+
+| # | Finding | Disposition |
+|---|---|---|
+| M1 | The pre-authentication limiter denies every request from an address that spent its allowance of 401s, valid tokens included; with no proxy network configured (A-023) all users behind Caddy would share one address | **Accepted as a Phase 5 gate item**: not exploitable today (the edge does not proxy to the API); T5 and T27 now state the consequence |
+| L1 | The rate-limit Lua script builds key names it did not declare, so it would not work on Redis Cluster | Accepted: one Redis (ADR-0021); a note for the day that changes |
+| L2 | With Redis down each process allows the whole limit, so N replicas allow N times | Deferred: counted by a metric; dividing by the number of processes as the registration cap does and an alert rule are Phase 5 |
+| L3 | A credit release decrements the current window | Deferred (same as code-reviewer L) |
+| L4 | The `name: value` form of the scrubber masks one word | Accepted and written in T35 |
+| I1–I7 | Outbox as the message's user, the deletion token and `Error.Extensions`, the limiter keys and the instance registry, the performance cache key (no tenant data), the scrubbing sink, the budget script, scripts and CI | Sound as reviewed. The auditor found no `WriteTo` outside the wrapper and did not run the architecture test that refuses one |
+
+Threat-model deltas the audit asked for are written in `docs/threat-model/threat-model-v1.md`: T5 and T27 (Redis counting, the registry as a trust input, fallback, the A-023 consequence), T9 (exceptions are now scrubbed at every sink), T35 (`ScrubbingSink`, the residual of the `name: value` form), T41 (the outbox delivers as the user stored on the row), T47 (the deletion token and the echoed list).
 
 ### Other checks
 What was done during the phase is not a substitute for the formal reviews, but it found real defects, each fixed with a test: a review of the whole 2.7 branch and a second one of the follow-ups (a provider symbol already taken is a refusal, a list of filings must have its essential columns, a ticker must be distinct, the operator command never leaves the process with an exception); the freshness sampler that read without an open connection; a new required property that would have broken the OpenAPI contract for existing clients (caught by the CI `oasdiff` job); and the remote-script scan of CI, which a `curl` in a command substitution of the load script would have failed. Mutation checks were run on the cache, the price-only read, the fee rule and the lifecycle.
 
 ## 8. Open questions and Phase 3 plan
-Open questions for the owner:
-- Run `code-reviewer`, which is pending.
-- Put `SONAR_TOKEN` in the Dependabot secret store, and exclude `**/Migrations/**` from Sonar's duplication detection (`sonar.cpd.exclusions`).
+ADR-0046 to ADR-0049 and the runbook `scaling-the-api` are accepted and approved (2026-10-23, section 5). Decisions for the owner at this gate:
+- **Approve the gate** (and then the `Current phase` line of `CLAUDE.md` moves to Phase 3), or name what must change first.
+- **Reloads on the on-demand lane (M3):** decided on 2026-10-23 to keep it as ADR-0043 decided; the runbook `provider-quota` lists when to reopen it (then with a lane of their own and a cap, not the scheduled lane), and asks to measure `reload_queued` over the first weeks to judge the sensitivity of `RewriteTolerance`.
+- **The A-023 item** (proxy network and the limiter that cannot tell clients apart) as a Phase 5 gate item.
+- Owner-side tasks: put `SONAR_TOKEN` in the Dependabot secret store and exclude `**/Migrations/**` from Sonar's duplication detection (`sonar.cpd.exclusions`); delete the merged branches; re-import the GitHub ruleset; decide whether `.claude/` should be tracked.
 - Which markets after the US, and when (A-027); whether the SEC adapter is turned on before Phase 4 (it needs the identity of the owner as the contact).
 - Whether the sparklines need their own cache before the Phase 3 screens, or the baseline is enough.
 

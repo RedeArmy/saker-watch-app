@@ -8,6 +8,7 @@ using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lifecycle;
 using SakerWatch.MarketData.Application.Lookup;
+using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
 
@@ -72,11 +73,15 @@ public sealed class ListingLifecycleTests
             return Task.FromResult(Days);
         }
 
-        public Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken) => Task.FromResult(Share);
+        public Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly since, CancellationToken cancellationToken)
+        {
+            Calls.Add($"share since {since:yyyy-MM-dd}");
+            return Task.FromResult(Share);
+        }
     }
 
     private static ListingLifecycle Lifecycle(Store store, string ticker = "FB", int limit = 5) =>
-        new(new Catalog(ticker), store, Options.Create(new IngestionOptions { DelistAfterNotFoundDays = limit }), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
+        new(new Catalog(ticker), store, ExchangeCalendars.Default(), Options.Create(new IngestionOptions { DelistAfterNotFoundDays = limit }), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance);
 
     [Theory]
     [InlineData(30, 100, false)]
@@ -92,6 +97,19 @@ public sealed class ListingLifecycleTests
 
         delisted.Should().Be(delists);
         store.Calls.Contains("delist 2026-10-19 ingestion").Should().Be(delists);
+    }
+
+    [Theory]
+    [InlineData("2026-10-19", "2026-10-16")] // a Monday: the session before is Friday, not Sunday
+    [InlineData("2026-10-20", "2026-10-19")]
+    [InlineData("2026-11-27", "2026-11-25")] // the day after Thanksgiving: Wednesday, the Thursday was a holiday
+    public async Task Ingestion_AStreakIsStillGoingWhenItReachedTheSessionBefore_NotTheCalendarDayBefore(string day, string since)
+    {
+        var store = new Store { Days = 5, Share = new NotFoundShare(0, 100) };
+
+        await Lifecycle(store, limit: 5).NoteSymbolNotFoundAsync(_stock, DateOnly.Parse(day, System.Globalization.CultureInfo.InvariantCulture), CancellationToken.None);
+
+        store.Calls.Should().Contain($"share since {since}");
     }
 
     [Fact]
@@ -200,7 +218,7 @@ public sealed class ListingLifecycleTests
         bool delisted = await lifecycle.NoteSymbolNotFoundAsync(_stock, day.AddDays(1), CancellationToken.None);
 
         (waiting, delisted).Should().Be((false, true));
-        store.Calls.Should().Equal("note 2026-10-19", "note 2026-10-20", "delist 2026-10-20 ingestion");
+        store.Calls.Should().Equal("note 2026-10-19", "note 2026-10-20", "share since 2026-10-19", "delist 2026-10-20 ingestion");
     }
 
     [Fact]
@@ -229,7 +247,7 @@ public sealed class ListingLifecycleTests
     public async Task TheRunner_RollsBackAndRethrows_WhenSomethingBreaks()
     {
         var unit = new CountingUnit();
-        var runner = new LifecycleCommandRunner(new ListingLifecycle(new BrokenCatalog(), new Store(), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance), unit);
+        var runner = new LifecycleCommandRunner(new ListingLifecycle(new BrokenCatalog(), new Store(), ExchangeCalendars.Default(), Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), NullLogger<ListingLifecycle>.Instance), unit);
 
         Func<Task> act = () => runner.RunAsync(LifecycleCommand.Parse(["delist", "XNAS", "FB"]).Value, CancellationToken.None);
 

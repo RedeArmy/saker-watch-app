@@ -1,6 +1,6 @@
 # ADR-0047: Accounting of registrations, the limit of a portfolio and the version of the calculation in the cache key
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 

@@ -1,6 +1,6 @@
 # ADR-0046: The pre-authentication limiter is charged only for requests that authentication refuses
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Deciders:** Eder
 

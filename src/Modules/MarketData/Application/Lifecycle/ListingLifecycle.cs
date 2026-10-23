@@ -5,6 +5,7 @@ using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Lookup;
+using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Markets;
 using SakerWatch.MarketData.Domain.Stocks;
 
@@ -46,9 +47,9 @@ public interface IListingLifecycleStore
 
     /// <summary>
     /// How many of the active listings of the market of <paramref name="stock"/> are in a streak of days the provider did not know their symbol
-    /// (the last of them <paramref name="day"/> or the day before), out of how many are active.
+    /// (the last of them <paramref name="since"/> or later), out of how many are active.
     /// </summary>
-    Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly day, CancellationToken cancellationToken);
+    Task<NotFoundShare> NotFoundShareAsync(StockId stock, DateOnly since, CancellationToken cancellationToken);
 }
 
 /// <summary>How many listings of a market the provider currently does not know.</summary>
@@ -77,6 +78,7 @@ public sealed record LifecycleChange(string Market, string Ticker, bool Changed)
 public sealed partial class ListingLifecycle(
     IStockCatalog catalog,
     IListingLifecycleStore store,
+    ExchangeCalendars calendars,
     IOptions<IngestionOptions> options,
     TimeProvider clock,
     ILogger<ListingLifecycle> logger)
@@ -218,7 +220,7 @@ public sealed partial class ListingLifecycle(
         }
 
         // When a large part of the market is "unknown" at once, a provider is having a bad time and the stocks have not all left (ADR-0044).
-        NotFoundShare share = await store.NotFoundShareAsync(stock, day, cancellationToken);
+        NotFoundShare share = await store.NotFoundShareAsync(stock, await StreakSinceAsync(stock, day, cancellationToken), cancellationToken);
         IngestionOptions settings = options.Value;
         if (share.Active >= settings.MarketWideMinListings && (double)share.InStreak / share.Active >= settings.MarketWideNotFoundShare)
         {
@@ -235,6 +237,16 @@ public sealed partial class ListingLifecycle(
         }
 
         return changed;
+    }
+
+    // A streak is still going when the listing was unknown on the session before this one, which after a weekend or a holiday is not the day before
+    // (Friday, not Sunday, for a Monday). A market with no calendar falls back to the day before.
+    private async Task<DateOnly> StreakSinceAsync(StockId stock, DateOnly day, CancellationToken cancellationToken)
+    {
+        var listing = await catalog.FindAsync(stock, cancellationToken);
+        return listing is not null && calendars.TryGet(listing.Market) is { IsSuccess: true } calendar
+            ? calendar.Value.PreviousTradingDay(day)
+            : day.AddDays(-1);
     }
 
     private static void Count(string operation, string outcome) =>
