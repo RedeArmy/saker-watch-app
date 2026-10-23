@@ -1,3 +1,4 @@
+using System.Globalization;
 using AwesomeAssertions;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
@@ -48,6 +49,8 @@ public sealed class GetWatchlistTests
                 ? new PortfolioSummary(Portfolio.Create(id, userId, "P", null, 0, _now).Value, stocks.Length)
                 : null);
 
+        public Task<bool> ExistsAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) => Task.FromResult(held is not null && held.ContainsKey(id.Value));
+
         public Task<PortfolioWrite> AddAsync(Portfolio portfolio, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<PortfolioWrite> UpdateAsync(Portfolio portfolio, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -57,7 +60,7 @@ public sealed class GetWatchlistTests
         public Task<IReadOnlyList<PortfolioMember>> MembersAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PortfolioMember>>([.. held![id.Value].Select((stock, position) => new PortfolioMember(stock, position, _now))]);
 
-        public Task<MemberAdd> AddMemberAsync(Guid userId, PortfolioId id, Guid stockId, DateTimeOffset now, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MemberAdd> AddMemberAsync(NewMember member, int maxMembers, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> RemoveMemberAsync(Guid userId, PortfolioId id, Guid stockId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
@@ -65,7 +68,7 @@ public sealed class GetWatchlistTests
 
         public Task<DeletionPreview> PreviewDeletionAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<PortfolioDelete> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, string? expectedRemovalToken, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class Market(IEnumerable<StockSnapshot> snapshots) : IMarketSnapshots
@@ -127,6 +130,31 @@ public sealed class GetWatchlistTests
         Snapshot("MSFT", "Microsoft", 400m, oneDay: 0.03m),
         Snapshot("NEW", "Newly Listed", null, status: PriceStatuses.Pending),
     ];
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("sv-SE")]
+    [InlineData("es-GT")]
+    public async Task TextSorts_AreOrdinal_WhateverTheCultureOfTheHost(string culture)
+    {
+        // Ordinally the full stop (46) is before the letters, and a capital before a lower case letter; most cultures put them the other way round.
+        StockSnapshot[] stocks = [Snapshot("BRKA", "BRK A", 1m), Snapshot("BRK.B", "BRK B", 1m), Snapshot("BF-B", "BF B", 1m), Snapshot("ZED", "ZED", 1m)];
+        (GetWatchlistHandler handler, _) = Build(stocks);
+        CultureInfo before = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo(culture);
+        try
+        {
+            WatchlistPage byTicker = await RunAsync(handler, Query("ticker", "asc"));
+            WatchlistPage byName = await RunAsync(handler, Query("name", "desc"));
+
+            byTicker.Items.Select(e => e.Stock.Ticker).Should().Equal("BF-B", "BRK.B", "BRKA", "ZED");
+            byName.Items.Select(e => e.Stock.Name).Should().Equal("ZED", "BRK B", "BRK A", "BF B");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = before;
+        }
+    }
 
     [Fact]
     public async Task ByDefault_ListsEverythingByTickerAscending_WithPriceAndWindows()

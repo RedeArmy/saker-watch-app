@@ -45,6 +45,11 @@ public static class ResultHttpExtensions
 
         int status = StatusFor(error.Type);
         var extensions = new Dictionary<string, object?> { ["code"] = error.Code };
+        foreach ((string name, object? value) in error.Extensions ?? new Dictionary<string, object?>())
+        {
+            extensions.TryAdd(name, value);
+        }
+
         string? retryAfter = null;
         if (error.Details is { Count: > 0 })
         {

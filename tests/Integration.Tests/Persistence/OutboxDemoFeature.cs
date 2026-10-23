@@ -1,7 +1,10 @@
 // Throwaway event and consumers that stand in for a real module's integration events.
 using System.Collections.Concurrent;
+using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Events;
 using SakerWatch.BuildingBlocks.Kernel.Domain;
+using SakerWatch.BuildingBlocks.Persistence;
+using SakerWatch.BuildingBlocks.Persistence.Jobs;
 
 namespace SakerWatch.Demo.IntegrationFeatures;
 
@@ -14,6 +17,9 @@ internal sealed class ConsumerProbe
     private int _failuresRemaining;
 
     public ConcurrentDictionary<Guid, int> Handled { get; } = new();
+
+    /// <summary>For each event, the user the consumer ran as: the scope's current user and the id the database session was tagged with.</summary>
+    public ConcurrentDictionary<Guid, (Guid? Scope, string? Session)> Callers { get; } = new();
 
     public bool AlwaysFail { get; set; }
 
@@ -33,6 +39,15 @@ internal sealed class WriteProbeRowConsumer(ProbeItemsContext db, ConsumerProbe 
         db.Items.Add(new ProbeItemRow { Id = Guid.CreateVersion7(), Name = message.Name });
         await db.SaveChangesAsync(cancellationToken);
         probe.Record(message.EventId);
+    }
+}
+
+internal sealed class ObserveCallerConsumer(DbSession session, JobCurrentUser user, ConsumerProbe probe) : IIntegrationEventConsumer<ThingCreated>
+{
+    public async Task ConsumeAsync(ThingCreated message, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT current_setting('app.current_user_id', true)", session.Connection, session.Transaction);
+        probe.Callers[message.EventId] = (user.UserId, (string?)await command.ExecuteScalarAsync(cancellationToken));
     }
 }
 

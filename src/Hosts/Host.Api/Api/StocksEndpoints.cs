@@ -83,7 +83,8 @@ internal static class StocksEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> PricesAsync(string market, string ticker, ISender sender, CancellationToken cancellationToken, string? range = null, string? interval = null)

@@ -54,6 +54,22 @@ public sealed class ProviderCallBudgetTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReleasedCredits_AreAvailableAgain_AndTheCounterNeverGoesBelowZero()
+    {
+        FakeTimeProvider clock = Clock();
+        RedisProviderCallBudget budget = Budget(clock);
+        var limits = new BudgetLimits(PerMinute: 8, PerDay: 2);
+        await budget.TryAcquireAsync("p-release", limits, 2, CancellationToken.None);
+        (await budget.TryAcquireAsync("p-release", limits, 1, CancellationToken.None)).Granted.Should().BeFalse();
+
+        await budget.ReleaseAsync("p-release", 1, CancellationToken.None);
+        await budget.ReleaseAsync("p-release", 5, CancellationToken.None);
+
+        (await budget.TryAcquireAsync("p-release", limits, 2, CancellationToken.None)).Granted.Should().BeTrue("the counters stopped at zero and two credits fit again");
+        (await budget.TryAcquireAsync("p-release", limits, 1, CancellationToken.None)).Granted.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task TheMinuteBudget_IsRestoredWhenTheNextMinuteStarts()
     {
         FakeTimeProvider clock = Clock();
@@ -133,6 +149,23 @@ public sealed class ProviderCallBudgetTests : IAsyncLifetime
         (await budget.TryAcquireAsync("p6", limits, 1, CancellationToken.None)).Granted.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(8, 4)]
+    [InlineData(7, 3)]
+    public async Task PairedReservations_FillTheMinuteInWholePairs_AndAnOddCreditIdles(int perMinute, int pairs)
+    {
+        RedisProviderCallBudget budget = Budget(Clock());
+        var limits = new BudgetLimits(PerMinute: perMinute, PerDay: 800);
+
+        for (int i = 0; i < pairs; i++)
+        {
+            (await budget.TryAcquireAsync("p-pairs", limits, 2, CancellationToken.None)).Granted.Should().BeTrue($"pair {i + 1} fits");
+        }
+
+        (await budget.TryAcquireAsync("p-pairs", limits, 2, CancellationToken.None)).Granted.Should().BeFalse("the next pair does not fit");
+        (await budget.TryAcquireAsync("p-pairs", limits, 1, CancellationToken.None)).Granted.Should().Be(perMinute % 2 == 1, "a single credit uses the odd one");
+    }
+
     [Fact]
     public async Task Providers_HaveIndependentBudgets()
     {
@@ -173,7 +206,9 @@ public sealed class ProviderCallBudgetTests : IAsyncLifetime
         await using ConnectionMultiplexer down = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:1,abortConnect=false,connectTimeout=300,syncTimeout=300,asyncTimeout=300");
         var budget = new RedisProviderCallBudget(down, Clock(), NullLogger<RedisProviderCallBudget>.Instance);
 
-        (await budget.TryAcquireAsync("p11", _freePlan, 1, CancellationToken.None)).Granted.Should().BeTrue();
+        BudgetDecision decision = await budget.TryAcquireAsync("p11", _freePlan, 1, CancellationToken.None);
+
+        (decision.Granted, decision.Degraded).Should().Be((true, true), "it is let through, and says that nothing was counted so a caller with a cap of its own can count for itself");
     }
 
     [Fact]

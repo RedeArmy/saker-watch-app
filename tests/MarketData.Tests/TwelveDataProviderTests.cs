@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
@@ -46,6 +47,14 @@ public sealed class TwelveDataProviderTests
         private readonly Queue<BudgetDecision> _decisions = new(decisions);
 
         public List<(string Provider, BudgetLimits Limits, int Credits)> Spent { get; } = [];
+
+        public List<(string Provider, int Credits)> Released { get; } = [];
+
+        public Task ReleaseAsync(string provider, int credits, CancellationToken cancellationToken)
+        {
+            Released.Add((provider, credits));
+            return Task.CompletedTask;
+        }
 
         public Task<BudgetDecision> TryAcquireAsync(string provider, BudgetLimits limits, int credits, CancellationToken cancellationToken)
         {
@@ -407,6 +416,97 @@ public sealed class TwelveDataProviderTests
     }
 
     [Fact]
+    public async Task ASearch_ThatMetAServerError_IsTriedOnceMore_BecauseItCostsNoCredit()
+    {
+        int calls = 0;
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => ++calls == 1 ? Json("{}", HttpStatusCode.ServiceUnavailable) : Json(Fixture("symbol_search_shop.json")));
+
+        Result<IReadOnlyList<ProviderListing>> result = await provider.SearchAsync("AAPL", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ASearch_ThatFailsTwice_IsUnavailable_AndATimeSeriesIsNeverRetried()
+    {
+        (TwelveDataProvider search, StubHandler searches) = Build(_ => Json("{}", HttpStatusCode.ServiceUnavailable));
+        (TwelveDataProvider series, StubHandler fetches) = Build(_ => Json("{}", HttpStatusCode.ServiceUnavailable));
+
+        Result<IReadOnlyList<ProviderListing>> found = await search.SearchAsync("AAPL", CancellationToken.None);
+        Result<DailySeries> daily = await series.GetDailyAsync(Daily(), CancellationToken.None);
+
+        ProviderErrors.Classify(found.Error!).Should().Be(ProviderFailureKind.Transient);
+        searches.Requests.Should().HaveCount(2);
+        ProviderErrors.Classify(daily.Error!).Should().Be(ProviderFailureKind.Transient);
+        fetches.Requests.Should().ContainSingle("a retried time_series would spend a credit that the budget never counted");
+    }
+
+    [Fact]
+    public async Task ReservingTheTwoSeriesOfAListing_SpendsTwoCredits_Once_AndThePrepaidCallsSpendNone()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        Error? refused = await provider.ReserveDailyAsync(2, CallLane.Scheduled, CancellationToken.None);
+        await provider.GetDailyAsync(Daily() with { Prepaid = true }, CancellationToken.None);
+        await provider.GetDailyAsync(Daily(adjusted: false) with { Prepaid = true }, CancellationToken.None);
+
+        refused.Should().BeNull();
+        budget.Spent.Should().Equal(("twelvedata", new BudgetLimits(8, 800), 2));
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task WhenThePlansBudgetHasRoomForOneSeriesAndNotTwo_NeitherIsSent_AndNothingIsSpent()
+    {
+        var budget = new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromSeconds(30)));
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        Error? refused = await provider.ReserveDailyAsync(2, CallLane.Scheduled, CancellationToken.None);
+
+        ProviderErrors.Classify(refused!).Should().Be(ProviderFailureKind.RateLimited);
+        handler.Requests.Should().BeEmpty();
+        budget.Spent.Should().ContainSingle().Which.Credits.Should().Be(2, "one request for both, not two for one each");
+    }
+
+    [Fact]
+    public async Task ReleasingReservedRequests_GivesBackThePlansCredits_AndTheOnDemandAllowanceToo()
+    {
+        var budget = new ScriptedBudget();
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.ReleaseDailyAsync(1, CallLane.Scheduled, CancellationToken.None);
+        await provider.ReleaseDailyAsync(1, CallLane.OnDemand, CancellationToken.None);
+
+        budget.Released.Should().Equal(("twelvedata", 1), ("twelvedata", 1), ("twelvedata_ondemand", 1));
+    }
+
+    [Fact]
+    public async Task AnOnDemandCall_WhenThePlansBudgetRefuses_GivesTheAllowanceBack()
+    {
+        var budget = new ScriptedBudget(BudgetDecision.Allowed, new BudgetDecision(false, TimeSpan.FromSeconds(30)));
+        (TwelveDataProvider provider, StubHandler handler) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        Result<DailySeries> result = await provider.GetDailyAsync(Daily() with { Lane = CallLane.OnDemand }, CancellationToken.None);
+
+        handler.Requests.Should().BeEmpty();
+        ProviderErrors.Classify(result.Error!).Should().Be(ProviderFailureKind.RateLimited);
+        budget.Released.Should().Equal(("twelvedata_ondemand", 1));
+    }
+
+    [Fact]
+    public async Task AScheduledCall_ThatThePlansBudgetRefuses_ReleasesNothing()
+    {
+        var budget = new ScriptedBudget(new BudgetDecision(false, TimeSpan.FromSeconds(30)));
+        (TwelveDataProvider provider, _) = Build(_ => Json(Fixture("time_series_spy_etf.json")), budget);
+
+        await provider.GetDailyAsync(Daily() with { Lane = CallLane.Scheduled }, CancellationToken.None);
+
+        budget.Released.Should().BeEmpty();
+    }
+
+    [Fact]
     public void TheClient_IsNotRetriedByTheHttpPipeline_BecauseARetryCostsACreditTheBudgetNeverCounted()
     {
         var http = new SakerWatch.BuildingBlocks.Resilience.HttpClientResilienceOptions();
@@ -429,6 +529,24 @@ public sealed class TwelveDataProviderTests
         var options = new TwelveDataOptions { ApiKey = _key, OnDemandCreditsPerDay = onDemand, CreditsPerDay = perDay };
 
         new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded.Should().Be(valid);
+    }
+
+    [Theory]
+    [InlineData(1, 800, 200, false)]
+    [InlineData(2, 800, 200, true)]
+    [InlineData(7, 800, 200, true)]
+    [InlineData(8, 1, 0, false)]
+    [InlineData(8, 2, 2, true)]
+    [InlineData(8, 800, 1, false)]
+    public void Options_ABudgetThatCannotPayAHistoryIsRefused(int perMinute, int perDay, int onDemand, bool valid)
+    {
+        var options = new TwelveDataOptions { ApiKey = _key, CreditsPerMinute = perMinute, CreditsPerDay = perDay, OnDemandCreditsPerDay = onDemand };
+
+        // The range attributes are enforced by the options binder (ValidateDataAnnotations); here both layers are checked together.
+        bool annotations = Validator.TryValidateObject(options, new ValidationContext(options), null, validateAllProperties: true);
+        bool custom = new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded;
+
+        (annotations && custom).Should().Be(valid);
     }
 
     [Fact]

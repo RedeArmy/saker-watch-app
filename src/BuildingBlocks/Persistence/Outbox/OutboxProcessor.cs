@@ -11,6 +11,7 @@ using SakerWatch.BuildingBlocks.Kernel.Domain;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.BuildingBlocks.Kernel.Tracing;
+using SakerWatch.BuildingBlocks.Persistence.Jobs;
 
 namespace SakerWatch.BuildingBlocks.Persistence.Outbox;
 
@@ -81,6 +82,7 @@ public sealed partial class OutboxProcessor
         try
         {
             scope.ServiceProvider.GetRequiredService<CorrelationContext>().CorrelationId = claimed.CorrelationId;
+            await RunAsUserAsync(scope.ServiceProvider, session, claimed.UserId, cancellationToken);
             IDomainEvent message = _registry.Deserialize(claimed.Type, claimed.Payload);
             await DeliverAsync(scope.ServiceProvider, message, cancellationToken);
             await MarkProcessedAsync(session, claimed.Id, cancellationToken);
@@ -102,6 +104,18 @@ public sealed partial class OutboxProcessor
         }
 
         return true;
+    }
+
+    // A message produced for a user is delivered as that user, like a job: row-level security shows the consumers that user's rows. The claim has
+    // to come first (it is what says whose message it is), so the id is applied to the open session afterwards, before any consumer runs. It comes
+    // from the row the database accepted when the message was written, never from the payload. A system message stays anonymous.
+    private static async Task RunAsUserAsync(IServiceProvider services, DbSession session, Guid? userId, CancellationToken cancellationToken)
+    {
+        services.GetRequiredService<JobCurrentUser>().UserId = userId;
+        if (userId is not null)
+        {
+            await UserContextSql.ApplyAsync(session.Connection, userId, cancellationToken);
+        }
     }
 
     private async Task<bool> AnythingDueAsync(CancellationToken cancellationToken)
@@ -152,7 +166,7 @@ public sealed partial class OutboxProcessor
     {
         await using var select = new NpgsqlCommand(
             """
-            SELECT id, type, payload::text, trace_id, correlation_id, attempts
+            SELECT id, type, payload::text, trace_id, correlation_id, attempts, user_id
             FROM platform.outbox_messages
             WHERE processed_at IS NULL AND next_attempt_at <= @now AND attempts < @max
             ORDER BY next_attempt_at, id
@@ -175,7 +189,8 @@ public sealed partial class OutboxProcessor
             reader.GetString(2),
             reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4),
-            reader.GetInt32(5));
+            reader.GetInt32(5),
+            reader.IsDBNull(6) ? null : reader.GetGuid(6));
     }
 
     private async Task MarkProcessedAsync(DbSession session, Guid id, CancellationToken cancellationToken)
@@ -237,5 +252,5 @@ public sealed partial class OutboxProcessor
     [LoggerMessage(EventId = 9503, Level = LogLevel.Error, Message = "Outbox message {Type} {MessageId} parked as dead after {Attempts} attempts")]
     private partial void Parked(Exception exception, string type, Guid messageId, int attempts);
 
-    private sealed record ClaimedMessage(Guid Id, string Type, string Payload, string? TraceId, string? CorrelationId, int Attempts);
+    private sealed record ClaimedMessage(Guid Id, string Type, string Payload, string? TraceId, string? CorrelationId, int Attempts, Guid? UserId);
 }

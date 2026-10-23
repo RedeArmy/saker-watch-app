@@ -17,6 +17,13 @@ public interface IFxRateStore
     /// </summary>
     Task<FxRate?> OnOrBeforeAsync(CurrencyCode baseCurrency, CurrencyCode quote, DateOnly date, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The rate of the pair in each direction on <paramref name="date"/>, as <see cref="OnOrBeforeAsync"/> gives them: <c>Direct</c> is <paramref name="from"/> in
+    /// <paramref name="to"/> and <c>Inverse</c> the opposite. The default asks twice; a store that can answers with one read.
+    /// </summary>
+    async Task<(FxRate? Direct, FxRate? Inverse)> OnOrBeforeBothWaysAsync(CurrencyCode from, CurrencyCode to, DateOnly date, CancellationToken cancellationToken) =>
+        (await OnOrBeforeAsync(from, to, date, cancellationToken), await OnOrBeforeAsync(to, from, date, cancellationToken));
+
     /// <summary>The newest day stored for a pair and source, or <see langword="null"/> when none is.</summary>
     Task<DateOnly?> LatestDateAsync(CurrencyCode baseCurrency, CurrencyCode quote, string source, CancellationToken cancellationToken);
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SakerWatch.BuildingBlocks.Persistence.Conventions;
@@ -36,6 +37,7 @@ public sealed class MarketDataDbContext(DbContextOptions<MarketDataDbContext> op
     public DbSet<FxRateRejectedRow> FxRatesRejected => Set<FxRateRejectedRow>();
 
     /// <inheritdoc />
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);

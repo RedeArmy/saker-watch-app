@@ -99,7 +99,9 @@ public sealed partial class EdgarProvider : IFundamentalsProvider, IFilingsProvi
             return map.Error!;
         }
 
-        if (!map.Value.TryGetValue(symbol.Value.Value, out Cik? cik))
+        // The registry writes the class of a share with a dash (BRK-B) where the catalog, like Twelve Data, writes a full stop (BRK.B): the ticker as given is
+        // tried first, then in the registry's spelling, so a stock whose own ticker has a dash is not mistaken for another.
+        if (!map.Value.TryGetValue(symbol.Value.Value, out Cik? cik) && !map.Value.TryGetValue(symbol.Value.Value.Replace('.', '-'), out cik))
         {
             Count(_profile, "notfound");
             return ProviderErrors.SymbolNotFound(Name, symbol.Value.Value);

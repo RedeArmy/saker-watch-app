@@ -12,15 +12,18 @@ public sealed class CurrencyCode : ValueObject
     /// <summary>Length of every currency code.</summary>
     public const int Length = 3;
 
-    private static readonly HashSet<string> _noMinorUnits = new(["JPY", "KRW", "CLP", "ISK", "VND", "PYG", "UGX"], StringComparer.Ordinal);
-    private static readonly HashSet<string> _threeMinorUnits = new(["KWD", "BHD", "OMR", "JOD", "TND"], StringComparer.Ordinal);
+    // The currencies of ISO 4217 whose minor unit is not a hundredth (list 2024); any other code has two decimals.
+    private static readonly HashSet<string> _noMinorUnits = new(
+        ["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF"], StringComparer.Ordinal);
+    private static readonly HashSet<string> _threeMinorUnits = new(["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"], StringComparer.Ordinal);
+    private static readonly HashSet<string> _fourMinorUnits = new(["CLF", "UYW"], StringComparer.Ordinal);
 
     private CurrencyCode(string value) => Value = value;
 
     /// <summary>The normalized code.</summary>
     public string Value { get; }
 
-    /// <summary>The decimals money of this currency is shown with: 0, 2 or 3 (ISO 4217 minor units; two unless listed).</summary>
+    /// <summary>The decimals money of this currency is shown with: 0, 2, 3 or 4 (ISO 4217 minor units; two unless listed).</summary>
     public int MinorUnits
     {
         get
@@ -30,7 +33,12 @@ public sealed class CurrencyCode : ValueObject
                 return 0;
             }
 
-            return _threeMinorUnits.Contains(Value) ? 3 : 2;
+            if (_threeMinorUnits.Contains(Value))
+            {
+                return 3;
+            }
+
+            return _fourMinorUnits.Contains(Value) ? 4 : 2;
         }
     }
 

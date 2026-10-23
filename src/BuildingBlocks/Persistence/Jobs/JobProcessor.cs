@@ -109,72 +109,106 @@ public sealed partial class JobProcessor
     private async Task RunAsync(ClaimedJob job, CancellationToken cancellationToken)
     {
         await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
-        var session = scope.ServiceProvider.GetRequiredService<DbSession>();
         using var leaseToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var stopHeartbeat = new CancellationTokenSource();
-        int lost = 0;
-        Task heartbeat = HeartbeatAsync(job, () =>
-        {
-            Volatile.Write(ref lost, 1);
-            leaseToken.Cancel();
-        }, stopHeartbeat.Token);
+        Task heartbeat = HeartbeatAsync(job, leaseToken.Cancel, stopHeartbeat.Token);
 
-        using Activity? activity = SakerTelemetry.Source.StartActivity($"Job.Run {job.Type}");
-        activity?.SetTag("saker.job.type", job.Type);
-        activity?.SetTag("saker.job.key", job.Key);
-        activity?.SetTag("saker.origin_trace_id", job.TraceId);
+        using Activity? activity = StartSpan(job);
         long start = _timeProvider.GetTimestamp();
-        string outcome = "success";
+        // Unset until the attempt ends: if the clean-up after a failure throws (the database is down), it is counted as an error and not as a success.
+        string? outcome = null;
         try
         {
-            object payload = DeserializePayload(job);
-            scope.ServiceProvider.GetRequiredService<CorrelationContext>().CorrelationId = job.CorrelationId;
-            // A job that works for a user runs as that user: the unit of work tags its database session with the id, so row-level
-            // security shows the handler that user's rows. Set before the unit of work begins; system jobs stay anonymous.
-            scope.ServiceProvider.GetRequiredService<JobCurrentUser>().UserId = job.UserId;
-            await session.BeginAsync(leaseToken.Token);
-            await InvokeAsync(scope.ServiceProvider, payload, new JobContext(job.Id, job.Key, job.Attempts, job.MaxAttempts, job.CorrelationId, job.UserId), leaseToken.Token);
-            await CompleteAsync(session, job, leaseToken.Token);
-            await session.CommitAsync(CancellationToken.None);
-        }
-        catch (LeaseLostException)
-        {
-            await session.RollbackAsync(CancellationToken.None);
-            outcome = "lease_lost";
-            LeaseLost(job.Type, job.Id);
-        }
-        catch (JobPayloadException ex)
-        {
-            await session.RollbackAsync(CancellationToken.None);
-            outcome = await FailAsync(job, ex, permanent: true);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // The worker is stopping: undo the attempt, hand the job back, and let the stop proceed.
-            await session.RollbackAsync(CancellationToken.None);
-            await ReleaseAsync(job);
-            outcome = "released";
-            throw;
-        }
-        catch (OperationCanceledException) when (Volatile.Read(ref lost) == 1)
-        {
-            await session.RollbackAsync(CancellationToken.None);
-            outcome = "lease_lost";
-            LeaseLost(job.Type, job.Id);
-        }
-        catch (Exception ex)
-        {
-            await session.RollbackAsync(CancellationToken.None);
-            outcome = await FailAsync(job, ex);
+            outcome = await AttemptAsync(job, scope.ServiceProvider, leaseToken.Token, cancellationToken);
         }
         finally
         {
             await stopHeartbeat.CancelAsync();
             await heartbeat;
-            TagList tags = new() { { "type", job.Type }, { "outcome", outcome } };
-            _jobs.Add(1, tags);
-            _duration.Record(_timeProvider.GetElapsedTime(start).TotalSeconds, tags);
+            Record(job, outcome ?? "error", start);
         }
+
+        // The worker is stopping and the job was handed back: let the stop proceed.
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    // Each catch is one distinct outcome of an attempt: lease lost, payload refused, worker stopping, lease lost while cancelled, any other failure.
+    // Returns the outcome to record; "released" means the worker is stopping.
+    private async Task<string> AttemptAsync(ClaimedJob job, IServiceProvider services, CancellationToken leaseToken, CancellationToken stopToken)
+    {
+        var session = services.GetRequiredService<DbSession>();
+        try
+        {
+            await RunHandlerAsync(job, services, session, leaseToken);
+            return "success";
+        }
+        catch (LeaseLostException)
+        {
+            return await LeaseLostAsync(job, session);
+        }
+        catch (JobPayloadException ex)
+        {
+            return await FailedAsync(job, session, ex, permanent: true);
+        }
+        catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+        {
+            // Undo the attempt and hand the job back.
+            await session.RollbackAsync(CancellationToken.None);
+            await ReleaseAsync(job);
+            return "released";
+        }
+        catch (OperationCanceledException) when (leaseToken.IsCancellationRequested)
+        {
+            // Only the heartbeat cancels the lease token besides the stop, and the stop was ruled out above.
+            return await LeaseLostAsync(job, session);
+        }
+        catch (Exception ex)
+        {
+            return await FailedAsync(job, session, ex, permanent: false);
+        }
+    }
+
+    private static Activity? StartSpan(ClaimedJob job)
+    {
+        Activity? activity = SakerTelemetry.Source.StartActivity($"Job.Run {job.Type}");
+        activity?.SetTag("saker.job.type", job.Type);
+        activity?.SetTag("saker.job.key", job.Key);
+        activity?.SetTag("saker.origin_trace_id", job.TraceId);
+        return activity;
+    }
+
+    // The attempt itself: the payload, the context of the caller, the handler and the completion, in one unit of work.
+    private async Task RunHandlerAsync(ClaimedJob job, IServiceProvider services, DbSession session, CancellationToken leaseToken)
+    {
+        object payload = DeserializePayload(job);
+        services.GetRequiredService<CorrelationContext>().CorrelationId = job.CorrelationId;
+        // A job that works for a user runs as that user: the unit of work tags its database session with the id, so row-level
+        // security shows the handler that user's rows. Set before the unit of work begins; system jobs stay anonymous.
+        services.GetRequiredService<JobCurrentUser>().UserId = job.UserId;
+        await session.BeginAsync(leaseToken);
+        await InvokeAsync(services, payload, new JobContext(job.Id, job.Key, job.Attempts, job.MaxAttempts, job.CorrelationId, job.UserId), leaseToken);
+        await CompleteAsync(session, job, leaseToken);
+        await session.CommitAsync(CancellationToken.None);
+    }
+
+    private async Task<string> LeaseLostAsync(ClaimedJob job, DbSession session)
+    {
+        await session.RollbackAsync(CancellationToken.None);
+        LeaseLost(job.Type, job.Id);
+        return "lease_lost";
+    }
+
+    private async Task<string> FailedAsync(ClaimedJob job, DbSession session, Exception exception, bool permanent)
+    {
+        await session.RollbackAsync(CancellationToken.None);
+        return await FailAsync(job, exception, permanent);
+    }
+
+    private void Record(ClaimedJob job, string outcome, long start)
+    {
+        TagList tags = new() { { "type", job.Type }, { "outcome", outcome } };
+        _jobs.Add(1, tags);
+        _duration.Record(_timeProvider.GetElapsedTime(start).TotalSeconds, tags);
     }
 
     private async Task HeartbeatAsync(ClaimedJob job, Action onLost, CancellationToken stop)

@@ -66,7 +66,7 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
             Ticker.Parse(reader.GetString(6)),
             reader.GetString(1),
             CurrencyCode.Parse(reader.GetString(2)),
-            reader.GetString(3) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
+            AssetTypeNames.Parse(reader.GetString(3)),
             reader.GetBoolean(4),
             delistedAt);
     }
@@ -93,7 +93,7 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
                     Ticker.Parse(reader.GetString(2)),
                     reader.GetString(3),
                     CurrencyCode.Parse(reader.GetString(4)),
-                    reader.GetString(5) switch { "equity" => AssetType.Equity, "etf" => AssetType.Etf, _ => AssetType.Other },
+                    AssetTypeNames.Parse(reader.GetString(5)),
                     reader.GetBoolean(6),
                     reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)));
             }

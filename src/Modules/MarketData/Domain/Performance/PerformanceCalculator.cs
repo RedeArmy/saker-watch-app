@@ -11,6 +11,14 @@ namespace SakerWatch.MarketData.Domain.Performance;
 /// </summary>
 public static class PerformanceCalculator
 {
+    /// <summary>
+    /// A version for a change that no fingerprint shows (ADR-0047). The key of the performance cache holds <see cref="PerformanceRules.CacheTag"/>, a
+    /// fingerprint of what this calculator does with fixed inputs, and a fingerprint of the statements that read the closes, so a change of the rules
+    /// there makes new keys without anyone remembering. Raise this number to empty the cache on purpose, or when the rules change somewhere those two do not
+    /// look (for example a calendar of a market the fixed inputs do not use).
+    /// </summary>
+    public const int Version = 1;
+
     /// <summary>Distance, in days, a baseline may lie before its target for every window but the first (the longest closures around holidays).</summary>
     public const int DefaultMaxGapDays = 10;
 

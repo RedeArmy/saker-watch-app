@@ -33,6 +33,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/runbooks/llm-outage.md | Runbook llm-outage | Eder | stub | 5 | 2026-10-12 |
 | docs/runbooks/queue-backlog.md | Runbook queue-backlog | Eder | approved | 5 | 2026-10-22 |
 | docs/runbooks/restore.md | Runbook restore | Eder | approved | 5 | 2026-10-22 |
+| docs/runbooks/scaling-the-api.md | Runbook: running more than one API process | Eder | draft | 5 | 2026-10-22 |
 | docs/runbooks/key-rotation.md | Runbook key-rotation | Eder | stub | 5 | 2026-10-12 |
 | README.md | Local setup (10 minutes) | Eder | approved | 0 | 2026-10-12 |
 | CONTRIBUTING.md | Contribution guide | Eder | approved | 0 | 2026-10-12 |
@@ -60,6 +61,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
+| scripts/coverage-exempt.txt | Gated assemblies that hold no executable code yet (read by the coverage gate) | Eder | draft | 2 | 2026-10-22 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | scripts/dev-backup.sh | Backup of the PostgreSQL and MongoDB databases of a compose stack | Eder | approved | 2 | 2026-10-22 |
 | scripts/dev-restore.sh | Restore of a backup into new databases, never over existing ones | Eder | approved | 2 | 2026-10-22 |
@@ -106,6 +108,10 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0043-provider-credit-lanes.md | ADR 0043 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0044-provider-and-registration-hardening.md | ADR 0044 | Eder | approved | 2 | 2026-10-22 |
 | docs/adr/0045-catalog-write-hardening.md | ADR 0045 | Eder | approved | 2 | 2026-10-22 |
+| docs/adr/0046-pre-authentication-limiter-charges-refused-requests.md | ADR 0046 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0047-registration-accounting-portfolio-limit-and-calculation-version.md | ADR 0047 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0048-warming-the-performance-windows-and-the-number-of-api-processes.md | ADR 0048 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0049-smaller-decisions-of-the-phase-2-review.md | ADR 0049 | Eder | draft | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |

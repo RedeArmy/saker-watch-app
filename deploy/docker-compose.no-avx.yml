@@ -1,9 +1,10 @@
-# Dev-only override for CPUs/VMs without AVX (mongo >= 5.0 crashes with exit 132, see assumptions A-013).
+# Dev-only override for CPUs/VMs without AVX (mongo >= 5.0 crashes with exit 132, see assumptions A-013). The default is 4.4, the last release
+# that runs there, and its image still ships the `mongo` shell the healthcheck below uses (a newer image has only `mongosh`).
 #   docker compose -f docker-compose.yml -f docker-compose.no-avx.yml --profile dev up -d
 services:
   mongo:
     # Variable with a default so Dependabot does not bump this fallback to a version that needs AVX.
-    image: ${MONGO_NOAVX_IMAGE:-mongo:8.2}
+    image: ${MONGO_NOAVX_IMAGE:-mongo:4.4}
     healthcheck:
       test: ["CMD", "mongo", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
       interval: 5s

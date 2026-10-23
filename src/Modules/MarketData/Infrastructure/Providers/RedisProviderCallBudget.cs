@@ -39,8 +39,7 @@ public sealed partial class RedisProviderCallBudget(IConnectionMultiplexer redis
         cancellationToken.ThrowIfCancellationRequested();
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        RedisKey minuteKey = RedisKeys.For("budget", provider, "m", now.ToString("yyyyMMddHHmm", System.Globalization.CultureInfo.InvariantCulture));
-        RedisKey dayKey = RedisKeys.For("budget", provider, "d", now.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture));
+        (RedisKey minuteKey, RedisKey dayKey) = CounterKeys(provider, now);
         int toNextMinute = 60 - now.Second;
         int toNextDay = (int)Math.Ceiling((now.UtcDateTime.Date.AddDays(1) - now.UtcDateTime).TotalSeconds);
 
@@ -56,9 +55,41 @@ public sealed partial class RedisProviderCallBudget(IConnectionMultiplexer redis
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
             LogBudgetUnavailable(provider, ex.GetType().Name);
-            return BudgetDecision.Allowed;
+            return BudgetDecision.AllowedUncounted;
         }
     }
+
+    // KEYS: minute counter, day counter. ARGV: credits. A counter never goes below zero; a minute that has passed since the reservation is left alone.
+    private const string _releaseScript = """
+        for i = 1, 2 do
+            local value = tonumber(redis.call('GET', KEYS[i]) or '0')
+            if value > 0 then redis.call('DECRBY', KEYS[i], math.min(value, tonumber(ARGV[1]))) end
+        end
+        return 0
+        """;
+
+    /// <inheritdoc />
+    public async Task ReleaseAsync(string provider, int credits, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(provider);
+        ArgumentOutOfRangeException.ThrowIfLessThan(credits, 1);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        (RedisKey minuteKey, RedisKey dayKey) = CounterKeys(provider, now);
+        try
+        {
+            await redis.GetDatabase().ScriptEvaluateAsync(_releaseScript, [minuteKey, dayKey], [credits]).WaitAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        {
+            LogBudgetUnavailable(provider, ex.GetType().Name);
+        }
+    }
+
+    private static (RedisKey Minute, RedisKey Day) CounterKeys(string provider, DateTimeOffset now) =>
+        (RedisKeys.For("budget", provider, "m", now.ToString("yyyyMMddHHmm", System.Globalization.CultureInfo.InvariantCulture)),
+         RedisKeys.For("budget", provider, "d", now.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture)));
 
     [LoggerMessage(EventId = 2003, Level = LogLevel.Warning, Message = "The call budget of {Provider} could not be checked ({ExceptionType}); the call goes ahead and the provider enforces its own limit")]
     private partial void LogBudgetUnavailable(string provider, string exceptionType);

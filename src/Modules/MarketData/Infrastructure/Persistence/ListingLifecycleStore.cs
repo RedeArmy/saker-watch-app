@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.MarketData.Application.Lifecycle;
@@ -56,7 +57,7 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
     public async Task<RenameOutcome> RenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(change);
-        (StockId stock, Mic market, Ticker oldTicker, Ticker newTicker) = change;
+        (StockId stock, Mic market, _, Ticker newTicker) = change;
 
         object? taken = await ScalarAsync(
             "SELECT 1 FROM marketdata.stocks WHERE market_mic = @market AND ticker = @new AND id <> @id",
@@ -71,35 +72,10 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
         // aborted by then, so the caller's unit of work rolls everything back.
         try
         {
-            int renamed = await ExecuteAsync(
-                "UPDATE marketdata.stocks SET ticker = @new WHERE id = @id AND market_mic = @market AND ticker = @old",
-                cancellationToken,
-                (_market, market.Value), ("old", oldTicker.Value), ("new", newTicker.Value), ("id", stock.Value));
-            if (renamed == 0)
+            if (!await WriteRenameAsync(change, on, providerSymbol, at, cancellationToken))
             {
                 return RenameOutcome.StockNotFound;
             }
-
-            // The ticker in use is no longer a retired one (of this stock or of another that once had it); the old one is retired now.
-            await ExecuteAsync(
-                "DELETE FROM marketdata.ticker_history WHERE market_mic = @market AND ticker = @new",
-                cancellationToken,
-                (_market, market.Value), ("new", newTicker.Value));
-            await ExecuteAsync(
-                """
-                INSERT INTO marketdata.ticker_history (market_mic, ticker, stock_id, changed_on, created_at)
-                VALUES (@market, @old, @id, @on, @at)
-                ON CONFLICT (market_mic, ticker) DO UPDATE SET stock_id = EXCLUDED.stock_id, changed_on = EXCLUDED.changed_on
-                """,
-                cancellationToken,
-                (_market, market.Value), ("old", oldTicker.Value), ("id", stock.Value), ("on", on), ("at", at.ToUniversalTime()));
-
-            // The provider calls the stock by its new symbol from now on; a symbol that was not the old ticker is the operator's to change.
-            await ExecuteAsync(
-                "UPDATE marketdata.symbol_aliases SET provider_symbol = @symbol WHERE stock_id = @id AND provider_symbol = @old",
-                cancellationToken,
-                ("symbol", providerSymbol), ("id", stock.Value), ("old", oldTicker.Value));
-            await RecordActionAsync(stock, "symbol_change", on, Application.Lifecycle.ListingLifecycle.OperatorSource, at, cancellationToken);
         }
         catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -107,6 +83,43 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
         }
 
         return RenameOutcome.Done;
+    }
+
+    // False when no stock holds the old ticker any more; the other steps follow the first in the same transaction.
+    private async Task<bool> WriteRenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
+    {
+        (StockId stock, Mic market, Ticker oldTicker, Ticker newTicker) = change;
+        int renamed = await ExecuteAsync(
+            "UPDATE marketdata.stocks SET ticker = @new WHERE id = @id AND market_mic = @market AND ticker = @old",
+            cancellationToken,
+            (_market, market.Value), ("old", oldTicker.Value), ("new", newTicker.Value), ("id", stock.Value));
+        if (renamed == 0)
+        {
+            return false;
+        }
+
+        // The ticker in use is no longer a retired one (of this stock or of another that once had it); the old one is retired now.
+        await ExecuteAsync(
+            "DELETE FROM marketdata.ticker_history WHERE market_mic = @market AND ticker = @new",
+            cancellationToken,
+            (_market, market.Value), ("new", newTicker.Value));
+        await ExecuteAsync(
+            """
+            INSERT INTO marketdata.ticker_history (market_mic, ticker, stock_id, changed_on, created_at)
+            VALUES (@market, @old, @id, @on, @at)
+            ON CONFLICT (market_mic, ticker) DO UPDATE SET stock_id = EXCLUDED.stock_id, changed_on = EXCLUDED.changed_on
+            """,
+            cancellationToken,
+            (_market, market.Value), ("old", oldTicker.Value), ("id", stock.Value), ("on", on), ("at", at.ToUniversalTime()));
+
+        // The provider calls the stock by its new symbol from now on; a symbol that was not the old ticker is the operator's to change.
+        await ExecuteAsync(
+            "UPDATE marketdata.symbol_aliases SET provider_symbol = @symbol WHERE stock_id = @id AND provider_symbol = @old",
+            cancellationToken,
+            ("symbol", providerSymbol), ("id", stock.Value), ("old", oldTicker.Value));
+        await RecordActionAsync(stock, "symbol_change", on, Application.Lifecycle.ListingLifecycle.OperatorSource, at, cancellationToken);
+
+        return true;
     }
 
     /// <inheritdoc />

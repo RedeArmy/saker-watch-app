@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Security;
@@ -20,7 +21,7 @@ namespace SakerWatch.Integration.Tests.Persistence;
 [Trait("Category", "Integration")]
 public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) : IClassFixture<TimescalePostgresFixture>
 {
-    private sealed record Settings(int MaxConcurrency = 2, string Lease = "00:05:00", string Backoff = "00:00:00.010", string ParkInterval = "00:00:00");
+    private sealed record Settings(int MaxConcurrency = 2, string Lease = "00:05:00", string Backoff = "00:00:00.010", string ParkInterval = "00:00:00", FakeTimeProvider? WorkerClock = null);
 
     private sealed class Env(ServiceProvider api, ServiceProvider worker, MigratedDatabase db) : IAsyncDisposable
     {
@@ -91,7 +92,7 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
             }).Build();
             var services = new ServiceCollection();
             services.AddLogging();
-            services.AddSingleton(TimeProvider.System);
+            services.AddSingleton(worker && s.WorkerClock is not null ? s.WorkerClock : TimeProvider.System);
             services.AddSingleton<IIdGenerator, TimeProviderIdGenerator>();
             services.AddSingleton<JobProbe>();
             services.AddScoped<TestUser>();
@@ -476,13 +477,27 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
     [Fact]
     public async Task TheHeartbeat_KeepsALongJobsLeaseAlive_SoNobodyElseTakesIt()
     {
-        await using Env env = await StartAsync(new Settings(Lease: "00:00:01.500"));
+        // The worker runs on a fake clock, so the lease and the heartbeat move only when the test says so: no sleeping, and no race with a loaded machine.
+        // The clock starts a minute ahead so that the job, enqueued by the API on the real clock, is already due.
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow.AddMinutes(1));
+        await using Env env = await StartAsync(new Settings(Lease: "00:00:01.500", WorkerClock: clock));
         await env.EnqueueAsync("long");
         env.Probe.Hold();
         Task<bool> running = env.Processor.ProcessNextAsync(CancellationToken.None);
         await env.Probe.Entered;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        await Task.Delay(TimeSpan.FromSeconds(3.5));
+        // The heartbeat renews every third of the lease (500 ms). Seven steps are 3.5 s: more than twice the 1.5 s lease.
+        for (int step = 0; step < 7; step++)
+        {
+            DateTime before = await env.Db.Admin.ScalarAsync<DateTime>("SELECT lease_expires_at FROM platform.job_queue WHERE job_key = 'long'");
+            clock.Advance(TimeSpan.FromMilliseconds(500));
+            while (await env.Db.Admin.ScalarAsync<DateTime>("SELECT lease_expires_at FROM platform.job_queue WHERE job_key = 'long'") <= before)
+            {
+                await Task.Delay(10, bound.Token); // waits for the renewal that the tick above caused, bounded by the 30 s of the test
+            }
+        }
+
         bool stolen = await env.Processor.ProcessNextAsync(CancellationToken.None);
         env.Probe.Release();
         await running.WaitAsync(TimeSpan.FromSeconds(15));
@@ -624,6 +639,39 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
         readings["sakerwatch_jobs_queue_depth"].Should().Be(1, "the job whose worker vanished is waiting to be reclaimed");
         readings["sakerwatch_jobs_in_flight"].Should().Be(1, "only the live lease counts as running");
         readings["sakerwatch_jobs_queue_oldest_age_seconds"].Should().BeGreaterThan(590, "an abandoned job ages from the moment its lease expired");
+    }
+
+    [Fact]
+    public async Task AnAttempt_WhoseCleanUpAfterAFailureAlsoFails_IsCountedAsAnError_NotAsASuccess()
+    {
+        await using Env env = await StartAsync();
+        await env.EnqueueAsync("cut-off");
+        env.Probe.KillOwnConnection = true;
+        var outcomes = new List<string>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "sakerwatch_jobs_total")
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            foreach (KeyValuePair<string, object?> tag in tags)
+            {
+                if (tag.Key == "outcome")
+                {
+                    outcomes.Add((string)tag.Value!);
+                }
+            }
+        });
+        listener.Start();
+
+        Func<Task> run = () => env.Processor.ProcessNextAsync(CancellationToken.None);
+
+        await run.Should().ThrowAsync<Exception>("the rollback of a connection that is gone throws too");
+        outcomes.Should().Equal("error");
     }
 
     [Fact]

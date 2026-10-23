@@ -1,9 +1,11 @@
 using FluentValidation;
+using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.MarketData.Contracts;
 using SakerWatch.Watchlist.Application.Features.PutWatchlistItem;
+using SakerWatch.Watchlist.Domain;
 using SakerWatch.Watchlist.Domain.Portfolios;
 
 namespace SakerWatch.Watchlist.Application.Features.Portfolios;
@@ -51,7 +53,7 @@ public sealed class PutPortfolioItemValidator : AbstractValidator<PutPortfolioIt
 }
 
 /// <summary>Finds the stock in the catalog and puts it in the portfolio, when the caller's watchlist holds it.</summary>
-public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDirectory stocks, IPortfolioRepository portfolios, TimeProvider clock)
+public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDirectory stocks, IPortfolioRepository portfolios, IOptions<WatchlistOptions> options, TimeProvider clock)
     : IRequestHandler<PutPortfolioItemCommand, Result<PutPortfolioItemResult>>
 {
     /// <inheritdoc />
@@ -63,7 +65,7 @@ public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDire
         }
 
         var id = PortfolioId.Create(request.PortfolioId);
-        if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
+        if (!await portfolios.ExistsAsync(userId, id, cancellationToken))
         {
             return PortfolioErrors.PortfolioNotFound();
         }
@@ -75,7 +77,7 @@ public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDire
             return stock.Error!.Type == ErrorType.NotFound ? NotOnWatchlist() : stock.Error;
         }
 
-        MemberAdd added = await portfolios.AddMemberAsync(userId, id, stock.Value.Id, clock.GetUtcNow(), cancellationToken);
+        MemberAdd added = await portfolios.AddMemberAsync(new NewMember(userId, id, stock.Value.Id, clock.GetUtcNow()), options.Value.MaxItemsPerPortfolio, cancellationToken);
         switch (added)
         {
             case MemberAdd.ItemNotOnWatchlist:
@@ -86,8 +88,10 @@ public sealed class PutPortfolioItemHandler(ICurrentUser currentUser, IStockDire
                 return Error.Conflict(PortfolioErrors.ItemLimitReached, "The portfolio holds the most stocks allowed. Remove one before adding another.");
             default:
                 IReadOnlyList<PortfolioMember> members = await portfolios.MembersAsync(userId, id, cancellationToken);
-                PortfolioMember member = members.First(m => m.StockId == stock.Value.Id);
-                return new PutPortfolioItemResult(new PortfolioItemView(stock.Value, member.Position, member.AddedAt), added == MemberAdd.Added);
+                // Taken out by a parallel request between the add and this read (removing a member takes no lock): nothing to answer with, and the caller can ask again.
+                return members.FirstOrDefault(m => m.StockId == stock.Value.Id) is { } member
+                    ? new PutPortfolioItemResult(new PortfolioItemView(stock.Value, member.Position, member.AddedAt), added == MemberAdd.Added)
+                    : Error.Conflict(PortfolioErrors.ItemChanged, "The portfolio changed while the request ran. Try again.");
         }
     }
 
@@ -108,7 +112,7 @@ public sealed class RemovePortfolioItemHandler(ICurrentUser currentUser, IStockD
         }
 
         var id = PortfolioId.Create(request.PortfolioId);
-        if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
+        if (!await portfolios.ExistsAsync(userId, id, cancellationToken))
         {
             return PortfolioErrors.PortfolioNotFound();
         }
@@ -131,12 +135,12 @@ public sealed class ReorderPortfolioItemsValidator : AbstractValidator<ReorderPo
     public ReorderPortfolioItemsValidator()
     {
         RuleFor(x => x.PortfolioId).NotEmpty();
-        RuleFor(x => x.Items).NotNull().Must(items => items.Count <= 100).WithMessage("A portfolio holds at most 100 stocks.");
+        RuleFor(x => x.Items).NotNull().Must(items => items.Count <= LimitCeilings.ItemsPerPortfolio).WithMessage($"A portfolio holds at most {LimitCeilings.ItemsPerPortfolio} stocks.");
     }
 }
 
 /// <summary>Reorders the stocks of a portfolio.</summary>
-public sealed class ReorderPortfolioItemsHandler(ICurrentUser currentUser, IStockDirectory stocks, IPortfolioRepository portfolios)
+public sealed class ReorderPortfolioItemsHandler(ICurrentUser currentUser, IMarketSnapshots market, IPortfolioRepository portfolios)
     : IRequestHandler<ReorderPortfolioItemsCommand, Result>
 {
     /// <inheritdoc />
@@ -148,21 +152,27 @@ public sealed class ReorderPortfolioItemsHandler(ICurrentUser currentUser, IStoc
         }
 
         var id = PortfolioId.Create(request.PortfolioId);
-        if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
+        if (!await portfolios.ExistsAsync(userId, id, cancellationToken))
         {
             return PortfolioErrors.PortfolioNotFound();
         }
 
+        // The keys are matched against the stocks the portfolio holds, read in two queries however long the list is (up to a hundred), and not looked
+        // up in the catalog one by one: a key that is not one of them is a mismatch whether the catalog knows it or not.
+        IReadOnlyList<PortfolioMember> members = await portfolios.MembersAsync(userId, id, cancellationToken);
+        IReadOnlyDictionary<Guid, StockSummary> held = await market.FindManyAsync([.. members.Select(member => member.StockId)], cancellationToken);
+        Dictionary<(string Market, string Ticker), Guid> byKey = held.Values.ToDictionary(
+            stock => (stock.Market.ToUpperInvariant(), stock.Ticker.ToUpperInvariant()), stock => stock.Id);
+
         var ordered = new List<Guid>(request.Items.Count);
         foreach (StockKey key in request.Items)
         {
-            Result<StockSummary> stock = await stocks.FindAsync(key.Market, key.Ticker, cancellationToken);
-            if (!stock.IsSuccess)
+            if (!byKey.TryGetValue((key.Market.Trim().ToUpperInvariant(), key.Ticker.Trim().ToUpperInvariant()), out Guid stockId))
             {
-                return stock.Error!.Type == ErrorType.NotFound ? Mismatch() : stock.Error;
+                return Mismatch();
             }
 
-            ordered.Add(stock.Value.Id);
+            ordered.Add(stockId);
         }
 
         return await portfolios.ReorderMembersAsync(userId, id, ordered, cancellationToken) ? Result.Success() : Mismatch();

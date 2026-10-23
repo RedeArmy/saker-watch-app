@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Time;
+using SakerWatch.BuildingBlocks.Persistence.Jobs;
 
 namespace SakerWatch.BuildingBlocks.Persistence.Outbox;
 
@@ -26,6 +28,8 @@ public static class OutboxServiceCollectionExtensions
             OutboxOptions options = provider.GetRequiredService<IOptions<OutboxOptions>>().Value;
             return new ExponentialBackoff(options.BackoffBase, options.BackoffCap);
         });
+        // The user a message was written for: the processor sets it before the consumers run. The job dispatcher makes it the scope's ICurrentUser.
+        services.TryAddScoped<JobCurrentUser>();
         services.AddSingleton<OutboxProcessor>();
         services.AddHostedService<OutboxDispatcherService>();
         return services;

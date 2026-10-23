@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
@@ -28,7 +29,7 @@ public sealed record CalculatePartialPurchaseQuery(string? Market, string? Ticke
 /// <param name="PriceSource"><c>catalog</c> (the newest close of a stock) or <c>manual</c> (the price given).</param>
 /// <param name="Stock">The catalog stock, when the price came from one.</param>
 /// <param name="PriceDate">The trading day of the close, when the price came from the catalog.</param>
-/// <param name="PriceStatus"><c>current</c> or <c>stale</c>, when the price came from the catalog.</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known close is used) or <c>delisted</c> (the stock no longer trades, ADR-0039: its last close is used and the caller is told), when the price came from the catalog. A stock with no close at all is refused (<c>price_unavailable</c>), so <c>pending</c> and <c>unavailable</c> never reach here.</param>
 /// <param name="StaleSince">When the close went stale, when it did.</param>
 /// <param name="Purchase">The figures, rounded for display.</param>
 /// <param name="Fx">The exchange rate used, with its path, days and sources.</param>
@@ -87,28 +88,11 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
     public async ValueTask<Result<PartialPurchaseView>> Handle(CalculatePartialPurchaseQuery request, CancellationToken cancellationToken)
     {
         // The request is read first: a shares request with too many decimals never costs a database read.
-        Shares? shares = null;
-        if (request.Shares is { } asked)
+        Result<Shares?> shares = ParseShares(request.Shares);
+        Result<FeePercent?> fee = ParseFee(request.Fee);
+        if (!shares.IsSuccess || !fee.IsSuccess)
         {
-            Result<Shares> parsed = Shares.FromRequest(asked);
-            if (!parsed.IsSuccess)
-            {
-                return parsed.Error!;
-            }
-
-            shares = parsed.Value;
-        }
-
-        FeePercent? fee = null;
-        if (request.Fee is { } commission)
-        {
-            Result<FeePercent> parsedFee = FeePercent.Create(commission);
-            if (!parsedFee.IsSuccess)
-            {
-                return parsedFee.Error!;
-            }
-
-            fee = parsedFee.Value;
+            return (shares.IsSuccess ? fee.Error : shares.Error)!;
         }
 
         Result<PriceFound> price = await FindPriceAsync(request, cancellationToken);
@@ -124,17 +108,7 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
             return quote.Error!;
         }
 
-        Result<PartialPurchase> purchase;
-        if (shares is not null)
-        {
-            purchase = PartialPurchaseCalculator.ByShares(unitPrice, shares, quote.Value.Rate, fee);
-        }
-        else
-        {
-            Result<Money> amount = Money.Create(request.Amount!.Value, unitPrice.Currency);
-            purchase = amount.IsSuccess ? PartialPurchaseCalculator.ByAmount(unitPrice, amount.Value, quote.Value.Rate, fee) : amount.Error!;
-        }
-
+        Result<PartialPurchase> purchase = Calculate(request, shares.Value, unitPrice, quote.Value.Rate, fee.Value);
         if (!purchase.IsSuccess)
         {
             return purchase.Error!;
@@ -142,7 +116,7 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
 
         PriceFound found = price.Value;
         return new PartialPurchaseView(
-            shares is null ? "amount" : "shares",
+            shares.Value is null ? "amount" : "shares",
             found.Stock is null ? "manual" : "catalog",
             found.Stock,
             found.Date,
@@ -150,6 +124,39 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
             found.StaleSince,
             purchase.Value.ForDisplay(),
             quote.Value);
+    }
+
+    private static Result<Shares?> ParseShares(decimal? asked)
+    {
+        if (asked is not { } count)
+        {
+            return (Shares?)null;
+        }
+
+        Result<Shares> parsed = Shares.FromRequest(count);
+        return parsed.IsSuccess ? (Shares?)parsed.Value : parsed.Error!;
+    }
+
+    private static Result<FeePercent?> ParseFee(decimal? commission)
+    {
+        if (commission is not { } percent)
+        {
+            return (FeePercent?)null;
+        }
+
+        Result<FeePercent> parsed = FeePercent.Create(percent);
+        return parsed.IsSuccess ? (FeePercent?)parsed.Value : parsed.Error!;
+    }
+
+    private static Result<PartialPurchase> Calculate(CalculatePartialPurchaseQuery request, Shares? shares, Money unitPrice, ExchangeRate rate, FeePercent? fee)
+    {
+        if (shares is not null)
+        {
+            return PartialPurchaseCalculator.ByShares(unitPrice, shares, rate, fee);
+        }
+
+        Result<Money> amount = Money.Create(request.Amount!.Value, unitPrice.Currency);
+        return amount.IsSuccess ? PartialPurchaseCalculator.ByAmount(unitPrice, amount.Value, rate, fee) : amount.Error!;
     }
 
     private async Task<Result<PriceFound>> FindPriceAsync(CalculatePartialPurchaseQuery request, CancellationToken cancellationToken)

@@ -98,7 +98,8 @@ internal static class CalculationsEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> PartialPurchaseAsync(PartialPurchaseRequest? body, ISender sender, CancellationToken cancellationToken)

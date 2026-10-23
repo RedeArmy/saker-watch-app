@@ -4,7 +4,11 @@
 //   K6_TOKENS     comma-separated access tokens, one per user
 //   K6_ENFORCE    "1" to fail the run when a threshold is crossed (the budgets of ADR-0033); anything else only reports
 //   K6_PHASE_SECONDS  seconds each scenario runs (default 30)
+//   K6_WARMUP_SECONDS the first seconds of each scenario, tagged phase:warmup and left out of the thresholds and of the report (default 5): the
+//                 first requests of a scenario meet cold code paths and plans, which says nothing about the steady latency the budget is about
+//   K6_P95_BUDGET_MS  the budget of the p95 of every endpoint (default 300, ADR-0033); a slower machine can state its own
 // The scenarios run one after the other, so each number is that endpoint alone on the machine and not a mix.
+import exec from 'k6/execution';
 import http from 'k6/http';
 import { check } from 'k6';
 import { Trend } from 'k6/metrics';
@@ -13,6 +17,8 @@ const base = __ENV.K6_BASE_URL;
 const tokens = (__ENV.K6_TOKENS || '').split(',').filter((t) => t.length > 0);
 const seconds = Number.parseInt(__ENV.K6_PHASE_SECONDS || '30', 10);
 const enforce = __ENV.K6_ENFORCE === '1';
+const warmupMs = Number.parseInt(__ENV.K6_WARMUP_SECONDS || '5', 10) * 1000;
+const budgetMs = Number.parseInt(__ENV.K6_P95_BUDGET_MS || '300', 10);
 const stocks = 500;
 const portfolioStocks = 100;
 const vus = Number.parseInt(__ENV.K6_VUS || '4', 10);
@@ -29,11 +35,12 @@ export const options = {
     startTime: `${index * (seconds + 5)}s`,
     tags: { endpoint: name },
   }])),
-  // The budget of the whole watchlist is 300 ms (ADR-0030, ADR-0033); the others are held to the same figure.
+  // The budget of the whole watchlist is 300 ms (ADR-0030, ADR-0033); the others are held to the same figure. It is judged on the steady part of
+  // each scenario. The threshold on the count (always true) is what makes k6 keep the sub-metric of each endpoint for the report.
   thresholds: Object.fromEntries(scenarioNames.flatMap((name) => [
-    [`http_req_duration{endpoint:${name}}`, enforce ? ['p(95)<300'] : []],
-    [`http_req_failed{endpoint:${name}}`, enforce ? ['rate<0.01'] : []],
-    [`http_reqs{endpoint:${name}}`, ['count>=0']],
+    [`http_req_duration{endpoint:${name},phase:steady}`, enforce ? [`p(95)<${budgetMs}`] : []],
+    [`http_req_failed{endpoint:${name},phase:steady}`, enforce ? ['rate<0.01'] : []],
+    [`http_reqs{endpoint:${name},phase:steady}`, ['count>=0']],
   ])),
   summaryTrendStats: ['avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 };
@@ -77,13 +84,10 @@ export function setup() {
       headers(token, { 'Idempotency-Key': `load-portfolio-${index}-${Date.now()}-0123456789` }));
     ok(created, 'create portfolio');
     const id = created.json('id');
-    for (let from = 1; from <= portfolioStocks; from += 25) {
-      const requests = [];
-      for (let n = from; n < from + 25 && n <= portfolioStocks; n++) {
-        requests.push(['PUT', `${base}/v1/portfolios/${id}/items/XNAS/${ticker(n)}`, null, headers(token)]);
-      }
-
-      http.batch(requests).forEach((response) => ok(response, 'put portfolio item'));
+    // One at a time: a portfolio serializes its changes on a lock (the order of its members), so a batch of parallel requests into it would only queue
+    // behind each other, and a user fills a portfolio one stock after another.
+    for (let n = 1; n <= portfolioStocks; n++) {
+      ok(http.put(`${base}/v1/portfolios/${id}/items/XNAS/${ticker(n)}`, null, headers(token)), 'put portfolio item');
     }
 
     // A first read of everything, so the first measured request is not the one that fills a cache.
@@ -99,8 +103,13 @@ function pick(data) {
   return { token: tokens[user], portfolio: data.portfolios[user] };
 }
 
+// The part of its scenario a request belongs to: the first seconds are the warm-up.
+function phase() {
+  return Date.now() - exec.scenario.startTime < warmupMs ? 'warmup' : 'steady';
+}
+
 function get(url, token, name) {
-  const response = http.get(url, { ...headers(token), tags: { name } });
+  const response = http.get(url, { ...headers(token), tags: { name, phase: phase() } });
   check(response, { [`${name} answered 200`]: (r) => r.status === 200 });
   settled.add(response.timings.duration);
   return response;
@@ -131,6 +140,6 @@ export function calculator(data) {
   const response = http.post(
     `${base}/v1/calculations/partial-purchase`,
     JSON.stringify({ market: 'XNAS', ticker: ticker(n), amount: '100' }),
-    { ...headers(token), tags: { name: 'POST /v1/calculations/partial-purchase' } });
+    { ...headers(token), tags: { name: 'POST /v1/calculations/partial-purchase', phase: phase() } });
   check(response, { 'calculator answered 200': (r) => r.status === 200 });
 }

@@ -28,6 +28,9 @@ public sealed class CachedPerformanceReaderTests
     {
         public Task<IReadOnlyDictionary<StockId, DateTimeOffset>> LastSuccessAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<StockId, DateTimeOffset>>(stamps);
+
+        public Task<IReadOnlyList<StockId>> LoadedBetweenAsync(string market, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<StockId>>([.. stamps.Where(entry => entry.Value >= from && entry.Value < to).Select(entry => entry.Key)]);
     }
 
     private sealed class Cache : IPerformanceCache

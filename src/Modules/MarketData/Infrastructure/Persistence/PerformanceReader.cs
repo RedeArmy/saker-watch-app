@@ -45,6 +45,13 @@ public sealed partial class PerformanceReader(
             WHERE stock_id = t.stock_id AND trade_date <= t.target ORDER BY trade_date DESC LIMIT 1) p
         """;
 
+    /// <summary>
+    /// The first eight hex digits of the hash of the two statements that find the newest close and the baseline of each window. They are rules of the
+    /// performance numbers that the calculator cannot see (which close is "on or before" a date), so they are part of the cache key tag (ADR-0047): a
+    /// change of either statement makes new keys by itself.
+    /// </summary>
+    public static string QueriesFingerprint { get; } = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(_latest + "\n" + _baselines)))[..8];
+
     /// <inheritdoc />
     public async Task<IReadOnlyDictionary<StockId, PerformanceReport>> ReadAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken)
     {

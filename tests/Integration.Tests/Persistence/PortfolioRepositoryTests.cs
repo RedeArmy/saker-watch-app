@@ -4,6 +4,7 @@ using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
 using SakerWatch.Watchlist.Application;
+using SakerWatch.Watchlist.Domain;
 using SakerWatch.Watchlist.Domain.Portfolios;
 using SakerWatch.Watchlist.Infrastructure.Persistence;
 
@@ -55,7 +56,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
     }
 
     private static Task<MemberAdd> PutAsync(MigratedDatabase db, Guid user, Portfolio portfolio, Guid stock) =>
-        AsAsync(db, user, repository => repository.AddMemberAsync(user, portfolio.Id, stock, _now, CancellationToken.None));
+        AsAsync(db, user, repository => repository.AddMemberAsync(new NewMember(user, portfolio.Id, stock, _now), WatchlistLimits.Defaults.MaxItemsPerPortfolio, CancellationToken.None));
 
     private static Task<long> CountAsync(MigratedDatabase db, string table, string where = "true") =>
         db.Admin.ScalarAsync<long>($"SELECT count(*) FROM watchlist.{table} WHERE {where}");
@@ -138,9 +139,9 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
 
         PortfolioSummary? seen = await AsAsync(db, bob, repository => repository.FindAsync(alice, mine.Id, CancellationToken.None));
         IReadOnlyList<PortfolioSummary> list = await AsAsync(db, bob, repository => repository.ListAsync(alice, CancellationToken.None));
-        bool deleted = await AsAsync(db, bob, repository => repository.DeleteAsync(alice, mine.Id, true, CancellationToken.None));
+        PortfolioDelete deleted = await AsAsync(db, bob, repository => repository.DeleteAsync(alice, mine.Id, true, null, CancellationToken.None));
 
-        (seen, list.Count, deleted).Should().Be(((PortfolioSummary?)null, 0, false));
+        (seen, list.Count, deleted).Should().Be(((PortfolioSummary?)null, 0, PortfolioDelete.NotFound));
         (await CountAsync(db, "portfolios")).Should().Be(1);
     }
 
@@ -182,7 +183,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         MemberAdd notFollowed = await PutAsync(db, alice, mine, Guid.CreateVersion7());
         MemberAdd someoneElses = await PutAsync(db, alice, mine, bobs[0]);
         MemberAdd intoTheirs = await PutAsync(db, alice, theirs, followed[0]);
-        MemberAdd intoMissing = await AsAsync(db, alice, r => r.AddMemberAsync(alice, PortfolioId.Create(Guid.CreateVersion7()), followed[0], _now, CancellationToken.None));
+        MemberAdd intoMissing = await AsAsync(db, alice, r => r.AddMemberAsync(new NewMember(alice, PortfolioId.Create(Guid.CreateVersion7()), followed[0], _now), WatchlistLimits.Defaults.MaxItemsPerPortfolio, CancellationToken.None));
 
         added.Should().AllBeEquivalentTo(MemberAdd.Added);
         (again, notFollowed, someoneElses, intoTheirs, intoMissing).Should().Be(
@@ -284,10 +285,10 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
         (Guid user, Portfolio doomed, Portfolio other, Guid a, Guid b, Guid c) = await DeletionWorldAsync(db);
 
-        bool deleted = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, CancellationToken.None));
-        bool again = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, CancellationToken.None));
+        PortfolioDelete deleted = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, null, CancellationToken.None));
+        PortfolioDelete again = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, null, CancellationToken.None));
 
-        (deleted, again).Should().Be((true, false));
+        (deleted, again).Should().Be((PortfolioDelete.Deleted, PortfolioDelete.NotFound));
         (await CountAsync(db, "portfolios", $"id = '{doomed.Id.Value}'")).Should().Be(0);
         (await CountAsync(db, "portfolios", $"id = '{other.Id.Value}'")).Should().Be(1);
         (await CountAsync(db, "watchlist_items", $"stock_id = '{a}'")).Should().Be(0, "only the deleted portfolio held it");
@@ -302,7 +303,7 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
         (Guid user, Portfolio doomed, _, _, _, _) = await DeletionWorldAsync(db);
 
-        await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: false, CancellationToken.None));
+        await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: false, null, CancellationToken.None));
 
         (await CountAsync(db, "watchlist_items")).Should().Be(3);
         (await CountAsync(db, "portfolio_items")).Should().Be(1, "only the other portfolio's membership is left");
@@ -316,11 +317,11 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         await using DbSession adding = Session(db, user);
         await adding.BeginAsync(CancellationToken.None);
         var addingRepository = new PortfolioRepository(adding);
-        (await addingRepository.AddMemberAsync(user, other.Id, a, _now, CancellationToken.None)).Should().Be(MemberAdd.Added);
+        (await addingRepository.AddMemberAsync(new NewMember(user, other.Id, a, _now), WatchlistLimits.Defaults.MaxItemsPerPortfolio, CancellationToken.None)).Should().Be(MemberAdd.Added);
 
         // The delete starts while the membership is uncommitted: it must wait for it, then see it.
-        Task<bool> deleting = AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, CancellationToken.None));
-        await Task.Delay(500);
+        Task<PortfolioDelete> deleting = AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, null, CancellationToken.None));
+        await WaitUntilALockWaitsAsync(db);
         deleting.IsCompleted.Should().BeFalse("it waits for the uncommitted membership of the stock it was about to remove");
         await adding.CommitAsync(CancellationToken.None);
         await deleting.WaitAsync(TimeSpan.FromSeconds(30));
@@ -336,11 +337,11 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         (Guid user, Portfolio doomed, Portfolio other, Guid a, _, _) = await DeletionWorldAsync(db);
         await using DbSession deleting = Session(db, user);
         await deleting.BeginAsync(CancellationToken.None);
-        (await new PortfolioRepository(deleting).DeleteAsync(user, doomed.Id, removeOrphans: true, CancellationToken.None)).Should().BeTrue();
+        (await new PortfolioRepository(deleting).DeleteAsync(user, doomed.Id, removeOrphans: true, null, CancellationToken.None)).Should().Be(PortfolioDelete.Deleted);
 
         // The delete has locked and removed the item but not committed: the other request waits for it and then cannot add a stock that is gone.
         Task<MemberAdd> adding = PutAsync(db, user, other, a);
-        await Task.Delay(500);
+        await WaitUntilALockWaitsAsync(db);
         adding.IsCompleted.Should().BeFalse();
         await deleting.CommitAsync(CancellationToken.None);
 
@@ -395,11 +396,89 @@ public sealed class PortfolioRepositoryTests(TimescalePostgresFixture postgres) 
         (await new PortfolioRepository(reordering).ReorderMembersAsync(user, portfolio.Id, [stocks[1], stocks[0]], CancellationToken.None)).Should().BeTrue();
 
         Task<MemberAdd> adding = PutAsync(db, user, portfolio, stocks[2]);
-        await Task.Delay(500);
+        await WaitUntilALockWaitsAsync(db);
         adding.IsCompleted.Should().BeFalse("it queues behind the reorder instead of reading positions that are about to change");
         await reordering.CommitAsync(CancellationToken.None);
         (await adding.WaitAsync(TimeSpan.FromSeconds(30))).Should().Be(MemberAdd.Added);
 
         (await AsAsync(db, user, r => r.MembersAsync(user, portfolio.Id, CancellationToken.None))).Select(m => m.StockId).Should().Equal(stocks[1], stocks[0], stocks[2]);
+    }
+
+    // Waits until a session of this database is blocked on a lock: the request under test, queued behind the transaction the test holds open. It is
+    // a fact read from the server and not a pause, so "it has not completed" that follows is true because the request really is waiting.
+    private static async Task WaitUntilALockWaitsAsync(MigratedDatabase db)
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (await db.Admin.ScalarAsync<long>("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'") == 0)
+        {
+            await Task.Delay(10, bound.Token);
+        }
+    }
+
+    [Fact]
+    public async Task AddMember_HoldsTheConfiguredLimit_BelowTheCeiling_AndLetsAMemberThrough()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        Portfolio portfolio = await AddAsync(db, user, "Corto");
+        Guid[] stocks = await FollowAsync(db, user, 3);
+        Task<MemberAdd> Add(Guid stock) => AsAsync(db, user, r => r.AddMemberAsync(new NewMember(user, portfolio.Id, stock, _now), maxMembers: 2, CancellationToken.None));
+
+        MemberAdd first = await Add(stocks[0]);
+        MemberAdd second = await Add(stocks[1]);
+        MemberAdd third = await Add(stocks[2]);
+        MemberAdd again = await Add(stocks[0]);
+
+        (first, second, third, again).Should().Be((MemberAdd.Added, MemberAdd.Added, MemberAdd.LimitReached, MemberAdd.AlreadyThere), "a member of a full portfolio is not a new member");
+        (await CountAsync(db, "portfolio_items", $"portfolio_id = '{portfolio.Id.Value}'")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task AddMember_ParallelAddsAtTheLimit_LetOnlyTheLimitIn()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        var user = Guid.CreateVersion7();
+        Portfolio portfolio = await AddAsync(db, user, "Carrera");
+        Guid[] stocks = await FollowAsync(db, user, 6);
+
+        MemberAdd[] results = await Task.WhenAll(stocks.Select(stock =>
+            AsAsync(db, user, r => r.AddMemberAsync(new NewMember(user, portfolio.Id, stock, _now), maxMembers: 3, CancellationToken.None))));
+
+        results.Count(result => result == MemberAdd.Added).Should().Be(3);
+        results.Count(result => result == MemberAdd.LimitReached).Should().Be(3);
+        (await CountAsync(db, "portfolio_items", $"portfolio_id = '{portfolio.Id.Value}'")).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Delete_ConfirmedWithTheTokenOfWhatWasSeen_RemovesThem_AndRefusesWhenTheSetChanged()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        (Guid user, Portfolio doomed, _, Guid a, _, _) = await DeletionWorldAsync(db);
+        DeletionPreview seen = await AsAsync(db, user, r => r.PreviewDeletionAsync(user, doomed.Id, CancellationToken.None));
+        // Another stock is put in the portfolio after the caller looked.
+        Guid late = (await FollowAsync(db, user, 1))[0];
+        (await PutAsync(db, user, doomed, late)).Should().Be(MemberAdd.Added);
+
+        PortfolioDelete stale = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, seen.Token, CancellationToken.None));
+        DeletionPreview now = await AsAsync(db, user, r => r.PreviewDeletionAsync(user, doomed.Id, CancellationToken.None));
+        PortfolioDelete current = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, now.Token, CancellationToken.None));
+
+        (stale, current).Should().Be((PortfolioDelete.RemovalChanged, PortfolioDelete.Deleted));
+        (await CountAsync(db, "watchlist_items", $"stock_id = '{late}'")).Should().Be(0, "removed only once the caller had seen it");
+        (await CountAsync(db, "watchlist_items", $"stock_id = '{a}'")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Delete_ARefusedConfirmation_ChangesNothing()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        (Guid user, Portfolio doomed, _, _, _, _) = await DeletionWorldAsync(db);
+        long portfolios = await CountAsync(db, "portfolios");
+        long items = await CountAsync(db, "watchlist_items");
+
+        PortfolioDelete refused = await AsAsync(db, user, r => r.DeleteAsync(user, doomed.Id, removeOrphans: true, "0000000000000000", CancellationToken.None));
+
+        refused.Should().Be(PortfolioDelete.RemovalChanged);
+        (await CountAsync(db, "portfolios"), await CountAsync(db, "watchlist_items")).Should().Be((portfolios, items));
     }
 }

@@ -39,11 +39,14 @@ public enum ErrorType
 /// <param name="Message">Human-readable explanation; never contains secrets or personal data.</param>
 /// <param name="Type">Failure category.</param>
 /// <param name="Details">Optional field-level problems keyed by field name (validation only).</param>
+/// <param name="Extensions">Optional data the caller needs to act on the failure, sent as members of the problem (for example what a confirmation has to name).
+/// Never secrets or personal data of anyone else; the names <c>code</c>, <c>errors</c>, <c>correlationId</c> and <c>traceId</c> are the response's own.</param>
 public sealed record Error(
     string Code,
     string Message,
     ErrorType Type,
-    IReadOnlyDictionary<string, string[]>? Details = null)
+    IReadOnlyDictionary<string, string[]>? Details = null,
+    IReadOnlyDictionary<string, object?>? Extensions = null)
 {
     /// <summary>Creates an <see cref="ErrorType.Failure"/> error.</summary>
     public static Error Failure(string code, string message) => new(code, message, ErrorType.Failure);
@@ -61,8 +64,9 @@ public sealed record Error(
     /// <summary>Creates a <see cref="ErrorType.NotFound"/> error.</summary>
     public static Error NotFound(string code, string message) => new(code, message, ErrorType.NotFound);
 
-    /// <summary>Creates a <see cref="ErrorType.Conflict"/> error.</summary>
-    public static Error Conflict(string code, string message) => new(code, message, ErrorType.Conflict);
+    /// <summary>Creates a <see cref="ErrorType.Conflict"/> error, optionally with data the caller needs to resolve it.</summary>
+    public static Error Conflict(string code, string message, IReadOnlyDictionary<string, object?>? extensions = null) =>
+        new(code, message, ErrorType.Conflict, null, extensions);
 
     /// <summary>Creates an <see cref="ErrorType.Unprocessable"/> error.</summary>
     public static Error Unprocessable(string code, string message) => new(code, message, ErrorType.Unprocessable);

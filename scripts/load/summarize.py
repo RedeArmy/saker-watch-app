@@ -4,7 +4,8 @@
   summarize.py LABEL=FILE [LABEL=FILE ...]
 
 Each FILE is a .json file inside the current directory (run it from the directory that holds the summaries); a path that leaves it is refused.
-K6_PHASE_SECONDS (default 30) is the length of one scenario, to turn a count of requests into requests per second.
+K6_PHASE_SECONDS (default 30) is the length of one scenario and K6_WARMUP_SECONDS (default 5) the part of it that is left out (tests/load/baseline.js
+tags it phase:warmup), to turn a count of requests into requests per second.
 """
 import json
 import os
@@ -24,13 +25,13 @@ def inside_here(name: str) -> Path:
 
 
 def row(metrics: dict, endpoint: str) -> str:
-    duration = metrics.get(f"http_req_duration{{endpoint:{endpoint}}}", {})
-    failed = metrics.get(f"http_req_failed{{endpoint:{endpoint}}}", {})
-    count = metrics.get(f"http_reqs{{endpoint:{endpoint}}}", {})
+    duration = metrics.get(f"http_req_duration{{endpoint:{endpoint},phase:steady}}", {})
+    failed = metrics.get(f"http_req_failed{{endpoint:{endpoint},phase:steady}}", {})
+    count = metrics.get(f"http_reqs{{endpoint:{endpoint},phase:steady}}", {})
     values = [duration.get(key) for key in ("avg", "med", "p(95)", "p(99)", "max")]
     cells = ["-" if value is None else f"{value:.1f}" for value in values]
-    # The rate k6 exports is over the whole run, and each scenario runs for a fifth of it; the count over the phase is what is wanted.
-    seconds = int(os.environ.get("K6_PHASE_SECONDS", "30"))
+    # The rate k6 exports is over the whole run, and each scenario runs for a fifth of it; the count over the steady part of the phase is what is wanted.
+    seconds = max(1, int(os.environ.get("K6_PHASE_SECONDS", "30")) - int(os.environ.get("K6_WARMUP_SECONDS", "5")))
     rate = count["count"] / seconds if "count" in count else None
     errors = failed.get("value", failed.get("rate"))
     return f"| {endpoint} | " + " | ".join(cells) + f" | {'-' if rate is None else f'{rate:.1f}'} | {'-' if errors is None else f'{errors * 100:.2f} %'} |"

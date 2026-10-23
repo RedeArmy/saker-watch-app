@@ -19,6 +19,24 @@ public sealed class SensitiveTextTests
         scrubbed.Should().NotContain(secret).And.Contain(SensitiveText.Mask);
     }
 
+    [Theory]
+    [InlineData("Host=db;Username=app;Password=pa ss word;Database=saker", "pa ss word", "Host=db;Username=app;Password=***;Database=saker")]
+    [InlineData("Password=two  spaces and, more", "two  spaces and", "Password=***, more")]
+    [InlineData("could not connect: Host=db;Password=last word", "last word", "could not connect: Host=db;Password=***")]
+    [InlineData("Password=\"with ; and space\";Port=5432", "with ; and space", "Password=***;Port=5432")]
+    public void AnEqualsValue_RunsToTheNextSeparator_SoASpaceInASecretDoesNotLeakItsTail(string text, string secret, string expected)
+    {
+        string scrubbed = SensitiveText.Scrub(text);
+
+        scrubbed.Should().NotContain(secret).And.Be(expected);
+    }
+
+    [Fact]
+    public void AColonValue_IsOneWord_SoTheSentenceAroundItIsKept()
+    {
+        SensitiveText.Scrub("the request failed: token: abc123456 expired for this user").Should().Be("the request failed: token: *** expired for this user");
+    }
+
     [Fact]
     public void OrdinaryText_IsReturnedAsTheSameInstance()
     {

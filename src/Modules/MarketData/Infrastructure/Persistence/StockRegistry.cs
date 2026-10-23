@@ -31,7 +31,7 @@ public sealed class StockRegistry(DbSession session) : IStockRegistry
         command.Parameters.AddWithValue("name", stock.Name);
         command.Parameters.AddWithValue("currency", stock.Currency.Value);
         command.Parameters.AddWithValue("time_zone", stock.TimeZoneId);
-        command.Parameters.AddWithValue("asset_type", stock.AssetType switch { AssetType.Equity => "equity", AssetType.Etf => "etf", _ => "other" });
+        command.Parameters.AddWithValue("asset_type", stock.AssetType.ToText());
         command.Parameters.AddWithValue("provider", provider);
         command.Parameters.AddWithValue("provider_mic", providerKey.ProviderMic);
         command.Parameters.AddWithValue("provider_symbol", providerKey.Symbol);

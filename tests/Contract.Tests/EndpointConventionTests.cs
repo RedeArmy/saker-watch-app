@@ -63,6 +63,7 @@ public sealed class EndpointConventionTests(ApiFactory factory) : IClassFixture<
             statuses.Any(status => status is >= 200 and < 300).Should().BeTrue($"{who} must document its success response");
             statuses.Should().Contain(StatusCodes.Status401Unauthorized, $"{who} must document 401");
             statuses.Should().Contain(StatusCodes.Status500InternalServerError, $"{who} must document 500");
+            statuses.Should().Contain(StatusCodes.Status503ServiceUnavailable, $"{who} must document 503: the database refusing to wait answers it from any endpoint");
         }
     }
 

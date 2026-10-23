@@ -3,7 +3,11 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.MarketData.Application.Ingestion;
+using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
+using SakerWatch.MarketData.Domain.Markets;
+using SakerWatch.MarketData.Domain.Performance;
+using SakerWatch.MarketData.Domain.Stocks;
 
 namespace SakerWatch.MarketData.Tests;
 
@@ -27,6 +31,122 @@ public sealed class FollowUpJobsTests
     {
         var jobs = new Enqueuer();
         return (new FollowUpJobs(jobs, Options.Create(options ?? new IngestionOptions()), new FakeTimeProvider(_now)), jobs);
+    }
+
+    private static (FollowUpJobs Waiter, Enqueuer Jobs) BuildWithCache(PerformanceCacheOptions cache)
+    {
+        var jobs = new Enqueuer();
+        return (new FollowUpJobs(jobs, Options.Create(new IngestionOptions()), new FakeTimeProvider(_now), Options.Create(cache)), jobs);
+    }
+
+    private static readonly Mic _nasdaq = Mic.Parse("XNAS");
+
+    [Fact]
+    public async Task QueueWarm_LoadsOfAMarketInTheSameSliceShareOneJob_ThatBecomesDueAMinuteAfterTheSlice()
+    {
+        (FollowUpJobs waiter, Enqueuer jobs) = BuildWithCache(new PerformanceCacheOptions());
+        DateTimeOffset firstLoad = new(2026, 10, 17, 3, 2, 0, TimeSpan.Zero);
+
+        await waiter.QueueWarmAsync(_nasdaq, firstLoad, CancellationToken.None);
+        await waiter.QueueWarmAsync(_nasdaq, firstLoad.AddMinutes(11), CancellationToken.None); // 03:13, same slice of 15 minutes
+        await waiter.QueueWarmAsync(_nasdaq, firstLoad.AddMinutes(14), CancellationToken.None); // 03:16, the next one
+
+        jobs.Queued.Select(job => job.Key).Should().Equal(
+            "marketdata.warm-performance:XNAS:202610170300", "marketdata.warm-performance:XNAS:202610170300", "marketdata.warm-performance:XNAS:202610170315");
+        jobs.Queued[0].Payload.Should().Be(new WarmPerformanceJob("XNAS", new DateTimeOffset(2026, 10, 17, 3, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 17, 3, 15, 0, TimeSpan.Zero)));
+        jobs.Queued[0].Options.Should().Be(new JobEnqueueOptions(AvailableAt: new DateTimeOffset(2026, 10, 17, 3, 16, 0, TimeSpan.Zero), MaxAttempts: 3));
+    }
+
+    [Fact]
+    public async Task QueueWarm_AnotherMarketHasItsOwnJob()
+    {
+        (FollowUpJobs waiter, Enqueuer jobs) = BuildWithCache(new PerformanceCacheOptions());
+
+        await waiter.QueueWarmAsync(_nasdaq, _now, CancellationToken.None);
+        await waiter.QueueWarmAsync(Mic.Parse("XNYS"), _now, CancellationToken.None);
+
+        jobs.Queued.Select(job => job.Key).Distinct().Should().HaveCount(2);
+    }
+
+    [Theory]
+    [InlineData(15, "2026-10-17T12:00:00", "2026-10-17T12:15:00")]
+    [InlineData(60, "2026-10-17T12:00:00", "2026-10-17T13:00:00")]
+    [InlineData(10, "2026-10-17T12:00:00", "2026-10-17T12:10:00")]
+    public void SliceOf_CutsTheClockInSlices(int minutes, string from, string to)
+    {
+        (DateTimeOffset start, DateTimeOffset end) = WarmPerformanceJob.SliceOf(new DateTimeOffset(2026, 10, 17, 12, 4, 30, TimeSpan.Zero), minutes);
+
+        (start, end).Should().Be((DateTimeOffset.Parse(from + "Z", System.Globalization.CultureInfo.InvariantCulture), DateTimeOffset.Parse(to + "Z", System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task QueueWarm_QueuesNothing_WhenTheCacheOrTheWarmingIsOff(bool enabled, bool warm)
+    {
+        (FollowUpJobs waiter, Enqueuer jobs) = BuildWithCache(new PerformanceCacheOptions { Enabled = enabled, WarmAfterLoad = warm });
+
+        bool queued = await waiter.QueueWarmAsync(_nasdaq, _now, CancellationToken.None);
+
+        queued.Should().BeFalse();
+        jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task QueueWarm_WithNoCacheOptions_WarmsNothing()
+    {
+        (FollowUpJobs waiter, Enqueuer jobs) = Build();
+
+        (await waiter.QueueWarmAsync(_nasdaq, _now, CancellationToken.None)).Should().BeFalse();
+        jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WarmPerformanceHandler_ReadsEveryListingThatLoadedInTheSlice_InOneBatch()
+    {
+        var one = StockId.Create(Guid.CreateVersion7());
+        var two = StockId.Create(Guid.CreateVersion7());
+        var late = StockId.Create(Guid.CreateVersion7());
+        DateTimeOffset from = new(2026, 10, 17, 3, 0, 0, TimeSpan.Zero);
+        var stamps = new SliceStamps(new Dictionary<StockId, DateTimeOffset> { [one] = from.AddMinutes(1), [two] = from.AddMinutes(14), [late] = from.AddMinutes(15) });
+        var reader = new RecordingReader(new Dictionary<StockId, PerformanceReport> { [one] = PerformanceCalculator.NoData(), [two] = PerformanceCalculator.NoData() });
+
+        await new WarmPerformanceHandler(reader, stamps).HandleAsync(
+            new WarmPerformanceJob("XNAS", from, from.AddMinutes(15)), new JobContext(Guid.CreateVersion7(), "k", 1, 3, null), CancellationToken.None);
+
+        reader.Asked.Should().ContainSingle().Which.Should().BeEquivalentTo([one, two], "the load at 03:15 belongs to the next slice");
+    }
+
+    [Fact]
+    public async Task WarmPerformanceHandler_WhenNothingLoadedInTheSlice_ReadsNothing()
+    {
+        var reader = new RecordingReader(new Dictionary<StockId, PerformanceReport>());
+        DateTimeOffset from = new(2026, 10, 17, 3, 0, 0, TimeSpan.Zero);
+
+        await new WarmPerformanceHandler(reader, new SliceStamps([])).HandleAsync(
+            new WarmPerformanceJob("XNAS", from, from.AddMinutes(15)), new JobContext(Guid.CreateVersion7(), "k", 1, 3, null), CancellationToken.None);
+
+        reader.Asked.Should().BeEmpty();
+    }
+
+    private sealed class SliceStamps(Dictionary<StockId, DateTimeOffset> stamps) : IIngestionStamps
+    {
+        public Task<IReadOnlyDictionary<StockId, DateTimeOffset>> LastSuccessAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<StockId, DateTimeOffset>>(stamps);
+
+        public Task<IReadOnlyList<StockId>> LoadedBetweenAsync(string market, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<StockId>>([.. stamps.Where(entry => entry.Value >= from && entry.Value < to).Select(entry => entry.Key)]);
+    }
+
+    private sealed class RecordingReader(IReadOnlyDictionary<StockId, PerformanceReport> answer) : IPerformanceReader
+    {
+        public List<StockId[]> Asked { get; } = [];
+
+        public Task<IReadOnlyDictionary<StockId, PerformanceReport>> ReadAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken)
+        {
+            Asked.Add([.. stocks]);
+            return Task.FromResult(answer);
+        }
     }
 
     [Theory]
@@ -57,6 +177,20 @@ public sealed class FollowUpJobsTests
         payload.Should().Be("p");
         options!.MaxAttempts.Should().Be(8);
         options.AvailableAt.Should().BeOnOrAfter(_now.AddSeconds(20)).And.BeOnOrBefore(_now.AddSeconds(20 + 30));
+    }
+
+    [Theory]
+    [InlineData("marketdata.backfill:abc:w1", 3027854465u, 21)]
+    [InlineData("marketdata.refresh:abc:20261016:w1", 1889782234u, 7)]
+    public async Task TheJitter_IsTheSameInEveryProcess_BecauseTheHashIsNotSeeded(string key, uint hash, int jitterSeconds)
+    {
+        (FollowUpJobs waiter, Enqueuer jobs) = Build();
+        string current = key[..key.LastIndexOf(":w", StringComparison.Ordinal)];
+
+        await waiter.TryWaitAsync("p", 0, current, ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(20)), 8, CancellationToken.None);
+
+        FollowUpJobs.StableHash(key).Should().Be(hash, "FNV-1a of the key: a value that does not change from one run of the process to the next");
+        jobs.Queued.Single().Options!.AvailableAt.Should().Be(_now.AddSeconds(20 + jitterSeconds));
     }
 
     [Fact]

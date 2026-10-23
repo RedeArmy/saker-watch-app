@@ -53,7 +53,9 @@ public sealed class PutWatchlistItemValidator : AbstractValidator<PutWatchlistIt
     {
         RuleFor(x => x.Market).NotEmpty().MaximumLength(4);
         RuleFor(x => x.Ticker).NotEmpty().MaximumLength(16);
-        RuleFor(x => x.Notes).MaximumLength(WatchlistItem.MaxNotesLength);
+        // The length of what is stored: the note is trimmed first, so spaces around a note that fits do not make it too long.
+        RuleFor(x => x.Notes).Must(notes => notes is null || notes.Trim().Length <= WatchlistItem.MaxNotesLength)
+            .WithMessage($"Notes have at most {WatchlistItem.MaxNotesLength} characters.");
         RuleFor(x => x.TargetPrice)
             .GreaterThan(0m).LessThanOrEqualTo(WatchlistItem.MaxTargetPrice)
             .When(x => x.TargetPrice is not null);
@@ -63,7 +65,8 @@ public sealed class PutWatchlistItemValidator : AbstractValidator<PutWatchlistIt
 /// <summary>
 /// Registers the stock if needed, then adds or updates the item in a unit of work of its own. Registering a stock asks a provider, which can
 /// take as long as the client's timeout, so the pipeline does not hold a connection and a transaction around it (ADR-0044): the stock is
-/// found or registered first, in short units of work of its own, and the item is written in one that opens after.
+/// found or registered first, in short units of work of its own, and the item is written in one that opens after. If that write then fails, the
+/// registered stock stays in the catalog: it is valid and shared, it is bounded by the daily cap of the user and the next user finds it ready (ADR-0047).
 /// </summary>
 public sealed class PutWatchlistItemHandler(
     ICurrentUser currentUser,
@@ -95,15 +98,7 @@ public sealed class PutWatchlistItemHandler(
             return target.Error!;
         }
 
-        // A full watchlist can still edit a stock it holds, but a stock the catalog does not have cannot be on it: it is refused here, before a
-        // provider is asked and a catalog row is made for a stock that cannot be added.
-        if (await IsFullAsync(userId, cancellationToken)
-            && (await stocks.FindAsync(request.Market, request.Ticker, cancellationToken)).Error is { Type: ErrorType.NotFound })
-        {
-            return LimitReached();
-        }
-
-        Result<StockSummary> stock = await stocks.EnsureAsync(request.Market, request.Ticker, cancellationToken);
+        Result<StockSummary> stock = await ResolveStockAsync(request, userId, cancellationToken);
         if (!stock.IsSuccess)
         {
             return stock.Error!;
@@ -129,6 +124,22 @@ public sealed class PutWatchlistItemHandler(
             await unit.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    // A stock the catalog has is found with one read and needs no provider, so the common request opens two units of work in all (this one and the write). Only a stock
+    // the catalog does not have goes on: a full watchlist can still edit a stock it holds, but cannot take a new one, so it is refused here, before a provider is asked and
+    // a catalog row is made for a stock that cannot be added.
+    private async Task<Result<StockSummary>> ResolveStockAsync(PutWatchlistItemCommand request, Guid userId, CancellationToken cancellationToken)
+    {
+        Result<StockSummary> found = await stocks.FindAsync(request.Market, request.Ticker, cancellationToken);
+        if (found.IsSuccess || found.Error is not { Type: ErrorType.NotFound })
+        {
+            return found;
+        }
+
+        return await IsFullAsync(userId, cancellationToken)
+            ? LimitReached()
+            : await stocks.EnsureAsync(request.Market, request.Ticker, cancellationToken);
     }
 
     private async Task<bool> IsFullAsync(Guid userId, CancellationToken cancellationToken)

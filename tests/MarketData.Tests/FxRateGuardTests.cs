@@ -61,6 +61,35 @@ public sealed class FxRateGuardTests
     }
 
     [Fact]
+    public void Screen_ARealChangeOfLevel_IsBelievedOnceTheNextDayConfirmsIt()
+    {
+        // 7.6 to 7.9 is 3.9 %: a jump. The next day stays within the limit of 7.9, so the level really moved; the old rate is not kept as the reference.
+        FxScreening screening = FxRateGuard.Screen([Rate(15, 7.9m), Rate(16, 7.92m)], [Rate(14, 7.6m)], _settings);
+
+        Days(screening.Accepted).Should().Equal("15:7.9", "16:7.92");
+        screening.Rejected.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Screen_AJumpThatNothingConfirms_StaysRefused()
+    {
+        // A misplaced decimal on one day: the day after is back at the old level, so the jump is not believed and the old level stays the reference.
+        FxScreening screening = FxRateGuard.Screen([Rate(15, 7.9m), Rate(16, 7.61m)], [Rate(14, 7.6m)], _settings);
+
+        Days(screening.Accepted).Should().Equal("16:7.61");
+        screening.Rejected.Should().ContainSingle().Which.Reason.Should().Be(FxRejectionReasons.Jump);
+    }
+
+    [Fact]
+    public void Screen_AJumpOnTheLastDayOfTheBatch_WaitsForTheNextDay()
+    {
+        FxScreening screening = FxRateGuard.Screen([Rate(15, 7.9m)], [Rate(14, 7.6m)], _settings);
+
+        screening.Accepted.Should().BeEmpty();
+        screening.Rejected.Should().ContainSingle().Which.Reason.Should().Be(FxRejectionReasons.Jump);
+    }
+
+    [Fact]
     public void Screen_ComparesEachRateWithTheOneBeforeIt_SoAGradualDriftPasses()
     {
         // 1 % a day for six days is 6 %: no day moves more than the limit, and the guard does not compare with the first one.

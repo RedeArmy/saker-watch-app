@@ -262,14 +262,22 @@ public sealed class PerformanceReaderTests(TimescalePostgresFixture postgres, IT
         await BulkSeedAsync(db.Admin);
         await ReadAsync(db.Api, [.. ids.Take(2)]); // warm the plan and the connection
 
-        var clock = Stopwatch.StartNew();
-        IReadOnlyDictionary<StockId, PerformanceReport> reports = await ReadAsync(db.Api, [.. ids]);
-        clock.Stop();
+        // The fastest of three reads: parallel test containers share the machine and a spike of load can slow one read by seconds, but a regression
+        // to a scan of the table slows every read. The answer itself is checked on each of them.
+        long fastest = long.MaxValue;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            var clock = Stopwatch.StartNew();
+            IReadOnlyDictionary<StockId, PerformanceReport> reports = await ReadAsync(db.Api, [.. ids]);
+            clock.Stop();
+            fastest = Math.Min(fastest, clock.ElapsedMilliseconds);
 
-        reports.Should().HaveCount(40);
-        reports.Values.Should().OnlyContain(r => r.Windows.All(w => w.Change != null));
-        // Loose on purpose: parallel test containers share the machine. A regression to a scan of the table takes far longer.
-        clock.ElapsedMilliseconds.Should().BeLessThan(3000, $"took {clock.ElapsedMilliseconds} ms");
+            reports.Should().HaveCount(40);
+            reports.Values.Should().OnlyContain(r => r.Windows.All(w => w.Change != null));
+        }
+
+        output.WriteLine($"40 listings x ~1 700 days, fastest of 3 reads: {fastest} ms");
+        fastest.Should().BeLessThan(3000, $"the fastest of three reads took {fastest} ms");
     }
 
     // Run with SAKER_SCALE=1. The number it prints (0.3 to 0.5 s on the test container) is the one ADR-0030 quotes.

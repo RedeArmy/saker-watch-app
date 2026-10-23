@@ -184,14 +184,14 @@ public sealed class WebBuildingBlockTests
     }
 
     [Fact]
-    public async Task PreAuthenticationLimit_StopsAFloodBeforeAnyTokenIsLooked_AndSparesTheHealthProbes()
+    public async Task PreAuthenticationLimit_StopsAFloodOfRefusedRequestsBeforeAnyTokenIsLooked_AndSparesTheHealthProbes()
     {
         using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PreAuthenticationPermitLimit"] = "3" });
         HttpClient client = host.GetTestClient();
 
         for (int i = 0; i < 3; i++)
         {
-            (await client.GetAsync("/ok")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await client.GetAsync("/denied")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
 
         HttpResponseMessage limited = await client.GetAsync("/ok");
@@ -224,6 +224,55 @@ public sealed class WebBuildingBlockTests
         ClientAddressKey.For(null).Should().Be("unknown");
     }
 
+    [Theory]
+    [InlineData("55P03")]
+    [InlineData("40P01")]
+    [InlineData("40001")]
+    public async Task ADatabaseThatRefusedToWait_IsABusy503WithARetryAfter_NotAnUnexpected500(string state)
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync($"/db-busy/{state}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(1));
+        JsonElement body = await ReadJson(response);
+        body.GetProperty("type").GetString().Should().Be("urn:sakerwatch:error:busy");
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("could not get the lock", "the message of the driver is never sent to the client");
+    }
+
+    [Fact]
+    public async Task ADatabaseFailureThatIsNotARefusalToWait_StaysAnUnexpected500()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync("/db-busy/23505");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
+    public async Task AnAbandonedRequest_IsNotRecordedAsASuccess()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync("/abandoned");
+
+        ((int)response.StatusCode).Should().Be(499, "a cancelled request that ended with 200 would count as a success in the logs and the metrics");
+    }
+
+    [Fact]
+    public async Task PreAuthenticationLimit_DoesNotCountRequestsThatAreAccepted_SoUsersBehindOneAddressDoNotShareIt()
+    {
+        using var host = await WebTestServer.StartAsync(new() { ["RateLimiting:PreAuthenticationPermitLimit"] = "2", ["RateLimiting:PermitLimit"] = "1000" });
+        HttpClient client = host.GetTestClient();
+
+        for (int i = 0; i < 20; i++)
+        {
+            (await client.GetAsync("/ok")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
+
     [Fact]
     public async Task PreAuthenticationLimit_CountsAnIpv6SubscriberOnce_NotOncePerAddress()
     {
@@ -232,15 +281,15 @@ public sealed class WebBuildingBlockTests
 
         async Task<HttpStatusCode> From(string address)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/ok");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/denied");
             request.Headers.Add(WebTestServer.TestRemoteIpHeader, address);
             return (await client.SendAsync(request)).StatusCode;
         }
 
-        (await From("2001:db8:1:1::1")).Should().Be(HttpStatusCode.OK);
-        (await From("2001:db8:1:1::2")).Should().Be(HttpStatusCode.OK);
+        (await From("2001:db8:1:1::1")).Should().Be(HttpStatusCode.Unauthorized);
+        (await From("2001:db8:1:1::2")).Should().Be(HttpStatusCode.Unauthorized);
         (await From("2001:db8:1:1:dead:beef::3")).Should().Be(HttpStatusCode.TooManyRequests, "rotating addresses inside a /64 does not buy a new allowance");
-        (await From("2001:db8:1:2::1")).Should().Be(HttpStatusCode.OK, "another /64 is another client");
+        (await From("2001:db8:1:2::1")).Should().Be(HttpStatusCode.Unauthorized, "another /64 is another client");
     }
 
     [Fact]

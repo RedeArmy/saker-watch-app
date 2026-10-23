@@ -49,37 +49,41 @@ public sealed class FxConverter(IFxRateStore store, IOptions<IngestionOptions> o
             return new FxConversion(amount, amount, [], ExchangeRate.Identity(from), day, false);
         }
 
-        var legs = new List<FxLeg>(2);
-        foreach ((CurrencyCode legFrom, CurrencyCode legTo) in await PathAsync(from, to, day, cancellationToken))
-        {
-            FxLeg? leg = await ResolveAsync(legFrom, legTo, day, cancellationToken);
-            if (leg is null)
-            {
-                return Error.NotFound(RateUnavailableCode, $"There is no {legFrom} to {legTo} rate on or before {day:yyyy-MM-dd}.");
-            }
-
-            legs.Add(leg);
-        }
-
-        return Combine(amount, day, legs);
+        (List<FxLeg> legs, (CurrencyCode From, CurrencyCode To)? missing) = await PathAsync(from, to, day, cancellationToken);
+        return missing is { } gap
+            ? Error.NotFound(RateUnavailableCode, $"There is no {gap.From} to {gap.To} rate on or before {day:yyyy-MM-dd}.")
+            : Combine(amount, day, legs);
     }
 
-    // One step when the pair is stored (in either direction) or one side is the pivot; otherwise through the pivot (ADR-0018).
-    private async Task<(CurrencyCode From, CurrencyCode To)[]> PathAsync(CurrencyCode from, CurrencyCode to, DateOnly day, CancellationToken cancellationToken)
+    // One step when the pair is stored (in either direction) or one side is the pivot; otherwise through the pivot (ADR-0018). Each pair is resolved once, and the legs
+    // that were resolved to find the path are the ones used: the step that has no rate is the one named when there is none.
+    private async Task<(List<FxLeg> Legs, (CurrencyCode From, CurrencyCode To)? Missing)> PathAsync(CurrencyCode from, CurrencyCode to, DateOnly day, CancellationToken cancellationToken)
     {
-        if (from == _pivot || to == _pivot || await ResolveAsync(from, to, day, cancellationToken) is not null)
+        FxLeg? direct = await ResolveAsync(from, to, day, cancellationToken);
+        if (direct is not null)
         {
-            return [(from, to)];
+            return ([direct], null);
         }
 
-        return [(from, _pivot), (_pivot, to)];
+        if (from == _pivot || to == _pivot)
+        {
+            return ([], (from, to));
+        }
+
+        FxLeg? toPivot = await ResolveAsync(from, _pivot, day, cancellationToken);
+        if (toPivot is null)
+        {
+            return ([], (from, _pivot));
+        }
+
+        FxLeg? fromPivot = await ResolveAsync(_pivot, to, day, cancellationToken);
+        return fromPivot is null ? ([], (_pivot, to)) : ([toPivot, fromPivot], null);
     }
 
     // The stored rate in the asked direction or the reciprocal of the opposite one, whichever is newer (the asked direction on a tie).
     private async Task<FxLeg?> ResolveAsync(CurrencyCode from, CurrencyCode to, DateOnly day, CancellationToken cancellationToken)
     {
-        FxRate? direct = await store.OnOrBeforeAsync(from, to, day, cancellationToken);
-        FxRate? inverse = await store.OnOrBeforeAsync(to, from, day, cancellationToken);
+        (FxRate? direct, FxRate? inverse) = await store.OnOrBeforeBothWaysAsync(from, to, day, cancellationToken);
         if (direct is not null && (inverse is null || direct.AsOfDate >= inverse.AsOfDate))
         {
             return new FxLeg(direct.Exchange, direct.AsOfDate, direct.Source, Inverted: false);

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -103,17 +104,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
             return Rejected(AuthFailureReason.KeyDiscoveryFailed);
         }
 
-        TokenValidationResult validation = await _handler.ValidateTokenAsync(accessToken, Parameters(keys));
-        if (!validation.IsValid && validation.Exception is SecurityTokenSignatureKeyNotFoundException)
-        {
-            // The provider may have rotated its keys: re-read them (rate limited) and try once more with any new ones.
-            IReadOnlyList<SecurityKey> refreshed = await _keys.RefreshAsync(cancellationToken);
-            if (!ReferenceEquals(refreshed, keys))
-            {
-                validation = await _handler.ValidateTokenAsync(accessToken, Parameters(refreshed));
-            }
-        }
-
+        TokenValidationResult validation = await ValidateAllowingRotationAsync(accessToken, keys, cancellationToken);
         if (validation.IsValid)
         {
             return ToIdentity(validation);
@@ -127,6 +118,19 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         }
 
         return Rejected(reason);
+    }
+
+    private async Task<TokenValidationResult> ValidateAllowingRotationAsync(string accessToken, IReadOnlyList<SecurityKey> keys, CancellationToken cancellationToken)
+    {
+        TokenValidationResult validation = await _handler.ValidateTokenAsync(accessToken, Parameters(keys));
+        if (validation.IsValid || validation.Exception is not SecurityTokenSignatureKeyNotFoundException)
+        {
+            return validation;
+        }
+
+        // The provider may have rotated its keys: re-read them (rate limited) and try once more with any new ones.
+        IReadOnlyList<SecurityKey> refreshed = await _keys.RefreshAsync(cancellationToken);
+        return ReferenceEquals(refreshed, keys) ? validation : await _handler.ValidateTokenAsync(accessToken, Parameters(refreshed));
     }
 
     // The parameters depend only on the options and the key set, so they are built once per key set and shared by every request
@@ -228,6 +232,8 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         }
         else if (token.TryGetPayloadValue("scope", out string text))
         {
+            // Not dead: the typed read as a JsonElement answers only for a claim that is an array or an object, and a space-delimited string
+            // (RFC 9068) is read as a string. Removing this branch strips every scope of a provider that sends the string form.
             raw = text.Split(' ');
         }
 

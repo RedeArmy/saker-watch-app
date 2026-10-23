@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Mvc;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Web.Http;
@@ -116,6 +117,7 @@ internal static class WatchlistEndpoints
     private const string _tag = "Watchlist";
 
     /// <summary>Maps the endpoints on the version group.</summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static void MapWatchlist(this RouteGroupBuilder v1)
     {
         v1.MapGet("/watchlist", ListAsync)
@@ -130,7 +132,8 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/watchlist/sparklines", SparklinesAsync)
             .WithName("GetWatchlistSparklines")
@@ -144,7 +147,8 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/watchlist/items/{market}/{ticker}", PutAsync)
             .WithName("PutWatchlistItem")
@@ -176,7 +180,8 @@ internal static class WatchlistEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> ListAsync(ISender sender, [AsParameters] WatchlistListParameters query, CancellationToken cancellationToken)

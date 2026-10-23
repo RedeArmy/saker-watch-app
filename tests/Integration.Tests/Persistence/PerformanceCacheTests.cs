@@ -1,9 +1,11 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Application.Jobs;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.Integration.Tests.Infrastructure;
+using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Domain.Calendars;
 using SakerWatch.MarketData.Domain.Performance;
@@ -147,8 +149,8 @@ public sealed class PerformanceCacheTests(TimescalePostgresFixture postgres) : I
     {
         var cache = new RedisPerformanceCache(_connection!, NullLogger<RedisPerformanceCache>.Instance);
         var key = new PerformanceCacheKey(StockId.Create(Guid.CreateVersion7()), _loaded, 10);
-        await _connection!.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10", "{\"Format\":1,\"LatestDate\":\"not a date\"}");
-        await _connection.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:11", "garbage");
+        await _connection!.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10:{RedisPerformanceCache.KeyTag}", "{\"Format\":1,\"LatestDate\":\"not a date\"}");
+        await _connection.GetDatabase().StringSetAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:11:{RedisPerformanceCache.KeyTag}", "garbage");
 
         (await cache.GetManyAsync([key], CancellationToken.None)).Should().BeEmpty();
         (await cache.GetManyAsync([key with { MaxGapDays = 11 }], CancellationToken.None)).Should().BeEmpty();
@@ -164,8 +166,46 @@ public sealed class PerformanceCacheTests(TimescalePostgresFixture postgres) : I
 
         await cache.SetManyAsync(new Dictionary<PerformanceCacheKey, PerformanceReport> { [key] = report }, TimeSpan.FromHours(26), CancellationToken.None);
 
-        TimeSpan? ttl = await _connection!.GetDatabase().KeyTimeToLiveAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10");
+        TimeSpan? ttl = await _connection!.GetDatabase().KeyTimeToLiveAsync($"v1:perf:{key.Stock.Value}:{key.Stamp.UtcTicks}:10:{RedisPerformanceCache.KeyTag}");
         ttl.Should().BeGreaterThan(TimeSpan.FromHours(25));
         (await cache.GetManyAsync([key], CancellationToken.None))[key.Stock].Windows.Should().Equal(report.Windows);
+    }
+
+    [Fact]
+    public async Task Get_AReportMadeByOtherRulesOfTheCalculation_IsAMiss()
+    {
+        var cache = new RedisPerformanceCache(_connection!, NullLogger<RedisPerformanceCache>.Instance);
+        var current = new PerformanceCacheKey(StockId.Create(Guid.CreateVersion7()), _loaded, 10);
+        var older = new PerformanceCacheKey(StockId.Create(Guid.CreateVersion7()), _loaded, 10);
+        PriceSample latest = PriceSample.Create(new DateOnly(2026, 10, 16), 120.5m).Value;
+        var report = new PerformanceReport(latest, [.. Enum.GetValues<PerformanceWindow>().Select(window => WindowPerformance.Missing(window, PerformanceGap.HistoryGap))]);
+        await cache.SetManyAsync(new Dictionary<PerformanceCacheKey, PerformanceReport> { [current] = report }, TimeSpan.FromHours(26), CancellationToken.None);
+        // The very same entry, as a calculator with other rules (another fingerprint) would have left it.
+        RedisValue stored = await _connection!.GetDatabase().StringGetAsync($"v1:perf:{current.Stock.Value}:{current.Stamp.UtcTicks}:10:{RedisPerformanceCache.KeyTag}");
+        await _connection.GetDatabase().StringSetAsync($"v1:perf:{older.Stock.Value}:{older.Stamp.UtcTicks}:10:c{PerformanceCalculator.Version}.00000000.00000000", stored);
+
+        IReadOnlyDictionary<StockId, PerformanceReport> found = await cache.GetManyAsync([current, older], CancellationToken.None);
+
+        found.Keys.Should().BeEquivalentTo([current.Stock], "a report made by other rules is never served as the current one");
+    }
+
+    [Fact]
+    public async Task AWarmingJob_LeavesTheWindowsInTheCache_SoTheFirstUserReadDoesNotComputeThem()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        Guid id = await SeedLoadedStockAsync(db.Admin, "WARM", new DateOnly(2024, 1, 1), new DateOnly(2026, 10, 16), _loaded);
+        (CachedPerformanceReader reader, CountingReader counter, DbSession session) = await BuildAsync(db.Api);
+        await using (session)
+        {
+            (DateTimeOffset from, DateTimeOffset to) = WarmPerformanceJob.SliceOf(_loaded, 15);
+            await new WarmPerformanceHandler(reader, new IngestionStamps(session)).HandleAsync(new WarmPerformanceJob("XNAS", from, to), new JobContext(Guid.CreateVersion7(), "k", 1, 3, null), CancellationToken.None);
+            int computedByTheJob = counter.Calls;
+
+            PerformanceReport userRead = (await reader.ReadAsync([StockId.Create(id)], CancellationToken.None))[StockId.Create(id)];
+
+            computedByTheJob.Should().Be(1);
+            counter.Calls.Should().Be(1, "the user's read found what the job had kept");
+            userRead.Latest!.Date.Should().Be(new DateOnly(2026, 10, 16));
+        }
     }
 }

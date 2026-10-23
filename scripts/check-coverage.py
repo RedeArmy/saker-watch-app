@@ -6,6 +6,9 @@ covered when any test project hit it) and checks the assemblies that hold busine
 the Kernel/Application building blocks. Hosts, Infrastructure and generated migrations are reported but not gated, and generated source (under obj/)
 is left out of every count.
 
+A gated assembly of src/ that no report mentions fails the gate too (a module whose tests stopped emitting coverage would otherwise be skipped
+without a word), unless scripts/coverage-exempt.txt lists it as holding no executable code yet.
+
 Usage: python3 -I scripts/check-coverage.py <results-directory> [minimum-percent]
 """
 import collections
@@ -65,6 +68,20 @@ def evaluate(lines: dict[str, dict[tuple[str, int], int]], minimum: float) -> tu
     return gated, failed
 
 
+def missing_assemblies(lines: dict[str, dict[tuple[str, int], int]], repository: Path) -> list[str]:
+    """Gated assemblies of src/ that the reports do not mention and that are not listed as exempt."""
+    exempt_file = repository / "scripts" / "coverage-exempt.txt"
+    exempt = {
+        line.split("#", 1)[0].strip()
+        for line in exempt_file.read_text(encoding="utf-8").splitlines()
+    } if exempt_file.is_file() else set()
+    expected = {
+        project.stem for project in (repository / "src").rglob("*.csproj")
+        if GATED.match(project.stem) and "/obj/" not in project.as_posix()
+    }
+    return sorted(name for name in expected - exempt if not lines.get(name))
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
@@ -82,7 +99,12 @@ def main() -> int:
         print(f"No Cobertura reports under {sys.argv[1]}")
         return 2
 
-    gated, failed = evaluate(merge(reports), minimum)
+    merged = merge(reports)
+    gated, failed = evaluate(merged, minimum)
+    missing = missing_assemblies(merged, Path(__file__).resolve().parent.parent)
+    for name in missing:
+        print(f"{name}: no coverage in any report; if it has no executable code yet, list it in scripts/coverage-exempt.txt")
+    failed = failed or bool(missing)
     if gated == 0:
         print("No gated assembly found in the reports; the gate would be vacuous.")
         return 2

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -39,7 +40,7 @@ public sealed partial class FxRefreshHandler(
 {
     private static readonly Counter<long> _refreshes = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_fx_refreshes_total",
-        description: "Daily exchange rate refreshes by outcome (completed, retry, failed).");
+        description: "Daily exchange rate refreshes by outcome (completed, refused, retry, failed).");
 
     private static readonly Counter<long> _refused = SakerTelemetry.Meter.CreateCounter<long>(
         "sakerwatch_marketdata_fx_rejected_total",
@@ -78,20 +79,38 @@ public sealed partial class FxRefreshHandler(
         }
 
         FxScreening vetted = await ScreenAsync(baseCurrency.Value, quote.Value, rates.Value, cancellationToken);
-        int written = await store.UpsertAsync(vetted.Accepted, clock.GetUtcNow(), cancellationToken);
+        DateTimeOffset now = clock.GetUtcNow();
+        // The refused rates are kept first: if this step fails, the retry screens the same input again and nothing was half stored.
+        await KeepRefusedAsync(payload, vetted.Rejected, now, cancellationToken);
+
+        int written = await store.UpsertAsync(vetted.Accepted, now, cancellationToken);
         _rows.Add(written);
+
+        // Nothing believed out of what the bank gave is not a refresh that completed: the rate in use stays the one of an earlier day.
+        if (vetted.Accepted.Count == 0 && vetted.Rejected.Count > 0)
+        {
+            Count("refused");
+            return;
+        }
+
         Count("completed");
         LogRefreshed(payload.Base, payload.Quote, written);
-        if (vetted.Rejected.Count > 0)
-        {
-            await screening.RejectAsync(vetted.Rejected, clock.GetUtcNow(), cancellationToken);
-            foreach (IGrouping<string, RejectedFxRate> reason in vetted.Rejected.GroupBy(rejected => rejected.Reason))
-            {
-                _refused.Add(reason.Count(), new KeyValuePair<string, object?>("reason", reason.Key));
-            }
+    }
 
-            LogRefused(payload.Base, payload.Quote, vetted.Rejected.Count, string.Join(',', vetted.Rejected.Select(rejected => rejected.Reason).Distinct()));
+    private async Task KeepRefusedAsync(FxRefreshJob payload, IReadOnlyList<RejectedFxRate> rejected, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (rejected.Count == 0)
+        {
+            return;
         }
+
+        await screening.RejectAsync(rejected, now, cancellationToken);
+        foreach (IGrouping<string, RejectedFxRate> reason in rejected.GroupBy(r => r.Reason))
+        {
+            _refused.Add(reason.Count(), new KeyValuePair<string, object?>("reason", reason.Key));
+        }
+
+        LogRefused(payload.Base, payload.Quote, rejected.Count, string.Join(',', rejected.Select(r => r.Reason).Distinct()));
     }
 
     // A rate the bank gives is believed only inside its band and within the daily limit of the days around it (ADR-0042). The rates already stored

@@ -99,4 +99,30 @@ public sealed class IngestionStamps(DbSession session) : IIngestionStamps
 
         return stamps;
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<StockId>> LoadedBetweenAsync(string market, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT i.stock_id FROM marketdata.ingestion_state i
+            JOIN marketdata.stocks s ON s.id = i.stock_id
+            WHERE s.market_mic = @market AND s.is_active AND i.last_success_at >= @from AND i.last_success_at < @to
+            ORDER BY i.stock_id
+            """,
+            session.Connection,
+            session.Transaction);
+        command.Parameters.AddWithValue("market", market);
+        command.Parameters.AddWithValue("from", from.ToUniversalTime());
+        command.Parameters.AddWithValue("to", to.ToUniversalTime());
+
+        var ids = new List<StockId>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            ids.Add(StockId.Create(reader.GetGuid(0)));
+        }
+
+        return ids;
+    }
 }

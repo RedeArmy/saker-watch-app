@@ -46,6 +46,26 @@ Latencies in milliseconds; every request answered 200 (0.00 % errors in all ten 
 - **The calculator** did not change with the cache because it no longer reads the windows (milestone 2.8b); its half-second maximum with the cache off is a single slow request in a run of 2 400.
 - Tail latencies (p99 up to 285 ms with the cache on) leave little room: the figures are for 4 users on 3 CPUs shared with k6, the API and the three databases. A deployed instance has other limits.
 
+## How the budget is enforced
+`K6_ENFORCE=1 bash scripts/run-k6.sh` fails the run (exit 1) when an endpoint's p95 is over the budget of ADR-0033 (300 ms, `K6_P95_BUDGET_MS` for another machine) or more than 1 % of its requests fail. It is judged so that it measures the product and not the circumstances:
+- **Only the shipped configuration is enforced** (the performance cache on). The cache-off run is the reference of what the cache buys and never fails: its sort is over the budget by design (849 ms p95 above, ADR-0041).
+- **The first seconds of each scenario are left out** (`K6_WARMUP_SECONDS`, 5 by default; requests are tagged `phase:warmup`): they meet cold code paths and plans. The thresholds and the tables of this report use the steady part. Enforcing needs at least 20 seconds per scenario, and the script refuses less.
+- **The budget used is written in the results.** `results.md` opens with the run settings (date, commit, CPUs, phase and warm-up seconds, whether the budgets were enforced and the p95 budget), and a budget other than 300 ms is flagged there as an override of ADR-0033. A report or a pull request that quotes figures from a run with another budget states that value and the machine that justified it next to the figures; the 300 ms of the ADR is the product budget and a figure is not "within budget" against any other number without saying so.
+- **A crossing is repeated once** on the warm API. On a machine that also runs k6 and three databases a spike is not a regression; two runs that both cross are.
+- **The setup fills each portfolio one stock at a time**, as a user does: a portfolio serializes its changes on a lock, and a batch of 25 parallel requests into it queued for 15 seconds and ended in a lock timeout. That timeout is now a `503` with `Retry-After` (log event 9102) and not a `500`.
+
+Run of 2026-10-22 with enforcement on (30 s per scenario, 5 s of warm-up): every p95 with the cache on was at most 213 ms (the sparklines), the five endpoints answered 200 in all requests, and the run exited 0.
+
+## The first read after a load (the warming job, ADR-0048)
+Every nightly load gives a listing a new stamp, so the first read of the costly view after it used to compute the windows of the 500 listings. `scripts/run-k6.sh` measures that (`K6_FIRST_READ_CYCLES`, 5 by default; `K6_ONLY_FIRST_READ=1` runs only this part): it renews the stamps of the 500 listings as a load does, reads the costly view once (a user who follows all 500), and repeats with the warming job run first by a real worker (its refresh turned off). Run of 2026-10-22, same machine, 5 reads each:
+
+| | median | slowest | keys the read had to write |
+|---|---|---|---|
+| no warming: the first user computes the windows | 448 ms | 682 ms | 500 |
+| after the warming job | 80 ms | 93 ms | 0 |
+
+The first read without warming is above the 300 ms budget of ADR-0033 and the one after the job is inside it, 5.6 times faster; the job does the same work in the worker, off the request. The sample is five reads per case on one machine, with the API's code already running (a first request of a new process costs a second or more more, with or without the job). The 80 ms is the cost of a read that finds everything: sorting 500 listings by a window and answering the page.
+
 ## What changed after the measurement
 The figures were taken before the follow-ups of the security review (ADR-0042 to ADR-0044). They do not touch the five paths measured, except that every catalog read now opens a short unit of work that joins the one the request already holds (a counter, not a connection), so no change is expected; repeat `scripts/run-k6.sh` before relying on a difference of a few milliseconds.
 

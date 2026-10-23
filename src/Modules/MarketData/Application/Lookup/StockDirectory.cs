@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -181,14 +182,7 @@ public sealed partial class StockDirectory(
         _lookups.Add(1, new KeyValuePair<string, object?>("operation", operation), new KeyValuePair<string, object?>("outcome", outcome));
 
     private static StockSummary Summary(CatalogListing listing) =>
-        new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, AssetTypeText(listing.AssetType));
-
-    private static string AssetTypeText(AssetType type) => type switch
-    {
-        AssetType.Equity => "equity",
-        AssetType.Etf => "etf",
-        _ => "other",
-    };
+        new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, listing.AssetType.ToText());
 
     // The providers that serve at least one enabled market, each once (one provider usually serves several markets).
     private List<IMarketDataProvider> EnabledProviders()
@@ -218,7 +212,7 @@ public sealed partial class StockDirectory(
 
         Result<Stock> stock = BuildStock(listing, mic.Value, StockId.Create(Guid.Empty), clock.GetUtcNow());
         return stock.IsSuccess
-            ? new StockCandidate(stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType))
+            ? new StockCandidate(stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, stock.Value.AssetType.ToText())
             : null;
     }
 
@@ -238,14 +232,8 @@ public sealed partial class StockDirectory(
         return Stock.Create(id, new NewListing(market.Value, listing.Symbol, listing.Name, currency, timeZone, listing.AssetType), now);
     }
 
-    private async Task<Result<StockSummary>> RegisterAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
+    private async Task<Result<CachedListing>> FindListingAsync(IMarketDataProvider provider, Mic market, Ticker ticker, CancellationToken cancellationToken)
     {
-        if (!IsServed(market))
-        {
-            return Error.Validation(MarketNotAvailableCode, $"The market {market} is not available.");
-        }
-
-        IMarketDataProvider provider = router.For(market).Value;
         Result<IReadOnlyList<CachedListing>> found = await search.ListingsAsync(provider, ticker.Value, cancellationToken);
         if (!found.IsSuccess)
         {
@@ -255,11 +243,24 @@ public sealed partial class StockDirectory(
         CachedListing? match = found.Value.FirstOrDefault(listing =>
             MarketCatalogRules.CanonicalMarket(listing.ProviderMic) == market.Value
             && string.Equals(listing.Symbol?.Trim(), ticker.Value, StringComparison.OrdinalIgnoreCase));
-        if (match is null)
+        return match is null ? Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.") : match;
+    }
+
+    private async Task<Result<StockSummary>> RegisterAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
+    {
+        if (!IsServed(market))
         {
-            return Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.");
+            return Error.Validation(MarketNotAvailableCode, $"The market {market} is not available.");
         }
 
+        IMarketDataProvider provider = router.For(market).Value;
+        Result<CachedListing> found = await FindListingAsync(provider, market, ticker, cancellationToken);
+        if (!found.IsSuccess)
+        {
+            return found.Error!;
+        }
+
+        CachedListing match = found.Value;
         DateTimeOffset now = clock.GetUtcNow();
         Result<Stock> stock = BuildStock(match, market, ids.New<StockId>(), now);
         if (!stock.IsSuccess)
@@ -276,13 +277,21 @@ public sealed partial class StockDirectory(
         StockId id;
         try
         {
-            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol), now, cancellationToken);
+            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol.Trim()), now, cancellationToken);
         }
         catch (ProviderListingTakenException)
         {
+            await registration.ReleaseAsync(cancellationToken);
             return Error.Conflict(ProviderListingTakenCode, $"{ticker} on {market} is already known to the provider as another stock of the catalog. Ask the owner to look at it.");
         }
 
-        return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType));
+        // Another request registered the same stock first (the registry answers with the id of the row that holds the market and ticker): this one
+        // created nothing, so it did not use one of the user's new registrations.
+        if (id != stock.Value.Id)
+        {
+            await registration.ReleaseAsync(cancellationToken);
+        }
+
+        return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, stock.Value.AssetType.ToText());
     }
 }

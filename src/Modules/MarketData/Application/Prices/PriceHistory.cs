@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Application.Ingestion;
@@ -40,14 +41,9 @@ public sealed class PriceHistory(
     {
         string wantedRange = (range ?? string.Empty).Trim().ToUpperInvariant();
         string wantedInterval = (interval ?? string.Empty).Trim().ToLowerInvariant();
-        if (!PriceRanges.All.Contains(wantedRange, StringComparer.Ordinal))
+        if (UnknownRangeOrInterval(wantedRange, wantedInterval) is { } unknown)
         {
-            return Error.Validation(RangeInvalidCode, $"The range is one of: {string.Join(", ", PriceRanges.All)}.");
-        }
-
-        if (!PriceIntervals.All.Contains(wantedInterval, StringComparer.Ordinal))
-        {
-            return Error.Validation(IntervalInvalidCode, $"The interval is one of: {string.Join(", ", PriceIntervals.All)}.");
+            return unknown;
         }
 
         Result<Mic> mic = Mic.Create(market);
@@ -69,7 +65,7 @@ public sealed class PriceHistory(
         (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, newest, failed.Contains(listing.Id), listing.DelistedAt, clock.GetUtcNow(), ingestion.Value.SettleDelay);
 
         string used = wantedInterval == PriceIntervals.Auto ? PriceRange.DefaultInterval(wantedRange) : wantedInterval;
-        StockSummary stock = new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, AssetTypeText(listing.AssetType));
+        StockSummary stock = new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, listing.AssetType.ToText());
         if (newest is null)
         {
             return new PriceSeries(stock, wantedRange, used, null, null, [], status, staleSince, listing.DelistedAt);
@@ -89,6 +85,18 @@ public sealed class PriceHistory(
             listing.DelistedAt);
     }
 
+    private static Error? UnknownRangeOrInterval(string range, string interval)
+    {
+        if (!PriceRanges.All.Contains(range, StringComparer.Ordinal))
+        {
+            return Error.Validation(RangeInvalidCode, $"The range is one of: {string.Join(", ", PriceRanges.All)}.");
+        }
+
+        return PriceIntervals.All.Contains(interval, StringComparer.Ordinal)
+            ? null
+            : Error.Validation(IntervalInvalidCode, $"The interval is one of: {string.Join(", ", PriceIntervals.All)}.");
+    }
+
     /// <inheritdoc />
     public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<decimal>>> RecentAdjustedClosesAsync(IReadOnlyCollection<Guid> stockIds, int days, CancellationToken cancellationToken)
     {
@@ -105,12 +113,5 @@ public sealed class PriceHistory(
         PriceIntervals.Week => SeriesBucket.Week,
         PriceIntervals.Month => SeriesBucket.Month,
         _ => SeriesBucket.Day,
-    };
-
-    private static string AssetTypeText(AssetType type) => type switch
-    {
-        AssetType.Equity => "equity",
-        AssetType.Etf => "etf",
-        _ => "other",
     };
 }

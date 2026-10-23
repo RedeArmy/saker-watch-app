@@ -10,15 +10,15 @@ public sealed class WatchlistOptions
     public const string SectionName = "Watchlist:Limits";
 
     /// <summary>Stocks on the watchlist.</summary>
-    [Range(1, 500)]
+    [Range(1, LimitCeilings.Items)]
     public int MaxItems { get; set; } = WatchlistLimits.Defaults.MaxItems;
 
     /// <summary>Portfolios.</summary>
-    [Range(1, 20)]
+    [Range(1, LimitCeilings.Portfolios)]
     public int MaxPortfolios { get; set; } = WatchlistLimits.Defaults.MaxPortfolios;
 
     /// <summary>Stocks in one portfolio.</summary>
-    [Range(1, 100)]
+    [Range(1, LimitCeilings.ItemsPerPortfolio)]
     public int MaxItemsPerPortfolio { get; set; } = WatchlistLimits.Defaults.MaxItemsPerPortfolio;
 
     /// <summary>The limits as a value.</summary>

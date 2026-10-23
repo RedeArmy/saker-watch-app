@@ -37,6 +37,13 @@ public sealed class MoneyKitTests
     [InlineData("USD", 2)]
     [InlineData("GTQ", 2)]
     [InlineData("KWD", 3)]
+    [InlineData("XOF", 0)]
+    [InlineData("XAF", 0)]
+    [InlineData("RWF", 0)]
+    [InlineData("GNF", 0)]
+    [InlineData("IQD", 3)]
+    [InlineData("LYD", 3)]
+    [InlineData("CLF", 4)]
     public void MinorUnits_FollowTheCurrency(string code, int decimals) =>
         CurrencyCode.Parse(code).MinorUnits.Should().Be(decimals);
 
@@ -183,6 +190,18 @@ public sealed class MoneyKitTests
 
         identity.Convert(M("12.34", _usd)).Value.Should().Be(M("12.34", _usd));
         identity.Invert().Value.Should().Be(identity);
+    }
+
+    [Fact]
+    public void Shares_ThatWouldBeShownAsZero_AreATooSmallPurchase_NotAZeroShown()
+    {
+        // 0.01 of a unit at 700 000: 0.0000000143 shares, which is shown as 0.000000.
+        Result<Shares> dust = Shares.Buying(M("0.01", _usd), M("700000", _usd));
+        // The smallest quantity that is shown: 0.000001 shares.
+        Result<Shares> smallest = Shares.Buying(M("0.7", _usd), M("700000", _usd));
+
+        dust.Error!.Code.Should().Be(MoneyErrors.SharesInvalid);
+        smallest.Value.ToDisplay().Value.Should().Be(0.000001m);
     }
 
     [Fact]

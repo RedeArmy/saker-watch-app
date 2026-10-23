@@ -221,7 +221,7 @@ public sealed class MarketDataSchedulerTests
         (MarketDataScheduler scheduler, RecordingEnqueuer jobs, _) = Build(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero), markets: ["XNAS"], enabled: false);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await Task.Delay(100);
+        await scheduler.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(30)); // a disabled loop ends at once: no pause to guess how long "nothing" takes
         await scheduler.StopAsync(CancellationToken.None);
 
         jobs.Queued.Should().BeEmpty();

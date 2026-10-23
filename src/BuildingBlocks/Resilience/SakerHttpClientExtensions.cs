@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,7 @@ public static class SakerHttpClientExtensions
     /// <param name="name">Client name; resolved through <c>IHttpClientFactory</c>.</param>
     /// <param name="baseAddress">Provider base address; its host must be in <c>AllowedHosts</c>.</param>
     /// <param name="configure">Policy for this client.</param>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static IHttpClientBuilder AddSakerHttpClient(
         this IServiceCollection services,
         string name,

@@ -51,12 +51,25 @@ public sealed class EdgarProviderTests
     private static Func<HttpRequestMessage, HttpResponseMessage> WithSubmissions(string submissions) => request =>
         request.RequestUri!.AbsolutePath == "/files/company_tickers.json" ? EdgarFixtures.Json(EdgarFixtures.Read("company-tickers.synthetic.json")) : EdgarFixtures.Json(submissions);
 
+    // A fake clock that says when something started waiting on it, so a test advances time only once the wait is armed and not after a guess.
+    private sealed class SignallingClock(DateTimeOffset start) : FakeTimeProvider(start)
+    {
+        public TaskCompletionSource TimerCreated { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            ITimer timer = base.CreateTimer(callback, state, dueTime, period);
+            TimerCreated.TrySetResult();
+            return timer;
+        }
+    }
+
     private static (EdgarProvider Provider, EdgarFixtures.StubHandler Handler, RecordingStore Payloads, FakeTimeProvider Clock) Build(
-        Func<HttpRequestMessage, HttpResponseMessage>? respond = null, bool failStore = false, int intervalMilliseconds = 0, int mapHours = 24)
+        Func<HttpRequestMessage, HttpResponseMessage>? respond = null, bool failStore = false, int intervalMilliseconds = 0, int mapHours = 24, FakeTimeProvider? clock = null)
     {
         var handler = new EdgarFixtures.StubHandler(respond ?? (request => Serve(request)));
         var payloads = new RecordingStore(failStore);
-        var clock = new FakeTimeProvider(_now);
+        clock ??= new FakeTimeProvider(_now);
         var options = Options.Create(new EdgarOptions { Enabled = true, UserAgent = _agent, MinRequestIntervalMilliseconds = intervalMilliseconds, TickerMapHours = mapHours });
         return (new EdgarProvider(new EdgarFixtures.SingleClientFactory(handler), payloads, options, clock, NullLogger<EdgarProvider>.Instance), handler, payloads, clock);
     }
@@ -285,19 +298,48 @@ public sealed class EdgarProviderTests
         (await broken.GetProfileAsync("AAPL", CancellationToken.None)).IsSuccess.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("BRK.B")]
+    [InlineData("BRK-B")]
+    public async Task AShareClassWrittenWithAStopOrADash_FindsTheCompany_WhichTheRegistryWritesWithADash(string ticker)
+    {
+        (EdgarProvider provider, EdgarFixtures.StubHandler handler, _, _) = Build(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/files/company_tickers.json" => EdgarFixtures.Json("{\"0\":{\"cik_str\":320193,\"ticker\":\"AAPL\",\"title\":\"Apple Inc.\"},\"1\":{\"cik_str\":1067983,\"ticker\":\"BRK-B\",\"title\":\"BERKSHIRE HATHAWAY INC\"}}"),
+            "/submissions/CIK0001067983.json" => EdgarFixtures.Json(EdgarFixtures.Read("submissions-aapl.synthetic.json").Replace("\"cik\": \"0000320193\"", "\"cik\": \"0001067983\"", StringComparison.Ordinal)),
+            _ => EdgarFixtures.Json("{}", HttpStatusCode.NotFound),
+        });
+
+        Result<CompanyProfile> result = await provider.GetProfileAsync(ticker, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.Requests.Select(request => request.RequestUri!.AbsolutePath).Should().Contain("/submissions/CIK0001067983.json");
+    }
+
+    [Fact]
+    public async Task ATickerTheRegistryDoesNotHaveInEitherSpelling_IsNotFound()
+    {
+        (EdgarProvider provider, _, _, _) = Build();
+
+        Result<CompanyProfile> result = await provider.GetProfileAsync("ZZZ.Z", CancellationToken.None);
+
+        result.Error!.Code.Should().Be(ProviderErrors.SymbolNotFoundCode);
+    }
+
     [Fact]
     public async Task TheRequests_KeepTheMinimumTimeApart_WaitingOnTheClock()
     {
-        (EdgarProvider provider, EdgarFixtures.StubHandler handler, _, FakeTimeProvider clock) = Build(intervalMilliseconds: 500);
+        var clock = new SignallingClock(_now);
+        (EdgarProvider provider, EdgarFixtures.StubHandler handler, _, _) = Build(intervalMilliseconds: 500, clock: clock);
+        var patience = TimeSpan.FromSeconds(30); // a bound so that a broken test fails, it is never waited out
 
         Task<Result<CompanyProfile>> profile = provider.GetProfileAsync("AAPL", CancellationToken.None);
-        await Task.Yield();
+        await clock.TimerCreated.Task.WaitAsync(patience); // the second request is now waiting for the half second
         int afterFirst = handler.Requests.Count;
         clock.Advance(TimeSpan.FromMilliseconds(499));
-        await Task.Delay(50);
         int stillWaiting = handler.Requests.Count;
         clock.Advance(TimeSpan.FromMilliseconds(1));
-        Result<CompanyProfile> done = await profile;
+        Result<CompanyProfile> done = await profile.WaitAsync(patience);
 
         (afterFirst, stillWaiting, handler.Requests.Count).Should().Be((1, 1, 2), "the second request of the profile waited for the half second");
         done.IsSuccess.Should().BeTrue();

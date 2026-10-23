@@ -317,9 +317,19 @@ public sealed class PortfolioEndpointTests(TimescalePostgresFixture postgres) : 
         HttpResponseMessage unconfirmed = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}", token));
         HttpResponseMessage falsy = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=false", token));
         string[] before = await WatchlistTickers(rig, token);
-        HttpResponseMessage confirmed = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true", token));
-        HttpResponseMessage again = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true", token));
+        HttpResponseMessage noToken = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true", token));
+        HttpResponseMessage badToken = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken=not-a-token", token));
+        // The refusal itself says what would leave and carries the token that confirms exactly that: no request to the preview is needed.
+        JsonElement named = await WatchlistRig.BodyAsync(noToken);
+        string removalToken = named.GetProperty("removalToken").GetString()!;
+        HttpResponseMessage confirmed = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken={removalToken}", token));
+        HttpResponseMessage again = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken={removalToken}", token));
 
+        noToken.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        named.GetProperty("code").GetString().Should().Be("watchlist.portfolio.removal_token_required");
+        named.GetProperty("stocksToRemove").EnumerateArray().Select(stock => stock.GetProperty("ticker").GetString()).Should().Equal("AAPL");
+        badToken.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await WatchlistRig.BodyAsync(unconfirmed)).GetProperty("removalToken").GetString().Should().Be(removalToken, "the first refusal carries the same token");
         unconfirmed.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await WatchlistRig.BodyAsync(unconfirmed)).GetProperty("code").GetString().Should().Be("watchlist.portfolio.delete_requires_confirmation");
         falsy.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -327,6 +337,27 @@ public sealed class PortfolioEndpointTests(TimescalePostgresFixture postgres) : 
         (confirmed.StatusCode, again.StatusCode).Should().Be((HttpStatusCode.NoContent, HttpStatusCode.NoContent));
         (await WatchlistTickers(rig, token)).Should().Equal("KO", "NVDA");
         (await TickersOf(rig, token, b)).Should().Equal("KO");
+    }
+
+    [Fact]
+    public async Task Delete_ConfirmedWithTheTokenOfAnOlderPreview_IsAConflict_AndRemovesNothing()
+    {
+        (WatchlistRig.Rig rig, string token, string a, _) = await DeletionWorldAsync();
+        string seen = (await WatchlistRig.BodyAsync(await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Get, $"/v1/portfolios/{a}/deletion-preview", token))))
+            .GetProperty("removalToken").GetString()!;
+        // A stock is put on the watchlist and in the portfolio after the caller looked.
+        (await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/MSFT", token, new { }))).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Put, $"/v1/portfolios/{a}/items/XNAS/MSFT", token))).StatusCode.Should().Be(HttpStatusCode.Created);
+        string[] before = await WatchlistTickers(rig, token);
+
+        HttpResponseMessage stale = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken={seen}", token));
+
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        JsonElement fresh = await WatchlistRig.BodyAsync(stale);
+        fresh.GetProperty("code").GetString().Should().Be("watchlist.portfolio.removal_changed");
+        fresh.GetProperty("removalToken").GetString().Should().NotBe(seen, "the answer has the token of what would leave now");
+        fresh.GetProperty("stocksToRemove").EnumerateArray().Select(stock => stock.GetProperty("ticker").GetString()).Should().Equal("AAPL", "MSFT");
+        (await WatchlistTickers(rig, token)).Should().Equal(before);
     }
 
     [Fact]

@@ -182,7 +182,24 @@ public sealed class OutboxIntegrationTests(TimescalePostgresFixture postgres) : 
         env.Probe.Handled[message.EventId].Should().Be(1);
         (await env.Count("SELECT count(*) FROM public.probe_items")).Should().Be(1);
         (await env.Count("SELECT count(*) FROM platform.outbox_messages WHERE processed_at IS NOT NULL")).Should().Be(1);
-        (await env.Count("SELECT count(*) FROM platform.inbox_messages")).Should().Be(2, "one inbox mark per consumer");
+        (await env.Count("SELECT count(*) FROM platform.inbox_messages")).Should().Be(3, "one inbox mark per consumer");
+    }
+
+    [Fact]
+    public async Task Delivery_OfAMessageWrittenForAUser_RunsTheConsumersAsThatUser_AndASystemMessageAnonymously()
+    {
+        await using Env env = await StartAsync();
+        var user = Guid.CreateVersion7();
+        ThingCreated forUser = NewMessage("mine");
+        ThingCreated forSystem = NewMessage("system");
+        await env.PublishAsync(forUser, user);
+        await env.PublishAsync(forSystem);
+
+        (bool first, bool second, bool third) = (await env.Processor.ProcessNextAsync(CancellationToken.None), await env.Processor.ProcessNextAsync(CancellationToken.None), await env.Processor.ProcessNextAsync(CancellationToken.None));
+
+        (first, second, third).Should().Be((true, true, false));
+        env.Probe.Callers[forUser.EventId].Should().Be((user, user.ToString("D")), "row-level security shows a consumer the rows of the user the message was written for");
+        env.Probe.Callers[forSystem.EventId].Should().Be(((Guid?)null, string.Empty));
     }
 
     [Fact]
@@ -319,7 +336,7 @@ public sealed class OutboxIntegrationTests(TimescalePostgresFixture postgres) : 
         messages.Should().OnlyContain(m => env.Probe.Handled.GetValueOrDefault(m.EventId) == 1);
         (await env.Count("SELECT count(*) FROM public.probe_items")).Should().Be(30);
         (await env.Count("SELECT count(*) FROM platform.outbox_messages WHERE processed_at IS NOT NULL")).Should().Be(30);
-        (await env.Count("SELECT count(*) FROM platform.inbox_messages")).Should().Be(60);
+        (await env.Count("SELECT count(*) FROM platform.inbox_messages")).Should().Be(90);
     }
 
     [Fact]

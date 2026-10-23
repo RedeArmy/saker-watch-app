@@ -108,4 +108,20 @@ public sealed class StockTests
     [Fact]
     public void Create_WithANameOfOnlyInvisibleCharacters_IsRefused() =>
         Create(name: "\u200B\u202E\0").Error!.Code.Should().Be("marketdata.stock.name_invalid");
+
+    [Theory]
+    [InlineData(AssetType.Equity, "equity")]
+    [InlineData(AssetType.Etf, "etf")]
+    [InlineData(AssetType.Other, "other")]
+    public void TheTextOfAnAssetType_RoundTrips_InTheOnePlaceThatMapsIt(AssetType type, string text)
+    {
+        type.ToText().Should().Be(text);
+        AssetTypeNames.Parse(text).Should().Be(type);
+    }
+
+    [Theory]
+    [InlineData("adr")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void AStoredTextThatIsNotEquityOrEtf_IsOther(string? text) => AssetTypeNames.Parse(text).Should().Be(AssetType.Other);
 }

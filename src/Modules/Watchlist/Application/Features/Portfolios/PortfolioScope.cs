@@ -24,7 +24,7 @@ public static class PortfolioScope
         }
 
         var id = PortfolioId.Create(requested);
-        if (await portfolios.FindAsync(userId, id, cancellationToken) is null)
+        if (!await portfolios.ExistsAsync(userId, id, cancellationToken))
         {
             return PortfolioErrors.PortfolioNotFound();
         }

@@ -54,7 +54,7 @@ public sealed class PortfolioMetricsEndpointTests(TimescalePostgresFixture postg
             (await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Put, $"/v1/watchlist/items/{market}/{ticker}", token))).StatusCode.Should().Be(HttpStatusCode.Created);
         }
 
-        DateOnly settled = SessionSchedule.LatestSettled(_calendar, DateTimeOffset.UtcNow, new IngestionOptions().SettleDelay);
+        DateOnly settled = SessionSchedule.LatestSettled(_calendar, rig.Clock.GetUtcNow(), new IngestionOptions().SettleDelay);
         DateOnly koLast = _calendar.PreviousTradingDay(_calendar.PreviousTradingDay(settled));
         await SeedBarsAsync(rig, "AAPL", settled, step: 0.5m, start: 100m);
         await SeedBarsAsync(rig, "KO", koLast, step: 0.1m, start: 50m);

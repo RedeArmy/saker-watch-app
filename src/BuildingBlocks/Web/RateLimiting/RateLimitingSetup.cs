@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Application.Deployment;
 using SakerWatch.BuildingBlocks.Kernel.Security;
 using SakerWatch.BuildingBlocks.Kernel.Telemetry;
 using SakerWatch.BuildingBlocks.Web.Problems;
@@ -30,8 +31,8 @@ public sealed class RateLimitingOptions
     public int ExpensivePermitLimit { get; set; } = 10;
 
     /// <summary>
-    /// Requests per window and client address (an IPv6 client counts by its /64) before authentication. It stops floods of invalid tokens, which would otherwise cost
-    /// signature validation each; it is higher than <see cref="PermitLimit"/> because several users may share an address.
+    /// Requests that authentication refuses (401) per window and client address (an IPv6 client counts by its /64). It stops floods of invalid tokens,
+    /// which would otherwise cost signature validation each; requests that are authenticated do not count, so users that share an address do not use it up.
     /// </summary>
     [Range(1, 1_000_000)]
     public int PreAuthenticationPermitLimit { get; set; } = 600;
@@ -39,6 +40,26 @@ public sealed class RateLimitingOptions
     /// <summary>Window length in seconds.</summary>
     [Range(1, 3600)]
     public int WindowSeconds { get; set; } = 60;
+
+    /// <summary>Where the counts are kept. <see cref="RateLimitBackend.Auto"/> counts in Redis when <c>Deployment:ApiReplicas</c> is more than one (ADR-0048).</summary>
+    public RateLimitBackend Backend { get; set; } = RateLimitBackend.Auto;
+
+    /// <summary>True when the counts are kept in Redis with this many API processes: asked for, or chosen because there is more than one.</summary>
+    /// <param name="apiInstances">How many API processes there are now (<see cref="IApiInstances.Count"/>).</param>
+    public bool UsesRedis(int apiInstances) => Backend == RateLimitBackend.Redis || (Backend == RateLimitBackend.Auto && apiInstances > 1);
+}
+
+/// <summary>Where the rate limiters keep their counts.</summary>
+public enum RateLimitBackend
+{
+    /// <summary>Redis when more than one API process runs (<c>Deployment:ApiReplicas</c>), memory otherwise.</summary>
+    Auto,
+
+    /// <summary>In the memory of each process: right for a single instance (ADR-0021), and no Redis round trip on each request.</summary>
+    Memory,
+
+    /// <summary>In Redis, shared by every API process.</summary>
+    Redis,
 }
 
 /// <summary>Names of the rate-limit policies endpoints can opt into.</summary>
@@ -69,6 +90,7 @@ public static class RateLimitingSetup
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddSakerDeployment(configuration);
         services.AddSingleton<PreAuthenticationRateLimiter>();
         services.AddRateLimiter(limiter =>
         {
@@ -78,19 +100,20 @@ public static class RateLimitingSetup
                 rejected.Lease,
                 rejected.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "global");
         });
-        services.AddOptions<RateLimiterOptions>().Configure<IOptions<RateLimitingOptions>>((limiter, settings) =>
+        services.AddOptions<RateLimiterOptions>().Configure<IOptions<RateLimitingOptions>, IServiceProvider>((limiter, settings, provider) =>
         {
             RateLimitingOptions o = settings.Value;
             limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
-                context => RateLimitPartition.GetFixedWindowLimiter(PartitionKey(context), _ => Window(o.PermitLimit, o.WindowSeconds)));
+                context => RateLimitPartition.Get(PartitionKey(context), key => NewLimiter(provider, o, "global", key, o.PermitLimit)));
             limiter.AddPolicy(RateLimitPolicies.Expensive, context =>
-                RateLimitPartition.GetFixedWindowLimiter(PartitionKey(context), _ => Window(o.ExpensivePermitLimit, o.WindowSeconds)));
+                RateLimitPartition.Get(PartitionKey(context), key => NewLimiter(provider, o, "expensive", key, o.ExpensivePermitLimit)));
         });
         return services;
     }
 
     /// <summary>
-    /// Adds the limiter that runs before authentication, keyed by client IP only (no token has been looked at yet). Place it after
+    /// Adds the limiter that runs before authentication, keyed by client IP only (no token has been looked at yet) and charged for each request that
+    /// authentication then answers with 401, so authenticated traffic never uses it up. Place it after
     /// <c>UseRouting</c> so endpoints that opt out with <c>DisableRateLimiting</c> (health probes) are skipped.
     /// </summary>
     public static IApplicationBuilder UseSakerPreAuthenticationRateLimiting(this IApplicationBuilder app)
@@ -99,28 +122,45 @@ public static class RateLimitingSetup
 
         return app.Use(async (context, next) =>
         {
-            if (context.GetEndpoint()?.Metadata.GetMetadata<DisableRateLimitingAttribute>() is null)
+            if (context.GetEndpoint()?.Metadata.GetMetadata<DisableRateLimitingAttribute>() is not null)
             {
-                using RateLimitLease lease = await context.RequestServices.GetRequiredService<PreAuthenticationRateLimiter>()
-                    .AcquireAsync(context, context.RequestAborted);
-                if (!lease.IsAcquired)
+                await next(context);
+                return;
+            }
+
+            var limiter = context.RequestServices.GetRequiredService<PreAuthenticationRateLimiter>();
+            using (RateLimitLease open = await limiter.PeekAsync(context, context.RequestAborted))
+            {
+                if (!open.IsAcquired)
                 {
-                    await WriteRejectionAsync(context, lease, "pre-authentication");
+                    await WriteRejectionAsync(context, open, "pre-authentication");
                     return;
                 }
             }
 
             await next(context);
+
+            // Only a request that authentication refused is counted: the allowance is for floods of missing or invalid tokens. Counting every
+            // request would make all users behind one address (the BFF, or the proxy until ForwardedHeaders is set, A-023) share one bucket.
+            if (context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+            {
+                using RateLimitLease counted = await limiter.TakeAsync(context, context.RequestAborted);
+            }
         });
     }
 
-    private static FixedWindowRateLimiterOptions Window(int permits, int seconds) => new()
+    // The limiter of one caller in one scope. Where it counts (the memory of the process, or Redis when several API processes run) is asked for each
+    // request, so a second process that shows up is counted with from then on. A host with no Redis counts in memory whatever the setting says.
+    internal static RateLimiter NewLimiter(IServiceProvider provider, RateLimitingOptions options, string scope, string partitionKey, int permits)
     {
-        PermitLimit = permits,
-        Window = TimeSpan.FromSeconds(seconds),
-        QueueLimit = 0,
-        AutoReplenishment = true,
-    };
+        var instances = provider.GetRequiredService<IApiInstances>();
+        return new CallerRateLimiter(
+            provider.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
+            () => options.UsesRedis(instances.Count),
+            new LimiterPolicy(scope, permits, TimeSpan.FromSeconds(options.WindowSeconds)),
+            partitionKey,
+            provider.GetRequiredService<TimeProvider>());
+    }
 
     // The user id comes only from the validated principal; the client IP is the fallback for anonymous callers.
     private static string PartitionKey(HttpContext context)
@@ -185,31 +225,28 @@ public static class ClientAddressKey
     }
 }
 
-/// <summary>Fixed-window limiter per client IP for requests that have not been authenticated yet.</summary>
+/// <summary>Limiter per client IP for the requests that authentication refuses (a missing or invalid token).</summary>
 public sealed class PreAuthenticationRateLimiter : IDisposable
 {
     private readonly PartitionedRateLimiter<HttpContext> _limiter;
 
     /// <summary>Creates the limiter from the configured limits.</summary>
-    public PreAuthenticationRateLimiter(IOptions<RateLimitingOptions> options)
+    public PreAuthenticationRateLimiter(IOptions<RateLimitingOptions> options, IServiceProvider provider)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(provider);
 
         RateLimitingOptions o = options.Value;
-        _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context => RateLimitPartition.GetFixedWindowLimiter(
+        _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context => RateLimitPartition.Get(
             $"ip:{ClientAddressKey.For(context.Connection.RemoteIpAddress)}",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = o.PreAuthenticationPermitLimit,
-                Window = TimeSpan.FromSeconds(o.WindowSeconds),
-                QueueLimit = 0,
-                AutoReplenishment = true,
-            }));
+            key => RateLimitingSetup.NewLimiter(provider, o, "preauth", key, o.PreAuthenticationPermitLimit)));
     }
 
+    /// <summary>Asks whether the caller's address still has allowance, without using any: a lease that is acquired means yes. It answers at once either way.</summary>
+    public ValueTask<RateLimitLease> PeekAsync(HttpContext context, CancellationToken cancellationToken) => _limiter.AcquireAsync(context, 0, cancellationToken);
+
     /// <summary>Takes one permit for the caller's address.</summary>
-    public ValueTask<RateLimitLease> AcquireAsync(HttpContext context, CancellationToken cancellationToken) =>
-        _limiter.AcquireAsync(context, 1, cancellationToken);
+    public ValueTask<RateLimitLease> TakeAsync(HttpContext context, CancellationToken cancellationToken) => _limiter.AcquireAsync(context, 1, cancellationToken);
 
     /// <inheritdoc />
     public void Dispose() => _limiter.Dispose();

@@ -68,7 +68,7 @@ public sealed class WatchlistUseCaseTests
         public Task<Result<StockSummary>> FindAsync(string market, string ticker, CancellationToken cancellationToken)
         {
             Found.Add((market, ticker));
-            return Task.FromResult(find ?? _apple);
+            return Task.FromResult(find ?? ensure ?? _apple);
         }
 
         public Task<Result<StockSummary>> EnsureAsync(string market, string ticker, CancellationToken cancellationToken)
@@ -147,7 +147,8 @@ public sealed class WatchlistUseCaseTests
         (put.Item.Stock, put.Item.Notes, put.Item.TargetPrice, put.Item.CreatedAt, put.Item.UpdatedAt).Should().Be((_apple, "Esperar resultados", 180.5m, _now, _now));
         put.Item.Id.Should().NotBeEmpty();
         repository.Items.Should().ContainSingle().Which.Value.UserId.Should().Be(_user);
-        stocks.Ensured.Should().Equal(("XNAS", "AAPL"));
+        stocks.Found.Should().Equal(("XNAS", "AAPL"));
+        stocks.Ensured.Should().BeEmpty("the catalog has the stock, so no provider is asked");
     }
 
     [Fact]
@@ -357,6 +358,30 @@ public sealed class WatchlistUseCaseTests
     }
 
     [Fact]
+    public void ThePutValidator_JudgesTheLengthOfTheNoteAsItIsStored_TrimmedSoSpacesAroundANoteThatFitsAreNotTooLong()
+    {
+        var validator = new PutWatchlistItemValidator();
+        string fitsWithSpaces = new string(' ', 30) + new string('x', 2000) + new string('\n', 30);
+
+        validator.Validate(new PutWatchlistItemCommand("XNAS", "AAPL", fitsWithSpaces, null)).IsValid.Should().BeTrue();
+        validator.Validate(new PutWatchlistItemCommand("XNAS", "AAPL", new string('x', 2001), null)).IsValid.Should().BeFalse();
+        WatchlistItem.NormalizeNotes(fitsWithSpaces).Value.Should().HaveLength(2000);
+    }
+
+    [Theory]
+    [InlineData(nameof(WatchlistOptions.MaxItems), LimitCeilings.Items)]
+    [InlineData(nameof(WatchlistOptions.MaxPortfolios), LimitCeilings.Portfolios)]
+    [InlineData(nameof(WatchlistOptions.MaxItemsPerPortfolio), LimitCeilings.ItemsPerPortfolio)]
+    public void TheRangeOfEachOption_IsItsCeiling_SoTheyCannotDrift(string property, int ceiling)
+    {
+        var range = (System.ComponentModel.DataAnnotations.RangeAttribute)typeof(WatchlistOptions).GetProperty(property)!
+            .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RangeAttribute), inherit: false).Single();
+
+        (range.Minimum, range.Maximum).Should().Be((1, ceiling));
+        WatchlistLimits.Ceilings.Should().Be(new WatchlistLimits(LimitCeilings.Items, LimitCeilings.Portfolios, LimitCeilings.ItemsPerPortfolio));
+    }
+
+    [Fact]
     public void TheOptions_DefaultToTheDocumentedLimits_AndConvertToLimits()
     {
         var options = new WatchlistOptions();
@@ -369,12 +394,26 @@ public sealed class WatchlistUseCaseTests
     public async Task Put_LooksUpOrRegistersTheStockBeforeAnyUnitOfWorkIsOpen_SoNoConnectionIsHeldWhileTheProviderIsAsked()
     {
         var unit = new Unit();
+        // The catalog does not have the stock yet: it is registered from the provider's answer.
+        var stocks = new Stocks(find: Error.NotFound("marketdata.stock.not_found", "not in the catalog"), watching: unit);
+
+        await PutAsync(Put(new Repository(), stocks, unit: unit));
+
+        stocks.Ensured.Should().ContainSingle();
+        stocks.UnitWasOpenWhileEnsuring.Should().BeFalse("registering a stock calls a provider and can take as long as its timeout (ADR-0044)");
+        (unit.Committed, unit.RolledBack).Should().Be((2, 0), "a short unit to count the list and one to write the item");
+    }
+
+    [Fact]
+    public async Task Put_OfAStockTheCatalogHas_OpensOneUnitOfWork_TheWrite_AndNeverAsksAProvider()
+    {
+        var unit = new Unit();
         var stocks = new Stocks(watching: unit);
 
         await PutAsync(Put(new Repository(), stocks, unit: unit));
 
-        stocks.UnitWasOpenWhileEnsuring.Should().BeFalse("registering a stock calls a provider and can take as long as its timeout (ADR-0044)");
-        (unit.Committed, unit.RolledBack).Should().Be((2, 0), "a short unit to count the list and one to write the item");
+        stocks.Ensured.Should().BeEmpty();
+        (unit.Committed, unit.RolledBack).Should().Be((1, 0), "no count of the list before: the write counts it under its own transaction");
     }
 
     [Fact]
@@ -387,7 +426,7 @@ public sealed class WatchlistUseCaseTests
         Result<PutWatchlistItemResult> missing = await PutAsync(Put(new Repository(), new Stocks(ensure: Error.NotFound("marketdata.stock.not_found", "no")), unit: refused));
 
         limit.IsSuccess.Should().BeFalse();
-        (full.Committed, full.RolledBack).Should().Be((1, 1), "the count committed and the write was rolled back");
+        (full.Committed, full.RolledBack).Should().Be((0, 1), "the write was rolled back");
         missing.IsSuccess.Should().BeFalse();
         (refused.Committed, refused.RolledBack).Should().Be((1, 0), "only the short count was opened: nothing was written");
     }
@@ -415,6 +454,7 @@ public sealed class WatchlistUseCaseTests
         Result<PutWatchlistItemResult> edit = await PutAsync(Put(repository, stocks, maxItems: 1), notes: "still fine");
 
         edit.IsSuccess.Should().BeTrue();
-        stocks.Ensured.Should().ContainSingle();
+        stocks.Ensured.Should().BeEmpty("the catalog has it");
+        stocks.Found.Should().ContainSingle();
     }
 }

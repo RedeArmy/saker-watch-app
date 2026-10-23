@@ -143,6 +143,24 @@ public sealed class CalculatePartialPurchaseTests
     }
 
     [Fact]
+    public async Task ADelistedStocksLastClose_IsUsed_AndSaidSo_NotPassedOffAsALiveOne()
+    {
+        PartialPurchaseView view = (await Run(Handler(market: new Market(Snapshot(600m, PriceStatuses.Delisted))), Stock(amount: 50m))).Value;
+
+        view.PriceStatus.Should().Be(PriceStatuses.Delisted);
+    }
+
+    [Theory]
+    [InlineData(PriceStatuses.Pending)]
+    [InlineData(PriceStatuses.Unavailable)]
+    public async Task AStockWithNoClose_IsRefused_WhateverItsStatus(string status)
+    {
+        Result<PartialPurchaseView> result = await Run(Handler(market: new Market(Snapshot(null, status))), Stock(amount: 50m));
+
+        result.Error!.Code.Should().Be(PartialPurchaseErrors.PriceUnavailable);
+    }
+
+    [Fact]
     public async Task AStaleClose_IsUsed_AndSaidSo()
     {
         var since = new DateTimeOffset(2026, 10, 15, 21, 0, 0, TimeSpan.Zero);

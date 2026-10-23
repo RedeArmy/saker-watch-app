@@ -28,19 +28,11 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     /// <summary>Name of the named <see cref="HttpClient"/>.</summary>
     public const string ClientName = "twelvedata";
 
-    // One request returns up to 5 000 daily rows, about twenty years: a backfill is one credit (verified on the free plan).
-    private const int _maxRows = 5000;
-    private const int _maxSearchRows = 30;
-    private const string _searchOperation = "search";
-    private const string _dailyOperation = "daily";
-
-    // Measured on 2026-10-17 with /api_usage: a time_series call costs one credit even when it fails (unknown symbol, plan restriction),
-    // and symbol_search costs none, so a search never touches the budget.
     /// <summary>
     /// The policy of the named client: only the provider's host, a bounded answer, and no retries by the HTTP pipeline. A retry would send a
     /// request that costs a credit at the provider without the shared budget having counted it (a call is reserved once, before the first
     /// attempt), so the count would drift under the real use; a failure that retrying can fix is retried by the job queue, which reserves the
-    /// credits again on every attempt (ADR-0044).
+    /// credits again on every attempt (ADR-0044). A search, which costs no credit, is tried once more by the provider itself.
     /// </summary>
     public static void ConfigureClient(HttpClientResilienceOptions http, Uri baseAddress)
     {
@@ -56,6 +48,14 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
     /// <summary>Suffix of the budget key of the on-demand allowance, after the provider name.</summary>
     public const string OnDemandBudgetSuffix = "_ondemand";
 
+    // One request returns up to 5 000 daily rows, about twenty years: a backfill is one credit (verified on the free plan).
+    private const int _maxRows = 5000;
+    private const int _maxSearchRows = 30;
+    private const string _searchOperation = "search";
+    private const string _dailyOperation = "daily";
+
+    // Measured on 2026-10-17 with /api_usage: a time_series call costs one credit even when it fails (unknown symbol, plan restriction),
+    // and symbol_search costs none, so a search never touches the budget.
     private const int _timeSeriesCredits = 1;
 
     private static readonly Counter<long> _calls = SakerTelemetry.Meter.CreateCounter<long>(
@@ -101,8 +101,15 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
         using Activity? span = SakerTelemetry.Source.StartActivity("MarketData.Provider.TwelveData.Search");
 
-        Result<ProviderResponse> response = await GetAsync(
-            $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}", symbol, credits: 0, CallLane.Scheduled, cancellationToken);
+        string url = $"symbol_search?symbol={Uri.EscapeDataString(symbol.Trim())}&outputsize={_maxSearchRows}";
+        Result<ProviderResponse> response = await GetAsync(url, symbol, credits: 0, CallLane.Scheduled, cancellationToken);
+        if (!response.IsSuccess && ProviderErrors.Classify(response.Error!) == ProviderFailureKind.Transient)
+        {
+            // The client makes no retries (a retried time_series would spend credits the budget never counted), but a search costs none: one more try is free, and a
+            // blip of the provider then does not reach the user as a 503.
+            response = await GetAsync(url, symbol, credits: 0, CallLane.Scheduled, cancellationToken);
+        }
+
         if (!response.IsSuccess)
         {
             Record(_searchOperation, response.Error!);
@@ -146,7 +153,7 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
 
         string query = DailyQuery(request);
 
-        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, _timeSeriesCredits, request.Lane, cancellationToken);
+        Result<ProviderResponse> response = await GetAsync(query, request.Key.Symbol, request.Prepaid ? 0 : _timeSeriesCredits, request.Lane, cancellationToken);
         if (!response.IsSuccess)
         {
             Record(_dailyOperation, response.Error!);
@@ -172,6 +179,21 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
             cancellationToken);
         _calls.Add(1, Tags(_dailyOperation, "success"));
         return new DailySeries(request.Key, [.. bars.Values], request.Adjusted, rejected, truncated);
+    }
+
+    /// <inheritdoc />
+    public async Task<Error?> ReserveDailyAsync(int requests, CallLane lane, CancellationToken cancellationToken) =>
+        await SpendBudgetAsync(requests * _timeSeriesCredits, lane, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task ReleaseDailyAsync(int requests, CallLane lane, CancellationToken cancellationToken)
+    {
+        int credits = requests * _timeSeriesCredits;
+        await _budget.ReleaseAsync(Name, credits, cancellationToken);
+        if (lane == CallLane.OnDemand)
+        {
+            await _budget.ReleaseAsync(Name + OnDemandBudgetSuffix, credits, cancellationToken);
+        }
     }
 
     private static string DailyQuery(DailySeriesRequest request)
@@ -302,7 +324,18 @@ public sealed partial class TwelveDataProvider : IMarketDataProvider
         }
 
         BudgetDecision decision = await _budget.TryAcquireAsync(Name, new BudgetLimits(settings.CreditsPerMinute, settings.CreditsPerDay), credits, cancellationToken);
-        return decision.Granted ? null : ProviderErrors.RateLimited(Name, decision.RetryAfter);
+        if (decision.Granted)
+        {
+            return null;
+        }
+
+        // The call will not be sent, so the allowance reserved for it goes back; otherwise every wait would eat the day's allowance.
+        if (lane == CallLane.OnDemand)
+        {
+            await _budget.ReleaseAsync(Name + OnDemandBudgetSuffix, credits, cancellationToken);
+        }
+
+        return ProviderErrors.RateLimited(Name, decision.RetryAfter);
     }
 
     private Result<ProviderResponse> Interpret(HttpResponseMessage response, string body, string symbol)

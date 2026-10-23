@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -34,12 +35,35 @@ public static class ProblemDetailsSetup
 /// <param name="logger">Logger for the unhandled exception.</param>
 internal sealed partial class GlobalExceptionHandler(IProblemDetailsService problems, ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
+    private const int _clientClosedRequest = 499;
+
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
         {
-            // The client went away; nothing to report and no response to write.
+            // The client went away; nothing to report and no body to write. The status is the one nginx made usual for it (there is no standard one),
+            // so request logs and metrics do not count the abandoned request as a 200.
+            httpContext.Response.StatusCode = _clientClosedRequest;
             return true;
+        }
+
+        // The database refusing to wait (a lock timeout, a deadlock, a serialization failure) says the work was not done and can be asked again: that is
+        // "busy, retry", not an unexpected failure of the service (and the retry is safe: nothing was committed).
+        if (RetryableDatabaseState(exception) is { } state)
+        {
+            DatabaseBusy(state, httpContext.Request.Method, httpContext.GetEndpoint()?.DisplayName ?? "unknown");
+            httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            httpContext.Response.Headers.RetryAfter = "1";
+            return await problems.TryWriteAsync(new ProblemDetailsContext
+            {
+                HttpContext = httpContext,
+                ProblemDetails =
+                {
+                    Status = StatusCodes.Status503ServiceUnavailable,
+                    Title = "The service is busy; try again.",
+                    Type = ResultHttpExtensions.ProblemTypeBase + "busy",
+                },
+            });
         }
 
         UnhandledException(exception, httpContext.Request.Method, httpContext.GetEndpoint()?.DisplayName ?? "unknown");
@@ -55,6 +79,23 @@ internal sealed partial class GlobalExceptionHandler(IProblemDetailsService prob
             },
         });
     }
+
+    // lock_not_available (a lock timeout), deadlock_detected and serialization_failure, wherever in the chain of exceptions the driver's is.
+    private static string? RetryableDatabaseState(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is DbException { SqlState: "55P03" or "40P01" or "40001" } database)
+            {
+                return database.SqlState;
+            }
+        }
+
+        return null;
+    }
+
+    [LoggerMessage(EventId = 9102, Level = LogLevel.Warning, Message = "The database refused to wait ({SqlState}) in {Method} {Endpoint}; the client was told to retry")]
+    private partial void DatabaseBusy(string sqlState, string method, string endpoint);
 
     [LoggerMessage(EventId = 9101, Level = LogLevel.Error, Message = "Unhandled exception in {Method} {Endpoint}")]
     private partial void UnhandledException(Exception exception, string method, string endpoint);

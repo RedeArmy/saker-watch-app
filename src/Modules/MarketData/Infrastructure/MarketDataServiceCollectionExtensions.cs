@@ -1,7 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using SakerWatch.BuildingBlocks.Application.Deployment;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 using SakerWatch.BuildingBlocks.Resilience;
 using SakerWatch.MarketData.Application;
@@ -27,6 +29,7 @@ public static class MarketDataServiceCollectionExtensions
     /// Registers what the API needs to find and register stocks (ADR-0032): the routing table, the router, the Twelve Data provider behind its
     /// allow-listed client (used for searches only), the shared search budget and cache, and the stock directory. It starts no background work.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static IServiceCollection AddMarketDataLookup(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -39,6 +42,7 @@ public static class MarketDataServiceCollectionExtensions
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
         services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
+        services.AddSakerDeployment(configuration);
         services.AddOptions<StockLookupOptions>().Bind(configuration.GetSection(StockLookupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddMarketDataApplication();
 
@@ -71,6 +75,7 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddSingleton<ISearchCache, RedisSearchCache>();
         services.TryAddScoped<StockCatalog>();
         services.TryAddScoped<IStockCatalog>(provider => new UnitScopedStockCatalog(provider.GetRequiredService<StockCatalog>(), provider.GetRequiredService<IUnitOfWork>()));
+        services.TryAddSingleton<RegistrationFallback>();
         services.TryAddScoped<RegistrationQuota>();
         services.TryAddScoped<IStockRegistry, StockRegistry>();
         services.TryAddScoped<ProviderSearch>();
@@ -110,6 +115,7 @@ public static class MarketDataServiceCollectionExtensions
     /// Registers everything the worker runs: the lookup, the exchange rate and performance settings, the stores and readers, the scheduler and
     /// the freshness sampler.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static IServiceCollection AddMarketData(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

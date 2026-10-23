@@ -64,7 +64,7 @@ internal sealed class RealApiHost : WebApplicationFactory<HostApi::Program>
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Postgres", Db.Api);
         builder.UseSetting("ConnectionStrings:Mongo", "mongodb://127.0.0.1:1");
-        builder.UseSetting("ConnectionStrings:Redis", "127.0.0.1:1,abortConnect=false");
+        builder.UseSetting("ConnectionStrings:Redis", "127.0.0.1:1,abortConnect=false,connectTimeout=500");
         builder.UseSetting("OpenApi:Anonymous", "true");
         builder.UseSetting("Audit:ActorPepper", ApiTestHost.PepperBase64);
         builder.UseSetting("Clavaris:Authority", _live?.Authority ?? Idp.Issuer);

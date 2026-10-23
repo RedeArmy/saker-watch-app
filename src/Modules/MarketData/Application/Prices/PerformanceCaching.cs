@@ -19,6 +19,19 @@ public sealed class PerformanceCacheOptions
     /// <summary>How long a report is kept. A report is replaced by a new key whenever its listing loads data, so this only bounds the keys nobody asks for again.</summary>
     [Range(typeof(TimeSpan), "00:01:00", "7.00:00:00")]
     public TimeSpan Ttl { get; set; } = TimeSpan.FromHours(26);
+
+    /// <summary>
+    /// Whether a listing's windows are computed and kept by a job of their own as soon as its data has loaded (ADR-0048), so that the first user to read it
+    /// after the nightly load does not pay for the computation. Has no effect while <see cref="Enabled"/> is off.
+    /// </summary>
+    public bool WarmAfterLoad { get; set; } = true;
+
+    /// <summary>
+    /// How many minutes of loads one warming job covers (ADR-0048). The loads of a market in the same slice share a job, which runs when the slice is over and
+    /// reads the windows of all of them in one batch: a few jobs a night for a market instead of one for each listing.
+    /// </summary>
+    [Range(1, 120)]
+    public int WarmBucketMinutes { get; set; } = 15;
 }
 
 /// <summary>
@@ -45,6 +58,9 @@ public interface IIngestionStamps
 {
     /// <summary>The last success of every listing in <paramref name="stocks"/> that has one; a listing never loaded is left out.</summary>
     Task<IReadOnlyDictionary<StockId, DateTimeOffset>> LastSuccessAsync(IReadOnlyCollection<StockId> stocks, CancellationToken cancellationToken);
+
+    /// <summary>The active listings of <paramref name="market"/> whose last success is at or after <paramref name="from"/> and before <paramref name="to"/>.</summary>
+    Task<IReadOnlyList<StockId>> LoadedBetweenAsync(string market, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken);
 }
 
 /// <summary>The outcomes of the performance cache, one count per listing asked for.</summary>

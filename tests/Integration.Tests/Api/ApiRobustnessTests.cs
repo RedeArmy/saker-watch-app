@@ -41,7 +41,28 @@ public sealed class ApiRobustnessTests(TimescalePostgresFixture postgres) : ICla
         }
 
         statuses.Take(5).Should().AllBeEquivalentTo(HttpStatusCode.Unauthorized);
-        statuses.Skip(5).Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests, "the limiter runs before authentication, so refused requests count");
+        statuses.Skip(5).Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests, "the limiter runs before authentication and charges the requests that authentication refuses");
+    }
+
+    [Fact]
+    public async Task WithSeveralApiProcesses_AndRedisUnreachable_TheFloodIsStillLimited_ByTheLimiterOfTheProcess()
+    {
+        await using RealApiHost api = await RealApiHost.StartAsync(postgres);
+        using var limited = api.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("RateLimiting:PreAuthenticationPermitLimit", "5");
+            builder.UseSetting("Deployment:ApiReplicas", "2"); // the limiters count in Redis, which this host cannot reach
+        });
+        using HttpClient client = limited.CreateClient();
+
+        var statuses = new List<HttpStatusCode>();
+        for (int i = 0; i < 8; i++)
+        {
+            statuses.Add((await client.SendAsync(ApiTestHost.Get("/v1/me", "not-a-valid-token"))).StatusCode);
+        }
+
+        statuses.Take(5).Should().AllBeEquivalentTo(HttpStatusCode.Unauthorized);
+        statuses.Skip(5).Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests, "a Redis that is down must not turn the limiter off");
     }
 
     [Theory]

@@ -71,21 +71,49 @@ public sealed class ListingIngestion(
     {
         ArgumentNullException.ThrowIfNull(listing);
 
-        Result<DailySeries> adjusted = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: true, lane), cancellationToken);
+        // Both series or neither: the credits of the two are reserved before the first call, so a budget that has room for one and not for the other does not
+        // spend a credit on a series that is then thrown away when the job waits and starts again.
+        if (await listing.Provider.ReserveDailyAsync(2, lane, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        Result<DailySeries> adjusted = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: true, lane, Prepaid: true), cancellationToken);
         if (!adjusted.IsSuccess)
         {
+            // The credit of the first call is spent (a failed time_series call costs one); the second was never made.
+            await listing.Provider.ReleaseDailyAsync(1, lane, cancellationToken);
             return adjusted.Error!;
         }
 
-        Result<DailySeries> raw = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: false, lane), cancellationToken);
-        return raw.IsSuccess
-            ? PriceSeriesMerger.Merge(raw.Value, adjusted.Value, listing.Calendar, now, options.Value.SettleDelay)
-            : raw.Error!;
+        Result<DailySeries> raw = await listing.Provider.GetDailyAsync(new DailySeriesRequest(listing.Key, from, null, Adjusted: false, lane, Prepaid: true), cancellationToken);
+        if (!raw.IsSuccess)
+        {
+            return raw.Error!;
+        }
+
+        // Asked oldest first, a series cut at the provider's row limit holds the old part and lacks the latest days: stored, the listing would look loaded and be stale
+        // for good. It is a failure of the listing and says so (the history asked for is shorter than that today; this is what a change of it would meet).
+        return adjusted.Value.Truncated || raw.Value.Truncated
+            ? ProviderErrors.TruncatedSeries(listing.Provider.Name)
+            : PriceSeriesMerger.Merge(raw.Value, adjusted.Value, listing.Calendar, now, options.Value.SettleDelay);
     }
 
     /// <summary>True for a failure that retrying later may fix: a rate limit or an outage.</summary>
     public static bool IsRetryable(Error error) =>
         ProviderErrors.Classify(error) is ProviderFailureKind.RateLimited or ProviderFailureKind.Transient;
+
+    /// <summary>
+    /// True for a failure whose cause is the provider account or its answer and not the listing: a refused key, an answer that cannot be understood,
+    /// a plan that lacks the market. It hits every listing alike and ends when the cause is fixed, so it must not be recorded against any of them:
+    /// a listing marked failed is left out of every later refresh and nothing would put it back.
+    /// </summary>
+    public static bool IsProviderFault(Error error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return error.Code is ProviderErrors.UnauthorizedCode or ProviderErrors.InvalidResponseCode
+            || ProviderErrors.Classify(error) == ProviderFailureKind.PlanRestricted;
+    }
 
     /// <summary>Records a completed ingestion and clears any earlier failure and any count of days the provider did not know the symbol.</summary>
     public Task RecordSuccessAsync(StockId id, DateTimeOffset now, CancellationToken cancellationToken) =>

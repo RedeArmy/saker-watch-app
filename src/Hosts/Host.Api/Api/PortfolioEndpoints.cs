@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
@@ -35,7 +36,8 @@ public sealed record PortfolioDetailResponse(PortfolioResponse Portfolio, IReadO
 /// <param name="Portfolio">The portfolio.</param>
 /// <param name="StocksToRemove">Stocks in this portfolio and in no other: they would leave the watchlist, with their notes and targets.</param>
 /// <param name="StocksKept">How many of its stocks would stay because another portfolio holds them too.</param>
-public sealed record PortfolioDeletionPreviewResponse(PortfolioResponse Portfolio, IReadOnlyList<WatchlistStockResponse> StocksToRemove, int StocksKept);
+/// <param name="RemovalToken">A token of exactly these stocks: send it as <c>removalToken</c> with <c>confirm=true</c> to delete the portfolio and remove them.</param>
+public sealed record PortfolioDeletionPreviewResponse(PortfolioResponse Portfolio, IReadOnlyList<WatchlistStockResponse> StocksToRemove, int StocksKept, string RemovalToken);
 
 /// <summary>A stock and its change over a window.</summary>
 /// <param name="Stock">The stock.</param>
@@ -92,6 +94,7 @@ internal static class PortfolioEndpoints
     private const string _json = "application/json";
 
     /// <summary>Maps the endpoints on the version group.</summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static void MapPortfolios(this RouteGroupBuilder v1)
     {
         v1.MapPost("/portfolios", CreateAsync)
@@ -108,7 +111,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios", ListAsync)
             .WithName("ListPortfolios")
@@ -120,7 +124,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/order", ReorderAsync)
             .WithName("ReorderPortfolios")
@@ -134,7 +139,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios/{id:guid}", GetAsync)
             .WithName("GetPortfolio")
@@ -147,7 +153,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios/{id:guid}/metrics", MetricsAsync)
             .WithName("GetPortfolioMetrics")
@@ -160,7 +167,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/{id:guid}", UpdateAsync)
             .WithName("UpdatePortfolio")
@@ -176,7 +184,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapGet("/portfolios/{id:guid}/deletion-preview", PreviewAsync)
             .WithName("PreviewPortfolioDeletion")
@@ -188,20 +197,23 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapDelete("/portfolios/{id:guid}", DeleteAsync)
             .WithName("DeletePortfolio")
             .WithSummary("Delete a portfolio")
-            .WithDescription("Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true; without it the answer is 409 and nothing changes (see the deletion preview). A portfolio that is already gone is not an error: the answer is 204.")
+            .WithDescription("Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true and the removalToken of exactly those stocks. Without them the answer is 409 and nothing changes, and the answer itself lists the stocks that would leave (stocksToRemove) and the removalToken that confirms them, so the confirmation needs no other request; if the stocks that would leave are not the ones of the token (one was put in the portfolio since) the answer is 409 too, with the current list and token, and nothing is deleted. A removalToken that is not sixteen hex digits is a 400. A portfolio that is already gone is not an error: the answer is 204.")
             .WithTags(_tag)
             .ExemptFromIdempotencyKey("A DELETE is idempotent by nature: deleting twice leaves the same state and the same 204.")
             .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/{id:guid}/items/{market}/{ticker}", PutItemAsync)
             .WithName("PutPortfolioItem")
@@ -217,7 +229,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapDelete("/portfolios/{id:guid}/items/{market}/{ticker}", RemoveItemAsync)
             .WithName("RemovePortfolioItem")
@@ -231,7 +244,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         v1.MapPut("/portfolios/{id:guid}/items/order", ReorderItemsAsync)
             .WithName("ReorderPortfolioItems")
@@ -246,7 +260,8 @@ internal static class PortfolioEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static PortfolioResponse ToResponse(PortfolioView p) => new(p.Id, p.Name, p.Description, p.Position, p.ItemCount, p.CreatedAt, p.UpdatedAt);
@@ -312,12 +327,14 @@ internal static class PortfolioEndpoints
     {
         var result = await sender.Send(new PreviewPortfolioDeletionQuery(id), cancellationToken);
         return result.ToHttpResult(preview => TypedResults.Ok(new PortfolioDeletionPreviewResponse(
-            ToResponse(preview.Portfolio), [.. preview.StocksToRemove.Select(ToResponse)], preview.StocksKept)));
+            ToResponse(preview.Portfolio), [.. preview.StocksToRemove.Select(ToResponse)], preview.StocksKept, preview.RemovalToken)));
     }
 
-    private static async Task<IResult> DeleteAsync(Guid id, ISender sender, CancellationToken cancellationToken, bool confirm = false)
+    private static async Task<IResult> DeleteAsync(Guid id, ISender sender, CancellationToken cancellationToken,
+        [System.ComponentModel.Description("True to accept that the stocks listed by the deletion preview leave the watchlist.")] bool confirm = false,
+        [System.ComponentModel.Description("The removalToken of the deletion preview, with confirm=true: exactly the stocks that were shown are the ones removed.")] string? removalToken = null)
     {
-        var result = await sender.Send(new DeletePortfolioCommand(id, confirm), cancellationToken);
+        var result = await sender.Send(new DeletePortfolioCommand(id, confirm, removalToken), cancellationToken);
         return result.ToHttpResult();
     }
 
