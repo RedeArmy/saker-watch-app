@@ -37,19 +37,13 @@ public sealed class PriceHistory(
     public const int MaxRecentDays = 250;
 
     /// <inheritdoc />
-    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async Task<Result<PriceSeries>> SeriesAsync(string market, string ticker, string range, string interval, CancellationToken cancellationToken)
     {
         string wantedRange = (range ?? string.Empty).Trim().ToUpperInvariant();
         string wantedInterval = (interval ?? string.Empty).Trim().ToLowerInvariant();
-        if (!PriceRanges.All.Contains(wantedRange, StringComparer.Ordinal))
+        if (UnknownRangeOrInterval(wantedRange, wantedInterval) is { } unknown)
         {
-            return Error.Validation(RangeInvalidCode, $"The range is one of: {string.Join(", ", PriceRanges.All)}.");
-        }
-
-        if (!PriceIntervals.All.Contains(wantedInterval, StringComparer.Ordinal))
-        {
-            return Error.Validation(IntervalInvalidCode, $"The interval is one of: {string.Join(", ", PriceIntervals.All)}.");
+            return unknown;
         }
 
         Result<Mic> mic = Mic.Create(market);
@@ -89,6 +83,18 @@ public sealed class PriceHistory(
             status,
             staleSince,
             listing.DelistedAt);
+    }
+
+    private static Error? UnknownRangeOrInterval(string range, string interval)
+    {
+        if (!PriceRanges.All.Contains(range, StringComparer.Ordinal))
+        {
+            return Error.Validation(RangeInvalidCode, $"The range is one of: {string.Join(", ", PriceRanges.All)}.");
+        }
+
+        return PriceIntervals.All.Contains(interval, StringComparer.Ordinal)
+            ? null
+            : Error.Validation(IntervalInvalidCode, $"The interval is one of: {string.Join(", ", PriceIntervals.All)}.");
     }
 
     /// <inheritdoc />

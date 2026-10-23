@@ -69,7 +69,6 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         return result;
     }
 
-    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     private async Task<AuthResult> ValidateAsync(string accessToken, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(accessToken) || accessToken.Length > _maxTokenLength)
@@ -105,17 +104,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
             return Rejected(AuthFailureReason.KeyDiscoveryFailed);
         }
 
-        TokenValidationResult validation = await _handler.ValidateTokenAsync(accessToken, Parameters(keys));
-        if (!validation.IsValid && validation.Exception is SecurityTokenSignatureKeyNotFoundException)
-        {
-            // The provider may have rotated its keys: re-read them (rate limited) and try once more with any new ones.
-            IReadOnlyList<SecurityKey> refreshed = await _keys.RefreshAsync(cancellationToken);
-            if (!ReferenceEquals(refreshed, keys))
-            {
-                validation = await _handler.ValidateTokenAsync(accessToken, Parameters(refreshed));
-            }
-        }
-
+        TokenValidationResult validation = await ValidateAllowingRotationAsync(accessToken, keys, cancellationToken);
         if (validation.IsValid)
         {
             return ToIdentity(validation);
@@ -129,6 +118,19 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         }
 
         return Rejected(reason);
+    }
+
+    private async Task<TokenValidationResult> ValidateAllowingRotationAsync(string accessToken, IReadOnlyList<SecurityKey> keys, CancellationToken cancellationToken)
+    {
+        TokenValidationResult validation = await _handler.ValidateTokenAsync(accessToken, Parameters(keys));
+        if (validation.IsValid || validation.Exception is not SecurityTokenSignatureKeyNotFoundException)
+        {
+            return validation;
+        }
+
+        // The provider may have rotated its keys: re-read them (rate limited) and try once more with any new ones.
+        IReadOnlyList<SecurityKey> refreshed = await _keys.RefreshAsync(cancellationToken);
+        return ReferenceEquals(refreshed, keys) ? validation : await _handler.ValidateTokenAsync(accessToken, Parameters(refreshed));
     }
 
     // The parameters depend only on the options and the key set, so they are built once per key set and shared by every request

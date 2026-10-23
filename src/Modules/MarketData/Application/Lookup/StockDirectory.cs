@@ -232,15 +232,8 @@ public sealed partial class StockDirectory(
         return Stock.Create(id, new NewListing(market.Value, listing.Symbol, listing.Name, currency, timeZone, listing.AssetType), now);
     }
 
-    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
-    private async Task<Result<StockSummary>> RegisterAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
+    private async Task<Result<CachedListing>> FindListingAsync(IMarketDataProvider provider, Mic market, Ticker ticker, CancellationToken cancellationToken)
     {
-        if (!IsServed(market))
-        {
-            return Error.Validation(MarketNotAvailableCode, $"The market {market} is not available.");
-        }
-
-        IMarketDataProvider provider = router.For(market).Value;
         Result<IReadOnlyList<CachedListing>> found = await search.ListingsAsync(provider, ticker.Value, cancellationToken);
         if (!found.IsSuccess)
         {
@@ -250,11 +243,24 @@ public sealed partial class StockDirectory(
         CachedListing? match = found.Value.FirstOrDefault(listing =>
             MarketCatalogRules.CanonicalMarket(listing.ProviderMic) == market.Value
             && string.Equals(listing.Symbol?.Trim(), ticker.Value, StringComparison.OrdinalIgnoreCase));
-        if (match is null)
+        return match is null ? Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.") : match;
+    }
+
+    private async Task<Result<StockSummary>> RegisterAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
+    {
+        if (!IsServed(market))
         {
-            return Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.");
+            return Error.Validation(MarketNotAvailableCode, $"The market {market} is not available.");
         }
 
+        IMarketDataProvider provider = router.For(market).Value;
+        Result<CachedListing> found = await FindListingAsync(provider, market, ticker, cancellationToken);
+        if (!found.IsSuccess)
+        {
+            return found.Error!;
+        }
+
+        CachedListing match = found.Value;
         DateTimeOffset now = clock.GetUtcNow();
         Result<Stock> stock = BuildStock(match, market, ids.New<StockId>(), now);
         if (!stock.IsSuccess)

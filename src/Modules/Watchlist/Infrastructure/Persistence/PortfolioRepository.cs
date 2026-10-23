@@ -174,8 +174,20 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
         return members;
     }
 
+    // The configured limit, under the lock the caller holds. A stock that is a member already is not a new member, so it passes: the insert then does nothing.
+    private async Task<bool> IsFullAsync(Guid userId, PortfolioId id, Guid item, int maxMembers, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand count = Command(
+            "SELECT count(*), coalesce(bool_or(watchlist_item_id = @item), false) FROM watchlist.portfolio_items WHERE portfolio_id = @id AND user_id = @user");
+        count.Parameters.AddWithValue("item", item);
+        count.Parameters.AddWithValue("id", id.Value);
+        count.Parameters.AddWithValue("user", userId);
+        await using NpgsqlDataReader reader = await count.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return reader.GetInt64(0) >= maxMembers && !reader.GetBoolean(1);
+    }
+
     /// <inheritdoc />
-    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async Task<MemberAdd> AddMemberAsync(NewMember member, int maxMembers, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(member);
@@ -187,19 +199,9 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
             return MemberAdd.ItemNotOnWatchlist;
         }
 
-        // The configured limit, under the lock just taken. A stock that is a member already is not a new member, so it passes: the insert below then does nothing.
-        await using (NpgsqlCommand count = Command(
-            "SELECT count(*), coalesce(bool_or(watchlist_item_id = @item), false) FROM watchlist.portfolio_items WHERE portfolio_id = @id AND user_id = @user"))
+        if (await IsFullAsync(userId, id, item.Value, maxMembers, cancellationToken))
         {
-            count.Parameters.AddWithValue("item", item.Value);
-            count.Parameters.AddWithValue("id", id.Value);
-            count.Parameters.AddWithValue("user", userId);
-            await using NpgsqlDataReader reader = await count.ExecuteReaderAsync(cancellationToken);
-            await reader.ReadAsync(cancellationToken);
-            if (reader.GetInt64(0) >= maxMembers && !reader.GetBoolean(1))
-            {
-                return MemberAdd.LimitReached;
-            }
+            return MemberAdd.LimitReached;
         }
 
         await using NpgsqlCommand command = Command(

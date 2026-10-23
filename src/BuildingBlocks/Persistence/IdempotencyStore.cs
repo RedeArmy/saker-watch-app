@@ -17,7 +17,6 @@ public sealed class IdempotencyStore(DbSession session) : IIdempotencyStore
     private const string _lockNotAvailable = "55P03";
 
     /// <inheritdoc />
-    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async Task<IdempotencyClaim> ClaimAsync(IdempotencyClaimRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -43,31 +42,36 @@ public sealed class IdempotencyStore(DbSession session) : IIdempotencyStore
                 return new IdempotencyClaim.Claimed();
             }
 
-            // The conflicting row was committed by another transaction (we waited for it if it was still open).
-            await using var select = new NpgsqlCommand(
-                "SELECT request_hash, state, response_status, response_body FROM platform.idempotency_keys WHERE user_id = @user AND method = @method AND route = @route AND key = @key",
-                session.Connection,
-                transaction);
-            AddScope(select, request.UserId, request.Key);
-            await using NpgsqlDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                return new IdempotencyClaim.Busy();
-            }
-
-            if (!((byte[])reader["request_hash"]).AsSpan().SequenceEqual(request.RequestHash))
-            {
-                return new IdempotencyClaim.Mismatch();
-            }
-
-            return string.Equals((string)reader["state"], IdempotencyStates.Completed, StringComparison.Ordinal)
-                ? new IdempotencyClaim.Replay(new StoredResponse((int)reader["response_status"], reader["response_body"] as byte[]))
-                : new IdempotencyClaim.Busy();
+            return await ExistingAsync(request, transaction, cancellationToken);
         }
         catch (PostgresException ex) when (ex.SqlState == _lockNotAvailable)
         {
             return new IdempotencyClaim.Busy();
         }
+    }
+
+    // The conflicting row was committed by another transaction (we waited for it if it was still open).
+    private async Task<IdempotencyClaim> ExistingAsync(IdempotencyClaimRequest request, NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var select = new NpgsqlCommand(
+            "SELECT request_hash, state, response_status, response_body FROM platform.idempotency_keys WHERE user_id = @user AND method = @method AND route = @route AND key = @key",
+            session.Connection,
+            transaction);
+        AddScope(select, request.UserId, request.Key);
+        await using NpgsqlDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new IdempotencyClaim.Busy();
+        }
+
+        if (!((byte[])reader["request_hash"]).AsSpan().SequenceEqual(request.RequestHash))
+        {
+            return new IdempotencyClaim.Mismatch();
+        }
+
+        return string.Equals((string)reader["state"], IdempotencyStates.Completed, StringComparison.Ordinal)
+            ? new IdempotencyClaim.Replay(new StoredResponse((int)reader["response_status"], reader["response_body"] as byte[]))
+            : new IdempotencyClaim.Busy();
     }
 
     /// <inheritdoc />
