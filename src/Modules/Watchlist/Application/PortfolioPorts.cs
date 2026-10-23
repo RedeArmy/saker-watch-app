@@ -16,7 +16,32 @@ public sealed record PortfolioMember(Guid StockId, int Position, DateTimeOffset 
 /// <summary>What deleting a portfolio would do to the watchlist (ADR-0026).</summary>
 /// <param name="StocksToRemove">The catalog ids of the stocks that are in this portfolio and in no other, so they would leave the watchlist.</param>
 /// <param name="StocksKept">How many stocks of the portfolio would stay, because another portfolio holds them too.</param>
-public sealed record DeletionPreview(IReadOnlyList<Guid> StocksToRemove, int StocksKept);
+public sealed record DeletionPreview(IReadOnlyList<Guid> StocksToRemove, int StocksKept)
+{
+    /// <summary>A token of the stocks that would leave the watchlist: the same set gives the same token, whatever the order.</summary>
+    public string Token => TokenOf(StocksToRemove);
+
+    /// <summary>The token of a set of stocks: the first sixteen hex digits of the hash of their ids in order.</summary>
+    public static string TokenOf(IEnumerable<Guid> stocks)
+    {
+        ArgumentNullException.ThrowIfNull(stocks);
+        string text = string.Join(',', stocks.Order().Select(id => id.ToString("N", System.Globalization.CultureInfo.InvariantCulture)));
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..16];
+    }
+}
+
+/// <summary>The result of deleting a portfolio.</summary>
+public enum PortfolioDelete
+{
+    /// <summary>Deleted.</summary>
+    Deleted,
+
+    /// <summary>There was no such portfolio for the user.</summary>
+    NotFound,
+
+    /// <summary>The stocks that would leave the watchlist are not the ones the caller confirmed; nothing was deleted.</summary>
+    RemovalChanged,
+}
 
 /// <summary>The result of storing a portfolio.</summary>
 public enum PortfolioWrite
@@ -72,6 +97,9 @@ public interface IPortfolioRepository
     /// <summary>One portfolio of the user, or <see langword="null"/>.</summary>
     Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken);
 
+    /// <summary>Whether the user has the portfolio. One indexed read, for the use cases that only need to know it is there (<see cref="FindAsync"/> also counts its stocks).</summary>
+    Task<bool> ExistsAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken);
+
     /// <summary>
     /// Takes the lock that orders the writers of the user's portfolio positions, held until the transaction ends. A use case that reads the
     /// positions to choose the next one calls this first, so two parallel creations cannot both read the same last position.
@@ -107,7 +135,9 @@ public interface IPortfolioRepository
 
     /// <summary>
     /// Deletes the portfolio and, when <paramref name="removeOrphans"/>, the watchlist items that no other portfolio holds, in the caller's
-    /// transaction. Returns whether there was a portfolio.
+    /// transaction. When <paramref name="expectedRemovalToken"/> is given the stocks that would leave are compared with it under the locks of the
+    /// portfolio, so a stock put in the portfolio after the caller looked is never removed unseen: nothing is deleted and the answer is
+    /// <see cref="PortfolioDelete.RemovalChanged"/>.
     /// </summary>
-    Task<bool> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, CancellationToken cancellationToken);
+    Task<PortfolioDelete> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, string? expectedRemovalToken, CancellationToken cancellationToken);
 }

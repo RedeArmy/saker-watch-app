@@ -28,7 +28,7 @@ public sealed record CalculatePartialPurchaseQuery(string? Market, string? Ticke
 /// <param name="PriceSource"><c>catalog</c> (the newest close of a stock) or <c>manual</c> (the price given).</param>
 /// <param name="Stock">The catalog stock, when the price came from one.</param>
 /// <param name="PriceDate">The trading day of the close, when the price came from the catalog.</param>
-/// <param name="PriceStatus"><c>current</c> or <c>stale</c>, when the price came from the catalog.</param>
+/// <param name="PriceStatus"><c>current</c>, <c>stale</c> (the last known close is used) or <c>delisted</c> (the stock no longer trades, ADR-0039: its last close is used and the caller is told), when the price came from the catalog. A stock with no close at all is refused (<c>price_unavailable</c>), so <c>pending</c> and <c>unavailable</c> never reach here.</param>
 /// <param name="StaleSince">When the close went stale, when it did.</param>
 /// <param name="Purchase">The figures, rounded for display.</param>
 /// <param name="Fx">The exchange rate used, with its path, days and sources.</param>

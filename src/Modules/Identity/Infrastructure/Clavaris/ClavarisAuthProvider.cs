@@ -228,6 +228,8 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         }
         else if (token.TryGetPayloadValue("scope", out string text))
         {
+            // Not dead: the typed read as a JsonElement answers only for a claim that is an array or an object, and a space-delimited string
+            // (RFC 9068) is read as a string. Removing this branch strips every scope of a provider that sends the string form.
             raw = text.Split(' ');
         }
 

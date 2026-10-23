@@ -69,7 +69,7 @@ public sealed class PriceHistory(
         (string status, DateTimeOffset? staleSince) = PriceStatusRules.Of(calendars, listing.Market, newest, failed.Contains(listing.Id), listing.DelistedAt, clock.GetUtcNow(), ingestion.Value.SettleDelay);
 
         string used = wantedInterval == PriceIntervals.Auto ? PriceRange.DefaultInterval(wantedRange) : wantedInterval;
-        StockSummary stock = new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, AssetTypeText(listing.AssetType));
+        StockSummary stock = new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, listing.AssetType.ToText());
         if (newest is null)
         {
             return new PriceSeries(stock, wantedRange, used, null, null, [], status, staleSince, listing.DelistedAt);
@@ -105,12 +105,5 @@ public sealed class PriceHistory(
         PriceIntervals.Week => SeriesBucket.Week,
         PriceIntervals.Month => SeriesBucket.Month,
         _ => SeriesBucket.Day,
-    };
-
-    private static string AssetTypeText(AssetType type) => type switch
-    {
-        AssetType.Equity => "equity",
-        AssetType.Etf => "etf",
-        _ => "other",
     };
 }

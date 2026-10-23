@@ -298,6 +298,34 @@ public sealed class EdgarProviderTests
         (await broken.GetProfileAsync("AAPL", CancellationToken.None)).IsSuccess.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("BRK.B")]
+    [InlineData("BRK-B")]
+    public async Task AShareClassWrittenWithAStopOrADash_FindsTheCompany_WhichTheRegistryWritesWithADash(string ticker)
+    {
+        (EdgarProvider provider, EdgarFixtures.StubHandler handler, _, _) = Build(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/files/company_tickers.json" => EdgarFixtures.Json("{\"0\":{\"cik_str\":320193,\"ticker\":\"AAPL\",\"title\":\"Apple Inc.\"},\"1\":{\"cik_str\":1067983,\"ticker\":\"BRK-B\",\"title\":\"BERKSHIRE HATHAWAY INC\"}}"),
+            "/submissions/CIK0001067983.json" => EdgarFixtures.Json(EdgarFixtures.Read("submissions-aapl.synthetic.json").Replace("\"cik\": \"0000320193\"", "\"cik\": \"0001067983\"", StringComparison.Ordinal)),
+            _ => EdgarFixtures.Json("{}", HttpStatusCode.NotFound),
+        });
+
+        Result<CompanyProfile> result = await provider.GetProfileAsync(ticker, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.Requests.Select(request => request.RequestUri!.AbsolutePath).Should().Contain("/submissions/CIK0001067983.json");
+    }
+
+    [Fact]
+    public async Task ATickerTheRegistryDoesNotHaveInEitherSpelling_IsNotFound()
+    {
+        (EdgarProvider provider, _, _, _) = Build();
+
+        Result<CompanyProfile> result = await provider.GetProfileAsync("ZZZ.Z", CancellationToken.None);
+
+        result.Error!.Code.Should().Be(ProviderErrors.SymbolNotFoundCode);
+    }
+
     [Fact]
     public async Task TheRequests_KeepTheMinimumTimeApart_WaitingOnTheClock()
     {

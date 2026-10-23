@@ -181,14 +181,7 @@ public sealed partial class StockDirectory(
         _lookups.Add(1, new KeyValuePair<string, object?>("operation", operation), new KeyValuePair<string, object?>("outcome", outcome));
 
     private static StockSummary Summary(CatalogListing listing) =>
-        new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, AssetTypeText(listing.AssetType));
-
-    private static string AssetTypeText(AssetType type) => type switch
-    {
-        AssetType.Equity => "equity",
-        AssetType.Etf => "etf",
-        _ => "other",
-    };
+        new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, listing.AssetType.ToText());
 
     // The providers that serve at least one enabled market, each once (one provider usually serves several markets).
     private List<IMarketDataProvider> EnabledProviders()
@@ -218,7 +211,7 @@ public sealed partial class StockDirectory(
 
         Result<Stock> stock = BuildStock(listing, mic.Value, StockId.Create(Guid.Empty), clock.GetUtcNow());
         return stock.IsSuccess
-            ? new StockCandidate(stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType))
+            ? new StockCandidate(stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, stock.Value.AssetType.ToText())
             : null;
     }
 
@@ -291,6 +284,6 @@ public sealed partial class StockDirectory(
             await registration.ReleaseAsync(cancellationToken);
         }
 
-        return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, AssetTypeText(stock.Value.AssetType));
+        return new StockSummary(id.Value, stock.Value.Market.Value, stock.Value.Ticker.Value, stock.Value.Name, stock.Value.Currency.Value, stock.Value.AssetType.ToText());
     }
 }

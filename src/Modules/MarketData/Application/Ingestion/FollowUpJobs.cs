@@ -45,11 +45,27 @@ public sealed partial class FollowUpJobs(IJobEnqueuer jobs, IOptions<IngestionOp
         }
 
         string key = ContinuationKey(currentJobKey, waitsSoFar + 1);
-        // A spread that depends on the job, not on chance: the same job always waits the same extra seconds, and different jobs differ.
-        double jitter = settings.RateLimitJitterSeconds == 0 ? 0 : (uint)HashCode.Combine(key) % (settings.RateLimitJitterSeconds + 1);
+        // A spread that depends on the job, not on chance: the same job always waits the same extra seconds, in any process, and different jobs differ.
+        double jitter = settings.RateLimitJitterSeconds == 0 ? 0 : StableHash(key) % (uint)(settings.RateLimitJitterSeconds + 1);
         TimeSpan wait = (ProviderErrors.RetryAfter(error) ?? TimeSpan.FromSeconds(60)) + TimeSpan.FromSeconds(jitter);
         await jobs.EnqueueAsync(key, continuation, new JobEnqueueOptions(AvailableAt: clock.GetUtcNow() + wait, MaxAttempts: maxAttempts), cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// FNV-1a over the UTF-8 bytes of <paramref name="text"/>. Not <see cref="HashCode"/> and not <c>string.GetHashCode</c>: those are seeded for each process, so the
+    /// same job would wait another number of seconds after a restart or on another replica.
+    /// </summary>
+    public static uint StableHash(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        uint hash = 2166136261;
+        foreach (byte value in System.Text.Encoding.UTF8.GetBytes(text))
+        {
+            hash = unchecked((hash ^ value) * 16777619);
+        }
+
+        return hash;
     }
 
     /// <summary>Queues the first backfill of a listing that has no history yet. Asking twice queues it once.</summary>

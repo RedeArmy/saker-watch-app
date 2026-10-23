@@ -8,6 +8,7 @@ using SakerWatch.BuildingBlocks.Kernel.Time;
 using SakerWatch.MarketData.Contracts;
 using SakerWatch.Watchlist.Application;
 using SakerWatch.Watchlist.Application.Features.Portfolios;
+using SakerWatch.Watchlist.Domain;
 using SakerWatch.Watchlist.Domain.Portfolios;
 
 namespace SakerWatch.Watchlist.Tests;
@@ -82,6 +83,9 @@ public sealed class PortfolioUseCaseTests
         public Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult(Portfolios.TryGetValue(id, out Portfolio? p) && p.UserId == userId ? new PortfolioSummary(p, Members.GetValueOrDefault(id)?.Count ?? 0) : null);
 
+        public Task<bool> ExistsAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
+            Task.FromResult(Portfolios.TryGetValue(id, out Portfolio? p) && p.UserId == userId);
+
         public Task<PortfolioWrite> AddAsync(Portfolio portfolio, CancellationToken cancellationToken)
         {
             if (ForcedAdd is { } forced)
@@ -151,10 +155,20 @@ public sealed class PortfolioUseCaseTests
 
         public Task<DeletionPreview> PreviewDeletionAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) => Task.FromResult(Preview);
 
-        public Task<bool> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, CancellationToken cancellationToken)
+        public string? TokenSeen { get; private set; }
+
+        public bool Changed { get; set; }
+
+        public Task<PortfolioDelete> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, string? expectedRemovalToken, CancellationToken cancellationToken)
         {
+            TokenSeen = expectedRemovalToken;
+            if (Changed)
+            {
+                return Task.FromResult(PortfolioDelete.RemovalChanged);
+            }
+
             Deleted.Add((id, removeOrphans));
-            return Task.FromResult(Portfolios.Remove(id));
+            return Task.FromResult(Portfolios.Remove(id) ? PortfolioDelete.Deleted : PortfolioDelete.NotFound);
         }
     }
 
@@ -312,6 +326,19 @@ public sealed class PortfolioUseCaseTests
     }
 
     [Fact]
+    public async Task PutItem_WhenAParallelRequestTookTheMemberOutBeforeItWasRead_IsAConflict_NotACrash()
+    {
+        (Repository repo, FakeTimeProvider clock) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        repo.ForcedMember = MemberAdd.AlreadyThere; // the add found it there; the list read afterwards no longer has it
+        var handler = new PutPortfolioItemHandler(new User(_user), new Directory(_apple), repo, Options.Create(new WatchlistOptions()), clock);
+
+        Result<PutPortfolioItemResult> result = await handler.Handle(new PutPortfolioItemCommand(portfolio.Id, "XNAS", "AAPL"), CancellationToken.None);
+
+        (result.Error!.Code, result.Error.Type).Should().Be((PortfolioErrors.ItemChanged, ErrorType.Conflict));
+    }
+
+    [Fact]
     public async Task PutItem_AsksTheRepositoryToHoldTheConfiguredLimit_NotTheCeiling()
     {
         (Repository repo, FakeTimeProvider clock) = World();
@@ -382,16 +409,19 @@ public sealed class PortfolioUseCaseTests
     {
         (Repository repo, _) = World();
         PortfolioView portfolio = await CreateAsync(repo);
-        var handler = new ReorderPortfolioItemsHandler(new User(_user), new Directory(_apple, _cola), repo);
+        repo.Members[PortfolioId.Create(portfolio.Id)] = [new PortfolioMember(_apple.Id, 0, _now), new PortfolioMember(_cola.Id, 1, _now)];
+        var handler = new ReorderPortfolioItemsHandler(new User(_user), new Market(_apple, _cola), repo);
 
         Result accepted = await handler.Handle(new ReorderPortfolioItemsCommand(portfolio.Id, [new StockKey("XNYS", "KO"), new StockKey("XNAS", "AAPL")]), CancellationToken.None);
         Result unknown = await handler.Handle(new ReorderPortfolioItemsCommand(portfolio.Id, [new StockKey("XNAS", "ZZZZ")]), CancellationToken.None);
+        Result notInThePortfolio = await handler.Handle(new ReorderPortfolioItemsCommand(portfolio.Id, [new StockKey("XNAS", "MSFT")]), CancellationToken.None);
         repo.OrderAccepted = false;
         Result refused = await handler.Handle(new ReorderPortfolioItemsCommand(portfolio.Id, [new StockKey("XNAS", "AAPL")]), CancellationToken.None);
         Result missing = await handler.Handle(new ReorderPortfolioItemsCommand(Guid.CreateVersion7(), []), CancellationToken.None);
 
         accepted.IsSuccess.Should().BeTrue();
         unknown.Error!.Code.Should().Be(PortfolioErrors.OrderMismatch);
+        notInThePortfolio.Error!.Code.Should().Be(PortfolioErrors.OrderMismatch);
         refused.Error!.Code.Should().Be(PortfolioErrors.OrderMismatch);
         missing.Error!.Code.Should().Be(PortfolioErrors.NotFound);
     }
@@ -421,13 +451,55 @@ public sealed class PortfolioUseCaseTests
         var handler = new DeletePortfolioHandler(new User(_user), repo);
 
         Result unconfirmed = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: false), CancellationToken.None);
-        Result confirmed = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true), CancellationToken.None);
+        Result withoutToken = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true), CancellationToken.None);
+        Result confirmed = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true, repo.Preview.Token), CancellationToken.None);
 
+        withoutToken.Error!.Code.Should().Be(PortfolioErrors.RemovalTokenRequired, "what is confirmed is exactly what was shown");
         unconfirmed.Error!.Code.Should().Be(PortfolioErrors.DeleteNeedsConfirmation);
         unconfirmed.Error.Type.Should().Be(ErrorType.Conflict);
         unconfirmed.Error.Message.Should().Contain("2 stock(s)");
         confirmed.IsSuccess.Should().BeTrue();
         repo.Deleted.Should().ContainSingle().Which.Should().Be((PortfolioId.Create(portfolio.Id), true));
+    }
+
+    [Fact]
+    public async Task Delete_WhenTheStocksToRemoveChangedSinceThePreview_IsAConflict_AndTheTokenReachesTheRepository()
+    {
+        (Repository repo, _) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        repo.Preview = new DeletionPreview([_apple.Id], 0);
+        repo.Changed = true;
+        var handler = new DeletePortfolioHandler(new User(_user), repo);
+
+        Result result = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true, "token-of-what-was-seen"), CancellationToken.None);
+
+        (result.Error!.Code, result.Error.Type).Should().Be((PortfolioErrors.RemovalChanged, ErrorType.Conflict));
+        repo.TokenSeen.Should().Be("token-of-what-was-seen");
+    }
+
+    [Fact]
+    public async Task Delete_ConfirmedWithNothingToRemove_StillChecksThatNothingAppeared()
+    {
+        (Repository repo, _) = World();
+        PortfolioView portfolio = await CreateAsync(repo);
+        repo.Preview = new DeletionPreview([], StocksKept: 1);
+        var handler = new DeletePortfolioHandler(new User(_user), repo);
+
+        Result result = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        repo.TokenSeen.Should().Be(DeletionPreview.TokenOf([]), "the caller saw nothing to remove, so a stock that appeared since must not be removed");
+    }
+
+    [Fact]
+    public void ThePreviewToken_IsTheSameForTheSameSet_InAnyOrder_AndDifferentOtherwise()
+    {
+        var one = Guid.CreateVersion7();
+        var two = Guid.CreateVersion7();
+
+        DeletionPreview.TokenOf([one, two]).Should().Be(DeletionPreview.TokenOf([two, one]));
+        DeletionPreview.TokenOf([one, two]).Should().NotBe(DeletionPreview.TokenOf([one]));
+        DeletionPreview.TokenOf([]).Should().MatchRegex("^[0-9a-f]{16}$");
     }
 
     [Fact]
@@ -562,7 +634,7 @@ public sealed class PortfolioUseCaseTests
             (await new DeletePortfolioHandler(anon, repo).Handle(new DeletePortfolioCommand(id, true), CancellationToken.None)).Error,
             (await new PutPortfolioItemHandler(anon, new Directory(), repo, Options.Create(new WatchlistOptions()), clock).Handle(new PutPortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
             (await new RemovePortfolioItemHandler(anon, new Directory(), repo).Handle(new RemovePortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
-            (await new ReorderPortfolioItemsHandler(anon, new Directory(), repo).Handle(new ReorderPortfolioItemsCommand(id, []), CancellationToken.None)).Error,
+            (await new ReorderPortfolioItemsHandler(anon, new Market(), repo).Handle(new ReorderPortfolioItemsCommand(id, []), CancellationToken.None)).Error,
         ];
 
         errors.Should().OnlyContain(e => e != null && e.Type == ErrorType.Unauthorized);
@@ -577,5 +649,13 @@ public sealed class PortfolioUseCaseTests
         new ReorderPortfoliosValidator().Validate(new ReorderPortfoliosCommand([.. Enumerable.Range(0, 101).Select(_ => Guid.CreateVersion7())])).IsValid.Should().BeFalse();
         new ReorderPortfolioItemsValidator().Validate(new ReorderPortfolioItemsCommand(Guid.CreateVersion7(), [.. Enumerable.Range(0, 101).Select(i => new StockKey("XNAS", $"T{i}"))])).IsValid.Should().BeFalse();
         new CreatePortfolioValidator().Validate(new CreatePortfolioCommand("Ok", null, Key())).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TheReorderValidators_AllowNoMoreThanTheCeilingOfWhatTheyOrder()
+    {
+        new ReorderPortfoliosValidator().Validate(new ReorderPortfoliosCommand([.. Enumerable.Range(0, LimitCeilings.Portfolios).Select(_ => Guid.CreateVersion7())])).IsValid.Should().BeTrue();
+        new ReorderPortfoliosValidator().Validate(new ReorderPortfoliosCommand([.. Enumerable.Range(0, LimitCeilings.Portfolios + 1).Select(_ => Guid.CreateVersion7())])).IsValid.Should().BeFalse();
+        new ReorderPortfolioItemsValidator().Validate(new ReorderPortfolioItemsCommand(Guid.CreateVersion7(), [.. Enumerable.Range(0, LimitCeilings.ItemsPerPortfolio + 1).Select(i => new StockKey("XNAS", $"T{i}"))])).IsValid.Should().BeFalse();
     }
 }

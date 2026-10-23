@@ -42,6 +42,9 @@ public static class ProviderErrors
     /// <summary>Code for a response that cannot be understood (a permanent failure).</summary>
     public const string InvalidResponseCode = "marketdata.provider.invalid_response";
 
+    /// <summary>Code for a series that the provider cut at its row limit: the oldest rows came and the newest did not (a permanent failure of that listing).</summary>
+    public const string TruncatedSeriesCode = "marketdata.provider.series_truncated";
+
     private const string _retryAfterKey = "retry_after_seconds";
 
     /// <summary>The call budget is used up; <paramref name="retryAfter"/> is how long the provider asked to wait, when it said.</summary>
@@ -67,6 +70,10 @@ public static class ProviderErrors
     /// <summary>The response is malformed or not what the contract says.</summary>
     public static Error InvalidResponse(string provider) =>
         Error.Failure(InvalidResponseCode, $"{provider} returned a response that could not be understood.");
+
+    /// <summary>The provider cut the series at its row limit, so what came is the oldest part and the latest days are missing; storing it would look like a successful load.</summary>
+    public static Error TruncatedSeries(string provider) =>
+        Error.Failure(TruncatedSeriesCode, $"{provider} returned a series cut at its row limit; the latest days are missing.");
 
     /// <summary>Maps an error to the reaction ingestion should have.</summary>
     public static ProviderFailureKind Classify(Error error)

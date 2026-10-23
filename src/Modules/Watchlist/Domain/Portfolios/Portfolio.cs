@@ -51,6 +51,12 @@ public sealed class PortfolioName : ValueObject
             : new PortfolioName(trimmed);
     }
 
+    /// <summary>
+    /// Rebuilds a name from storage without checking it again: it was valid when written and the database repeats the checks. A rule that later becomes
+    /// stricter must not make the rows already stored unreadable, which would fail every listing of the user.
+    /// </summary>
+    public static PortfolioName Restore(string stored) => new(stored);
+
     /// <inheritdoc />
     public override string ToString() => Value;
 
@@ -132,8 +138,14 @@ public sealed class Portfolio : AggregateRoot<PortfolioId>
     public static Result<string?> NormalizeDescription(string? description)
     {
         string? trimmed = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
-        return trimmed is { Length: > MaxDescriptionLength }
-            ? Error.Validation("watchlist.portfolio.description_too_long", $"A description has at most {MaxDescriptionLength} characters.")
+        if (trimmed is { Length: > MaxDescriptionLength })
+        {
+            return Error.Validation("watchlist.portfolio.description_too_long", $"A description has at most {MaxDescriptionLength} characters.");
+        }
+
+        // A NUL cannot be stored in text (it would end in a database error and a 500); line breaks and tabs are what a description has.
+        return trimmed is not null && trimmed.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t'))
+            ? Error.Validation("watchlist.portfolio.description_invalid", "A description cannot contain control characters.")
             : Result.Success(trimmed);
     }
 

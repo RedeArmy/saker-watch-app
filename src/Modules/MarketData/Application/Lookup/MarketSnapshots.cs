@@ -88,12 +88,7 @@ public sealed class MarketSnapshots(
     private static StockId[] ToIds(IReadOnlyCollection<Guid> ids) => [.. ids.Distinct().Select(StockId.Create)];
 
     private static StockSummary Summary(CatalogListing listing) =>
-        new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, listing.AssetType switch
-        {
-            AssetType.Equity => "equity",
-            AssetType.Etf => "etf",
-            _ => "other",
-        });
+        new(listing.Id.Value, listing.Market.Value, listing.Ticker.Value, listing.Name, listing.Currency.Value, listing.AssetType.ToText());
 
     private static WindowSnapshot Window(WindowPerformance window) => new(Code(window.Window), window.Change?.Fraction, window.Baseline?.Date, window.Gap is { } gap ? Reason(gap) : null);
 

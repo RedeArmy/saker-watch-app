@@ -49,6 +49,8 @@ public sealed class GetSparklinesTests
         public Task<PortfolioSummary?> FindAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) =>
             Task.FromResult(known == id.Value ? new PortfolioSummary(Portfolio.Create(id, userId, "P", null, 0, _now).Value, members.Length) : null);
 
+        public Task<bool> ExistsAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) => Task.FromResult(known == id.Value);
+
         public Task<PortfolioWrite> AddAsync(Portfolio portfolio, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<PortfolioWrite> UpdateAsync(Portfolio portfolio, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -66,7 +68,7 @@ public sealed class GetSparklinesTests
 
         public Task<DeletionPreview> PreviewDeletionAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<PortfolioDelete> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, string? expectedRemovalToken, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class Market : IMarketSnapshots

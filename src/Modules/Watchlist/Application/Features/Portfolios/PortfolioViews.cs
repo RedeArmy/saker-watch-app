@@ -55,6 +55,15 @@ public static class PortfolioErrors
     /// <summary>The delete would take stocks off the watchlist and was not confirmed.</summary>
     public const string DeleteNeedsConfirmation = "watchlist.portfolio.delete_requires_confirmation";
 
+    /// <summary>A parallel request changed the membership that this request was answering about.</summary>
+    public const string ItemChanged = "watchlist.portfolio.item_changed";
+
+    /// <summary>A confirmed delete did not carry the token of the deletion preview.</summary>
+    public const string RemovalTokenRequired = "watchlist.portfolio.removal_token_required";
+
+    /// <summary>The stocks that the delete would take off the watchlist changed after the caller looked.</summary>
+    public const string RemovalChanged = "watchlist.portfolio.removal_changed";
+
     /// <summary>The list given to reorder is not exactly what exists.</summary>
     public const string OrderMismatch = "watchlist.order_mismatch";
 

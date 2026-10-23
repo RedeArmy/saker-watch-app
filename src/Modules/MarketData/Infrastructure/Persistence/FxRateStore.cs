@@ -67,6 +67,44 @@ public sealed class FxRateStore(DbSession session) : IFxRateStore
     }
 
     /// <inheritdoc />
+    public async Task<(FxRate? Direct, FxRate? Inverse)> OnOrBeforeBothWaysAsync(CurrencyCode from, CurrencyCode to, DateOnly date, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(to);
+
+        await using NpgsqlCommand command = Command(
+            """
+            SELECT DISTINCT ON (base) base, as_of_date, rate, source FROM marketdata.fx_rates
+            WHERE ((base = @from AND quote = @to) OR (base = @to AND quote = @from)) AND as_of_date <= @date
+            ORDER BY base, as_of_date DESC, source
+            """);
+        command.Parameters.AddWithValue("from", from.Value);
+        command.Parameters.AddWithValue("to", to.Value);
+        command.Parameters.Add(new NpgsqlParameter("date", NpgsqlDbType.Date) { Value = date });
+
+        FxRate? direct = null;
+        FxRate? inverse = null;
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            bool isDirect = reader.GetString(0) == from.Value;
+            FxRate rate = isDirect
+                ? FxRate.Create(from, to, reader.GetFieldValue<DateOnly>(1), reader.GetDecimal(2), reader.GetString(3)).Value
+                : FxRate.Create(to, from, reader.GetFieldValue<DateOnly>(1), reader.GetDecimal(2), reader.GetString(3)).Value;
+            if (isDirect)
+            {
+                direct = rate;
+            }
+            else
+            {
+                inverse = rate;
+            }
+        }
+
+        return (direct, inverse);
+    }
+
+    /// <inheritdoc />
     public async Task<DateOnly?> LatestDateAsync(CurrencyCode baseCurrency, CurrencyCode quote, string source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(baseCurrency);

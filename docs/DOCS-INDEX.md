@@ -111,6 +111,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0046-pre-authentication-limiter-charges-refused-requests.md | ADR 0046 | Eder | draft | 2 | 2026-10-22 |
 | docs/adr/0047-registration-accounting-portfolio-limit-and-calculation-version.md | ADR 0047 | Eder | draft | 2 | 2026-10-22 |
 | docs/adr/0048-warming-the-performance-windows-and-the-number-of-api-processes.md | ADR 0048 | Eder | draft | 2 | 2026-10-22 |
+| docs/adr/0049-smaller-decisions-of-the-phase-2-review.md | ADR 0049 | Eder | draft | 2 | 2026-10-22 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-22 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-21 |

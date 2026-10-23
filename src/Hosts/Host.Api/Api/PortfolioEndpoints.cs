@@ -35,7 +35,8 @@ public sealed record PortfolioDetailResponse(PortfolioResponse Portfolio, IReadO
 /// <param name="Portfolio">The portfolio.</param>
 /// <param name="StocksToRemove">Stocks in this portfolio and in no other: they would leave the watchlist, with their notes and targets.</param>
 /// <param name="StocksKept">How many of its stocks would stay because another portfolio holds them too.</param>
-public sealed record PortfolioDeletionPreviewResponse(PortfolioResponse Portfolio, IReadOnlyList<WatchlistStockResponse> StocksToRemove, int StocksKept);
+/// <param name="RemovalToken">A token of exactly these stocks: send it as <c>removalToken</c> with <c>confirm=true</c> to delete the portfolio and remove them.</param>
+public sealed record PortfolioDeletionPreviewResponse(PortfolioResponse Portfolio, IReadOnlyList<WatchlistStockResponse> StocksToRemove, int StocksKept, string RemovalToken);
 
 /// <summary>A stock and its change over a window.</summary>
 /// <param name="Stock">The stock.</param>
@@ -200,10 +201,11 @@ internal static class PortfolioEndpoints
         v1.MapDelete("/portfolios/{id:guid}", DeleteAsync)
             .WithName("DeletePortfolio")
             .WithSummary("Delete a portfolio")
-            .WithDescription("Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true; without it the answer is 409 and nothing changes (see the deletion preview). A portfolio that is already gone is not an error: the answer is 204.")
+            .WithDescription("Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true and the removalToken of the deletion preview; without confirm the answer is 409 and nothing changes, and if the stocks that would leave are not the ones of that token (one was put in the portfolio since) the answer is 409 too and nothing is deleted. A portfolio that is already gone is not an error: the answer is 204.")
             .WithTags(_tag)
             .ExemptFromIdempotencyKey("A DELETE is idempotent by nature: deleting twice leaves the same state and the same 204.")
             .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -323,12 +325,14 @@ internal static class PortfolioEndpoints
     {
         var result = await sender.Send(new PreviewPortfolioDeletionQuery(id), cancellationToken);
         return result.ToHttpResult(preview => TypedResults.Ok(new PortfolioDeletionPreviewResponse(
-            ToResponse(preview.Portfolio), [.. preview.StocksToRemove.Select(ToResponse)], preview.StocksKept)));
+            ToResponse(preview.Portfolio), [.. preview.StocksToRemove.Select(ToResponse)], preview.StocksKept, preview.RemovalToken)));
     }
 
-    private static async Task<IResult> DeleteAsync(Guid id, ISender sender, CancellationToken cancellationToken, bool confirm = false)
+    private static async Task<IResult> DeleteAsync(Guid id, ISender sender, CancellationToken cancellationToken,
+        [System.ComponentModel.Description("True to accept that the stocks listed by the deletion preview leave the watchlist.")] bool confirm = false,
+        [System.ComponentModel.Description("The removalToken of the deletion preview, with confirm=true: exactly the stocks that were shown are the ones removed.")] string? removalToken = null)
     {
-        var result = await sender.Send(new DeletePortfolioCommand(id, confirm), cancellationToken);
+        var result = await sender.Send(new DeletePortfolioCommand(id, confirm, removalToken), cancellationToken);
         return result.ToHttpResult();
     }
 

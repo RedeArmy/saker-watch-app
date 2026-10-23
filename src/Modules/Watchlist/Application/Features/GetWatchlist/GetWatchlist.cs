@@ -176,14 +176,15 @@ public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepo
         IOrderedEnumerable<(WatchlistItem Item, StockSummary Stock)> ordered;
         if (sort is "ticker" or "name" or "market" or "createdAt")
         {
-            Func<(WatchlistItem Item, StockSummary Stock), IComparable> key = sort switch
+            // Text is compared ordinally and not by the culture of the host: with the culture a ticker such as BRK.B sorts before or after BRKA depending on the
+            // ICU data of the machine, and the order, the split into pages and the ETag would differ between environments.
+            ordered = sort switch
             {
-                "name" => pair => pair.Stock.Name.ToUpperInvariant(),
-                "market" => pair => pair.Stock.Market,
-                "createdAt" => pair => pair.Item.CreatedAt,
-                _ => pair => pair.Stock.Ticker,
+                "name" => Sorted(candidates, pair => pair.Stock.Name.ToUpperInvariant(), StringComparer.Ordinal, descending),
+                "market" => Sorted(candidates, pair => pair.Stock.Market, StringComparer.Ordinal, descending),
+                "createdAt" => Sorted(candidates, pair => pair.Item.CreatedAt, Comparer<DateTimeOffset>.Default, descending),
+                _ => Sorted(candidates, pair => pair.Stock.Ticker, StringComparer.Ordinal, descending),
             };
-            ordered = descending ? candidates.OrderByDescending(key) : candidates.OrderBy(key);
         }
         else
         {
@@ -194,6 +195,10 @@ public sealed class GetWatchlistHandler(ICurrentUser currentUser, IWatchlistRepo
 
         return [.. ordered.ThenBy(pair => pair.Stock.Ticker, StringComparer.Ordinal).ThenBy(pair => pair.Stock.Market, StringComparer.Ordinal)];
     }
+
+    private static IOrderedEnumerable<(WatchlistItem Item, StockSummary Stock)> Sorted<TKey>(
+        List<(WatchlistItem Item, StockSummary Stock)> candidates, Func<(WatchlistItem Item, StockSummary Stock), TKey> key, IComparer<TKey> comparer, bool descending) =>
+        descending ? candidates.OrderByDescending(key, comparer) : candidates.OrderBy(key, comparer);
 
     private static decimal? ValueOf(StockSnapshot? snapshot, string sort)
     {

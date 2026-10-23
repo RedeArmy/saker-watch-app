@@ -55,7 +55,8 @@ public sealed class Shares : ValueObject
         try
         {
             decimal quotient = amount.Amount / unitPrice.Amount;
-            return quotient == 0m && amount.IsPositive
+            // What is shown is cut at six decimals: a quantity that would be shown as zero is not a purchase of a part of a share, however positive it is.
+            return amount.IsPositive && Math.Round(quotient, DisplayDecimals, MidpointRounding.ToZero) == 0m
                 ? Error.Validation(MoneyErrors.SharesInvalid, "The amount is too small to buy any part of a share.")
                 : Create(quotient);
         }

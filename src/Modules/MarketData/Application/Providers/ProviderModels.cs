@@ -32,7 +32,8 @@ public sealed record ProviderListing(ProviderListingKey Key, string? Name, strin
 /// <param name="To">Last day wanted, or <see langword="null"/> for the latest.</param>
 /// <param name="Adjusted">True for prices adjusted for splits and dividends, false for the raw prices.</param>
 /// <param name="Lane">Whose budget the call spends (ADR-0043); the scheduled refresh by default.</param>
-public sealed record DailySeriesRequest(ProviderListingKey Key, DateOnly? From, DateOnly? To, bool Adjusted, CallLane Lane = CallLane.Scheduled);
+/// <param name="Prepaid">True when the caller already reserved the credits of this call with <see cref="IMarketDataProvider.ReserveDailyAsync"/>, so the provider does not spend them again.</param>
+public sealed record DailySeriesRequest(ProviderListingKey Key, DateOnly? From, DateOnly? To, bool Adjusted, CallLane Lane = CallLane.Scheduled, bool Prepaid = false);
 
 /// <summary>
 /// Whose share of a provider's daily credits a call spends (ADR-0043). The scheduled refresh keeps the credits that on-demand work cannot touch:

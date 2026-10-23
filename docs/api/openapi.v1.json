@@ -1693,7 +1693,7 @@
           "Portfolios"
         ],
         "summary": "Delete a portfolio",
-        "description": "Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true; without it the answer is 409 and nothing changes (see the deletion preview). A portfolio that is already gone is not an error: the answer is 204.",
+        "description": "Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true and the removalToken of the deletion preview; without confirm the answer is 409 and nothing changes, and if the stocks that would leave are not the ones of that token (one was put in the portfolio since) the answer is 409 too and nothing is deleted. A portfolio that is already gone is not an error: the answer is 204.",
         "operationId": "DeletePortfolio",
         "parameters": [
           {
@@ -1709,16 +1709,34 @@
           {
             "name": "confirm",
             "in": "query",
-            "description": "",
+            "description": "True to accept that the stocks listed by the deletion preview leave the watchlist.",
             "schema": {
               "type": "boolean",
               "default": false
+            }
+          },
+          {
+            "name": "removalToken",
+            "in": "query",
+            "description": "The removalToken of the deletion preview, with confirm=true: exactly the stocks that were shown are the ones removed.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized",
@@ -2882,7 +2900,8 @@
         "required": [
           "portfolio",
           "stocksToRemove",
-          "stocksKept"
+          "stocksKept",
+          "removalToken"
         ],
         "type": "object",
         "properties": {
@@ -2905,6 +2924,10 @@
             ],
             "description": "How many of its stocks would stay because another portfolio holds them too.",
             "format": "int32"
+          },
+          "removalToken": {
+            "type": "string",
+            "description": "A token of exactly these stocks: send it as \u0060removalToken\u0060 with \u0060confirm=true\u0060 to delete the portfolio and remove them."
           }
         },
         "description": "What deleting a portfolio would do to the watchlist."

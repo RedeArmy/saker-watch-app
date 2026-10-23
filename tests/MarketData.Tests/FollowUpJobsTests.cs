@@ -179,6 +179,20 @@ public sealed class FollowUpJobsTests
         options.AvailableAt.Should().BeOnOrAfter(_now.AddSeconds(20)).And.BeOnOrBefore(_now.AddSeconds(20 + 30));
     }
 
+    [Theory]
+    [InlineData("marketdata.backfill:abc:w1", 3027854465u, 21)]
+    [InlineData("marketdata.refresh:abc:20261016:w1", 1889782234u, 7)]
+    public async Task TheJitter_IsTheSameInEveryProcess_BecauseTheHashIsNotSeeded(string key, uint hash, int jitterSeconds)
+    {
+        (FollowUpJobs waiter, Enqueuer jobs) = Build();
+        string current = key[..key.LastIndexOf(":w", StringComparison.Ordinal)];
+
+        await waiter.TryWaitAsync("p", 0, current, ProviderErrors.RateLimited("fake", TimeSpan.FromSeconds(20)), 8, CancellationToken.None);
+
+        FollowUpJobs.StableHash(key).Should().Be(hash, "FNV-1a of the key: a value that does not change from one run of the process to the next");
+        jobs.Queued.Single().Options!.AvailableAt.Should().Be(_now.AddSeconds(20 + jitterSeconds));
+    }
+
     [Fact]
     public async Task TryWait_WithoutAHintFromTheProvider_WaitsAMinute()
     {

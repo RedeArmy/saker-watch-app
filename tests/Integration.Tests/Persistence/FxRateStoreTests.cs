@@ -76,6 +76,37 @@ public sealed class FxRateStoreTests(TimescalePostgresFixture postgres) : IClass
     }
 
     [Fact]
+    public async Task OnOrBeforeBothWays_ReturnsTheNewestRateOfEachDirection_InOneRead_AndTheSameAnswersAsTwoReads()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        FxRate inverse = FxRate.Create(_gtq, _usd, new DateOnly(2026, 10, 15), 0.1308m, "other").Value;
+        await InSessionAsync(db.Worker, store => store.UpsertAsync([Rate(9, 7.6m), Rate(14, 7.63988m), Rate(14, 7.7m, "zeta"), Rate(16, 7.64572m), inverse], _now, CancellationToken.None));
+
+        (FxRate? direct, FxRate? back) = await InSessionAsync(db.Worker, store => store.OnOrBeforeBothWaysAsync(_usd, _gtq, new DateOnly(2026, 10, 15), CancellationToken.None));
+        (FxRate? twoDirect, FxRate? twoBack) = await InSessionAsync(db.Worker, async store =>
+            (await store.OnOrBeforeAsync(_usd, _gtq, new DateOnly(2026, 10, 15), CancellationToken.None), await store.OnOrBeforeAsync(_gtq, _usd, new DateOnly(2026, 10, 15), CancellationToken.None)));
+        (FxRate? fromTheOtherSide, FxRate? backFromTheOtherSide) = await InSessionAsync(db.Worker, store => store.OnOrBeforeBothWaysAsync(_gtq, _usd, new DateOnly(2026, 10, 15), CancellationToken.None));
+
+        direct.Should().Be(Rate(14, 7.63988m), "the newest on or before the day, and the source that sorts first on a tie");
+        back.Should().Be(inverse);
+        direct.Should().Be(twoDirect);
+        back.Should().Be(twoBack);
+        fromTheOtherSide.Should().Be(inverse);
+        backFromTheOtherSide.Should().Be(direct, "asked the other way round the two answers swap places");
+    }
+
+    [Fact]
+    public async Task OnOrBeforeBothWays_WithNothingStoredInEitherDirection_ReturnsNothing()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        (FxRate? direct, FxRate? inverse) = await InSessionAsync(db.Worker, store => store.OnOrBeforeBothWaysAsync(_usd, _gtq, new DateOnly(2026, 10, 15), CancellationToken.None));
+
+        direct.Should().BeNull();
+        inverse.Should().BeNull();
+    }
+
+    [Fact]
     public async Task OnOrBefore_OnADayWithoutARate_ReturnsTheEarlierOneWithItsOwnDate()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

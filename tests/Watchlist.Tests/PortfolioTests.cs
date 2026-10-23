@@ -147,4 +147,27 @@ public sealed class PortfolioTests
         new WatchlistLimits(0, 20, 100).IsWithinCeilings.Should().BeFalse();
         new WatchlistLimits(10, 2, 5).IsWithinCeilings.Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("a\u0000b")]
+    [InlineData("a\u0007b")]
+    [InlineData("a\u001bb")]
+    public void ADescriptionWithControlCharacters_IsRefused_NotLeftForTheDatabaseToFail(string description)
+    {
+        Portfolio.NormalizeDescription(description).Error!.Code.Should().Be("watchlist.portfolio.description_invalid");
+        Portfolio.Create(PortfolioId.Create(Guid.CreateVersion7()), _user, "A", description, 0, _now).Error!.Code.Should().Be("watchlist.portfolio.description_invalid");
+    }
+
+    [Fact]
+    public void ADescriptionMayHaveLineBreaksAndTabs() =>
+        Portfolio.NormalizeDescription("uno\ndos\r\n\ttres").Value.Should().Be("uno\ndos\r\n\ttres");
+
+    [Fact]
+    public void AStoredName_IsRestoredWithoutBeingCheckedAgain_SoARuleThatBecomesStricterDoesNotBreakTheRowsAlreadyThere()
+    {
+        PortfolioName restored = PortfolioName.Restore("Nombre\u0001antiguo");
+
+        restored.Value.Should().Be("Nombre\u0001antiguo");
+        PortfolioName.Create("Nombre\u0001antiguo").IsSuccess.Should().BeFalse();
+    }
 }

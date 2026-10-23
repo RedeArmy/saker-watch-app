@@ -17,4 +17,14 @@ public interface IMarketDataProvider
 
     /// <summary>Fetches daily bars. The result holds only bars that passed validation and says how many were refused.</summary>
     Task<Result<DailySeries>> GetDailyAsync(DailySeriesRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reserves the credits of <paramref name="requests"/> daily requests at once, for a caller that needs all of them or none (the adjusted and the raw series of a listing):
+    /// a call is then made with <see cref="DailySeriesRequest.Prepaid"/>. Returns the refusal (a rate limit with its wait) or <see langword="null"/>. A provider that does
+    /// not meter its calls reserves nothing.
+    /// </summary>
+    Task<Error?> ReserveDailyAsync(int requests, CallLane lane, CancellationToken cancellationToken) => Task.FromResult<Error?>(null);
+
+    /// <summary>Gives back the credits of <paramref name="requests"/> reserved requests that were never made.</summary>
+    Task ReleaseDailyAsync(int requests, CallLane lane, CancellationToken cancellationToken) => Task.CompletedTask;
 }

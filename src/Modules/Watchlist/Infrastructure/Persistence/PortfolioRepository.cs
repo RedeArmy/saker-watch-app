@@ -57,6 +57,15 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     }
 
     /// <inheritdoc />
+    public async Task<bool> ExistsAsync(Guid userId, PortfolioId id, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = Command("SELECT 1 FROM watchlist.portfolios WHERE user_id = @user AND id = @id");
+        command.Parameters.AddWithValue("user", userId);
+        command.Parameters.AddWithValue("id", id.Value);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    /// <inheritdoc />
     public Task LockOrderAsync(Guid userId, CancellationToken cancellationToken) => LockAsync(_portfoliosLockKey + userId, cancellationToken);
 
     /// <inheritdoc />
@@ -303,8 +312,10 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
     }
 
     /// <inheritdoc />
-    public async Task<bool> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, CancellationToken cancellationToken)
+    public async Task<PortfolioDelete> DeleteAsync(Guid userId, PortfolioId id, bool removeOrphans, string? expectedRemovalToken, CancellationToken cancellationToken)
     {
+        // The same lock as an add to this portfolio: while the stocks to remove are decided, none can be put in.
+        await LockAsync(_membersLockKey + id.Value, cancellationToken);
         // The portfolio row and the watchlist items it holds are locked first. A parallel request that puts one of those stocks in another
         // portfolio takes a share lock on the item through its foreign key, so it either finishes before this transaction looks, or waits for it and
         // then fails because the item is gone; the orphan check below can never miss a membership that is about to commit.
@@ -314,7 +325,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
             lockPortfolio.Parameters.AddWithValue("user", userId);
             if (await lockPortfolio.ExecuteScalarAsync(cancellationToken) is null)
             {
-                return false;
+                return PortfolioDelete.NotFound;
             }
         }
 
@@ -326,6 +337,11 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
                 lockItems.Parameters.AddWithValue("id", id.Value);
                 lockItems.Parameters.AddWithValue("user", userId);
                 await lockItems.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (expectedRemovalToken is not null && (await PreviewDeletionAsync(userId, id, cancellationToken)).Token != expectedRemovalToken)
+            {
+                return PortfolioDelete.RemovalChanged;
             }
 
             await using NpgsqlCommand orphans = Command(
@@ -343,7 +359,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
         await using NpgsqlCommand delete = Command("DELETE FROM watchlist.portfolios WHERE id = @id AND user_id = @user");
         delete.Parameters.AddWithValue("id", id.Value);
         delete.Parameters.AddWithValue("user", userId);
-        return await delete.ExecuteNonQueryAsync(cancellationToken) > 0;
+        return await delete.ExecuteNonQueryAsync(cancellationToken) > 0 ? PortfolioDelete.Deleted : PortfolioDelete.NotFound;
     }
 
     private async Task LockAsync(string key, CancellationToken cancellationToken)
@@ -377,7 +393,7 @@ public sealed class PortfolioRepository(DbSession session) : IPortfolioRepositor
             var portfolio = Portfolio.Restore(
                 PortfolioId.Create(reader.GetGuid(0)),
                 userId,
-                PortfolioName.Create(reader.GetString(1)).Value,
+                PortfolioName.Restore(reader.GetString(1)),
                 description,
                 reader.GetInt32(3),
                 reader.GetFieldValue<DateTimeOffset>(4),
