@@ -1,8 +1,10 @@
+using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using SakerWatch.Hosts.Migrator;
 using SakerWatch.Integration.Tests.Infrastructure;
+using SakerWatch.Watchlist.Domain;
 using SakerWatch.Watchlist.Infrastructure.Persistence;
 
 namespace SakerWatch.Integration.Tests.Persistence;
@@ -188,6 +190,22 @@ public sealed class WatchlistSchemaTests(TimescalePostgresFixture postgres) : IC
         await ExpectAsync(() => db.Api.AsUserExecuteAsync(user, _insertItem, Item(Guid.CreateVersion7(), user, target: 0m)), "23514", "ck_watchlist_items_target_price");
         await db.Api.AsUserExecuteAsync(user, _insertItem, Item(Guid.CreateVersion7(), user, notes: "Esperar el informe", target: 123.45678901m));
         (await db.Admin.ScalarAsync<decimal>("SELECT target_price FROM watchlist.watchlist_items")).Should().Be(123.45678901m);
+    }
+
+    [Theory]
+    [InlineData("enforce_item_limit", LimitCeilings.Items)]
+    [InlineData("enforce_portfolio_limit", LimitCeilings.Portfolios)]
+    [InlineData("enforce_portfolio_item_limit", LimitCeilings.ItemsPerPortfolio)]
+    public async Task TheNumberInEachCeilingTrigger_IsTheCeilingOfTheDomain_SoTheyCannotDrift(string function, int ceiling)
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+
+        string? body = await db.Admin.ScalarAsync<string>("SELECT prosrc FROM pg_proc WHERE proname = @name AND pronamespace = 'watchlist'::regnamespace", ("name", function));
+
+        // The options are validated against LimitCeilings (WatchlistUseCaseTests); this ties the other side, the literal the database enforces.
+        body.Should().NotBeNull("the function exists");
+        Regex.Matches(body, @">= (\d+) THEN").Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+            .Should().Equal(ceiling);
     }
 
     [Fact]
