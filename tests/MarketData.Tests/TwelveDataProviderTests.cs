@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
@@ -528,6 +529,24 @@ public sealed class TwelveDataProviderTests
         var options = new TwelveDataOptions { ApiKey = _key, OnDemandCreditsPerDay = onDemand, CreditsPerDay = perDay };
 
         new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded.Should().Be(valid);
+    }
+
+    [Theory]
+    [InlineData(1, 800, 200, false)]
+    [InlineData(2, 800, 200, true)]
+    [InlineData(7, 800, 200, true)]
+    [InlineData(8, 1, 0, false)]
+    [InlineData(8, 2, 2, true)]
+    [InlineData(8, 800, 1, false)]
+    public void Options_ABudgetThatCannotPayAHistoryIsRefused(int perMinute, int perDay, int onDemand, bool valid)
+    {
+        var options = new TwelveDataOptions { ApiKey = _key, CreditsPerMinute = perMinute, CreditsPerDay = perDay, OnDemandCreditsPerDay = onDemand };
+
+        // The range attributes are enforced by the options binder (ValidateDataAnnotations); here both layers are checked together.
+        bool annotations = Validator.TryValidateObject(options, new ValidationContext(options), null, validateAllProperties: true);
+        bool custom = new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded;
+
+        (annotations && custom).Should().Be(valid);
     }
 
     [Fact]

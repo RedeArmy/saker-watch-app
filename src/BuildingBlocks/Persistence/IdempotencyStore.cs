@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Npgsql;
 using NpgsqlTypes;
 using SakerWatch.BuildingBlocks.Application.Idempotency;
@@ -16,6 +17,7 @@ public sealed class IdempotencyStore(DbSession session) : IIdempotencyStore
     private const string _lockNotAvailable = "55P03";
 
     /// <inheritdoc />
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async Task<IdempotencyClaim> ClaimAsync(IdempotencyClaimRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);

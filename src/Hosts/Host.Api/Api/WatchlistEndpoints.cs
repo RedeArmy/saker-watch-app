@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Mvc;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Web.Http;
@@ -116,6 +117,7 @@ internal static class WatchlistEndpoints
     private const string _tag = "Watchlist";
 
     /// <summary>Maps the endpoints on the version group.</summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static void MapWatchlist(this RouteGroupBuilder v1)
     {
         v1.MapGet("/watchlist", ListAsync)

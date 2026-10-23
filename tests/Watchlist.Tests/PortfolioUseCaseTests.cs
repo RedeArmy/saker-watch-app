@@ -448,15 +448,19 @@ public sealed class PortfolioUseCaseTests
         (Repository repo, _) = World();
         PortfolioView portfolio = await CreateAsync(repo);
         repo.Preview = new DeletionPreview([_apple.Id, _cola.Id], 0);
-        var handler = new DeletePortfolioHandler(new User(_user), repo);
+        var handler = new DeletePortfolioHandler(new User(_user), repo, new Market(_apple, _cola));
 
         Result unconfirmed = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: false), CancellationToken.None);
         Result withoutToken = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true), CancellationToken.None);
         Result confirmed = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true, repo.Preview.Token), CancellationToken.None);
 
-        withoutToken.Error!.Code.Should().Be(PortfolioErrors.RemovalTokenRequired, "what is confirmed is exactly what was shown");
+        (withoutToken.Error!.Code, withoutToken.Error.Type).Should().Be((PortfolioErrors.RemovalTokenRequired, ErrorType.Conflict), "what is confirmed is exactly what was shown");
         unconfirmed.Error!.Code.Should().Be(PortfolioErrors.DeleteNeedsConfirmation);
         unconfirmed.Error.Type.Should().Be(ErrorType.Conflict);
+        // The same answer carries what would leave and the token that confirms it, so no other request is needed to learn them.
+        unconfirmed.Error.Extensions!["removalToken"].Should().Be(repo.Preview.Token);
+        ((StockSummary[])unconfirmed.Error.Extensions["stocksToRemove"]!).Select(stock => stock.Ticker).Should().Equal("AAPL", "KO");
+        withoutToken.Error.Extensions!["removalToken"].Should().Be(repo.Preview.Token);
         unconfirmed.Error.Message.Should().Contain("2 stock(s)");
         confirmed.IsSuccess.Should().BeTrue();
         repo.Deleted.Should().ContainSingle().Which.Should().Be((PortfolioId.Create(portfolio.Id), true));
@@ -469,12 +473,13 @@ public sealed class PortfolioUseCaseTests
         PortfolioView portfolio = await CreateAsync(repo);
         repo.Preview = new DeletionPreview([_apple.Id], 0);
         repo.Changed = true;
-        var handler = new DeletePortfolioHandler(new User(_user), repo);
+        var handler = new DeletePortfolioHandler(new User(_user), repo, new Market(_apple, _cola));
 
         Result result = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true, "token-of-what-was-seen"), CancellationToken.None);
 
         (result.Error!.Code, result.Error.Type).Should().Be((PortfolioErrors.RemovalChanged, ErrorType.Conflict));
         repo.TokenSeen.Should().Be("token-of-what-was-seen");
+        result.Error.Extensions!["removalToken"].Should().Be(repo.Preview.Token, "the answer has the token of what would leave now");
     }
 
     [Fact]
@@ -483,13 +488,23 @@ public sealed class PortfolioUseCaseTests
         (Repository repo, _) = World();
         PortfolioView portfolio = await CreateAsync(repo);
         repo.Preview = new DeletionPreview([], StocksKept: 1);
-        var handler = new DeletePortfolioHandler(new User(_user), repo);
+        var handler = new DeletePortfolioHandler(new User(_user), repo, new Market(_apple, _cola));
 
         Result result = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: true), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         repo.TokenSeen.Should().Be(DeletionPreview.TokenOf([]), "the caller saw nothing to remove, so a stock that appeared since must not be removed");
     }
+
+    [Theory]
+    [InlineData("0123456789abcdef", true)]
+    [InlineData("0123456789ABCDEF", false)]
+    [InlineData("0123456789abcde", false)]
+    [InlineData("0123456789abcdef0", false)]
+    [InlineData("0123456789abcdeg", false)]
+    [InlineData("0123456789abcdef\n", false)]
+    public void TheDeleteValidator_AcceptsOnlyTheFormOfAToken(string token, bool valid) =>
+        new DeletePortfolioValidator().Validate(new DeletePortfolioCommand(Guid.CreateVersion7(), true, token)).IsValid.Should().Be(valid);
 
     [Fact]
     public void ThePreviewToken_IsTheSameForTheSameSet_InAnyOrder_AndDifferentOtherwise()
@@ -508,7 +523,7 @@ public sealed class PortfolioUseCaseTests
         (Repository repo, _) = World();
         PortfolioView portfolio = await CreateAsync(repo);
         repo.Preview = new DeletionPreview([], StocksKept: 2);
-        var handler = new DeletePortfolioHandler(new User(_user), repo);
+        var handler = new DeletePortfolioHandler(new User(_user), repo, new Market(_apple, _cola));
 
         Result result = await handler.Handle(new DeletePortfolioCommand(portfolio.Id, Confirm: false), CancellationToken.None);
 
@@ -522,8 +537,8 @@ public sealed class PortfolioUseCaseTests
         (Repository repo, _) = World();
         PortfolioView portfolio = await CreateAsync(repo);
 
-        Result missing = await new DeletePortfolioHandler(new User(_user), repo).Handle(new DeletePortfolioCommand(Guid.CreateVersion7(), true), CancellationToken.None);
-        Result theirs = await new DeletePortfolioHandler(new User(Guid.CreateVersion7()), repo).Handle(new DeletePortfolioCommand(portfolio.Id, true), CancellationToken.None);
+        Result missing = await new DeletePortfolioHandler(new User(_user), repo, new Market(_apple, _cola)).Handle(new DeletePortfolioCommand(Guid.CreateVersion7(), true), CancellationToken.None);
+        Result theirs = await new DeletePortfolioHandler(new User(Guid.CreateVersion7()), repo, new Market(_apple, _cola)).Handle(new DeletePortfolioCommand(portfolio.Id, true), CancellationToken.None);
 
         (missing.IsSuccess, theirs.IsSuccess).Should().Be((true, true));
         repo.Deleted.Should().BeEmpty();
@@ -631,7 +646,7 @@ public sealed class PortfolioUseCaseTests
             (await new ListPortfoliosHandler(anon, repo).Handle(new ListPortfoliosQuery(), CancellationToken.None)).Error,
             (await new GetPortfolioHandler(anon, repo, new Market()).Handle(new GetPortfolioQuery(id), CancellationToken.None)).Error,
             (await new PreviewPortfolioDeletionHandler(anon, repo, new Market()).Handle(new PreviewPortfolioDeletionQuery(id), CancellationToken.None)).Error,
-            (await new DeletePortfolioHandler(anon, repo).Handle(new DeletePortfolioCommand(id, true), CancellationToken.None)).Error,
+            (await new DeletePortfolioHandler(anon, repo, new Market(_apple, _cola)).Handle(new DeletePortfolioCommand(id, true), CancellationToken.None)).Error,
             (await new PutPortfolioItemHandler(anon, new Directory(), repo, Options.Create(new WatchlistOptions()), clock).Handle(new PutPortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
             (await new RemovePortfolioItemHandler(anon, new Directory(), repo).Handle(new RemovePortfolioItemCommand(id, "XNAS", "AAPL"), CancellationToken.None)).Error,
             (await new ReorderPortfolioItemsHandler(anon, new Market(), repo).Handle(new ReorderPortfolioItemsCommand(id, []), CancellationToken.None)).Error,

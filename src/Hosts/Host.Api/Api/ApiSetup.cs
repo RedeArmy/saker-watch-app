@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Asp.Versioning;
 using Asp.Versioning.Builder;
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +21,7 @@ internal static class ApiSetup
     /// URL-segment versioning with the supported versions reported in <c>api-supported-versions</c>, and one OpenAPI document per
     /// version (<c>/openapi/v1.json</c>) that declares the Bearer scheme.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static IServiceCollection AddSakerApi(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -231,6 +232,7 @@ public sealed partial class StockDirectory(
         return Stock.Create(id, new NewListing(market.Value, listing.Symbol, listing.Name, currency, timeZone, listing.AssetType), now);
     }
 
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     private async Task<Result<StockSummary>> RegisterAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
     {
         if (!IsServed(market))

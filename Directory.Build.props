@@ -15,5 +15,6 @@
   </PropertyGroup>
   <ItemGroup Condition="$(MSBuildProjectDirectory.Contains('/src/'))">
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)SonarLint.xml" />
   </ItemGroup>
 </Project>

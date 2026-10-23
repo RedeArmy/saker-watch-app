@@ -248,8 +248,22 @@ public sealed class PreviewPortfolioDeletionHandler(ICurrentUser currentUser, IP
     }
 }
 
-/// <summary>Deletes the portfolio, and the stocks only it held when the caller confirmed.</summary>
-public sealed class DeletePortfolioHandler(ICurrentUser currentUser, IPortfolioRepository portfolios) : IRequestHandler<DeletePortfolioCommand, Result>
+/// <summary>Checks the form of the token of a confirmation.</summary>
+public sealed partial class DeletePortfolioValidator : AbstractValidator<DeletePortfolioCommand>
+{
+    /// <summary>Creates the validator.</summary>
+    public DeletePortfolioValidator() =>
+        RuleFor(x => x.RemovalToken).Must(token => token is null || Token().IsMatch(token)).WithMessage("The removal token is the one of the deletion preview: sixteen hex digits.");
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[0-9a-f]{16}\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial System.Text.RegularExpressions.Regex Token();
+}
+
+/// <summary>
+/// Deletes the portfolio, and the stocks only it held when the caller confirmed. A delete that cannot go ahead because the caller has not yet named what would
+/// leave the watchlist answers with that very list and its token, in the same response, so the confirmation takes one request more and not two (ADR-0049).
+/// </summary>
+public sealed class DeletePortfolioHandler(ICurrentUser currentUser, IPortfolioRepository portfolios, IMarketSnapshots market) : IRequestHandler<DeletePortfolioCommand, Result>
 {
     /// <inheritdoc />
     public async ValueTask<Result> Handle(DeletePortfolioCommand request, CancellationToken cancellationToken)
@@ -268,16 +282,20 @@ public sealed class DeletePortfolioHandler(ICurrentUser currentUser, IPortfolioR
         DeletionPreview preview = await portfolios.PreviewDeletionAsync(userId, id, cancellationToken);
         if (preview.StocksToRemove.Count > 0 && !request.Confirm)
         {
-            return Error.Conflict(
+            return await NamedAsync(
                 PortfolioErrors.DeleteNeedsConfirmation,
-                $"Deleting this portfolio removes {preview.StocksToRemove.Count} stock(s) from your watchlist. Review them with the deletion preview and repeat the request with confirm=true.");
+                $"Deleting this portfolio removes {preview.StocksToRemove.Count} stock(s) from your watchlist. Repeat the request with confirm=true and the removalToken of this answer to accept exactly these.",
+                preview,
+                cancellationToken);
         }
 
         if (request.Confirm && request.RemovalToken is null && preview.StocksToRemove.Count > 0)
         {
-            return Error.Validation(
+            return await NamedAsync(
                 PortfolioErrors.RemovalTokenRequired,
-                "A confirmed delete carries the removalToken of the deletion preview, so that exactly the stocks you saw are the ones removed.");
+                "A confirmed delete carries the removalToken of the stocks it removes, so that exactly the stocks you saw are the ones removed. This answer has them and the token.",
+                preview,
+                cancellationToken);
         }
 
         // A confirmation is of the set the caller saw. Without a token, and with nothing to remove when it was looked at, it is of the empty set: a stock put in the
@@ -285,7 +303,19 @@ public sealed class DeletePortfolioHandler(ICurrentUser currentUser, IPortfolioR
         string? expected = request.Confirm ? request.RemovalToken ?? DeletionPreview.TokenOf([]) : null;
         PortfolioDelete deleted = await portfolios.DeleteAsync(userId, id, removeOrphans: request.Confirm, expected, cancellationToken);
         return deleted == PortfolioDelete.RemovalChanged
-            ? Error.Conflict(PortfolioErrors.RemovalChanged, "The stocks that would leave your watchlist changed since you looked. Review the deletion preview again.")
+            ? await NamedAsync(
+                PortfolioErrors.RemovalChanged,
+                "The stocks that would leave your watchlist changed since you looked. This answer has the ones that would leave now and their token.",
+                await portfolios.PreviewDeletionAsync(userId, id, cancellationToken),
+                cancellationToken)
             : Result.Success();
+    }
+
+    // The conflict that carries what would leave (by ticker) and the token that confirms exactly that.
+    private async Task<Error> NamedAsync(string code, string message, DeletionPreview preview, CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<Guid, StockSummary> stocks = await market.FindManyAsync(preview.StocksToRemove, cancellationToken);
+        StockSummary[] toRemove = [.. preview.StocksToRemove.Where(stocks.ContainsKey).Select(stockId => stocks[stockId]).OrderBy(stock => stock.Ticker, StringComparer.Ordinal)];
+        return Error.Conflict(code, message, new Dictionary<string, object?> { ["stocksToRemove"] = toRemove, ["removalToken"] = preview.Token });
     }
 }

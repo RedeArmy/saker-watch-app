@@ -106,20 +106,12 @@ public sealed partial class JobProcessor
         return true;
     }
 
-    // About fifty lines, over the soft limit of forty: each catch is one distinct outcome of an attempt (lease lost, payload refused, worker stopping, lease lost
-    // while cancelled, any other failure) and the finally records it; what each outcome does is in the small methods below.
     private async Task RunAsync(ClaimedJob job, CancellationToken cancellationToken)
     {
         await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
-        var session = scope.ServiceProvider.GetRequiredService<DbSession>();
         using var leaseToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var stopHeartbeat = new CancellationTokenSource();
-        int lost = 0;
-        Task heartbeat = HeartbeatAsync(job, () =>
-        {
-            Volatile.Write(ref lost, 1);
-            leaseToken.Cancel();
-        }, stopHeartbeat.Token);
+        Task heartbeat = HeartbeatAsync(job, leaseToken.Cancel, stopHeartbeat.Token);
 
         using Activity? activity = StartSpan(job);
         long start = _timeProvider.GetTimestamp();
@@ -127,38 +119,52 @@ public sealed partial class JobProcessor
         string? outcome = null;
         try
         {
-            await RunHandlerAsync(job, scope.ServiceProvider, session, leaseToken.Token);
-            outcome = "success";
-        }
-        catch (LeaseLostException)
-        {
-            outcome = await LeaseLostAsync(job, session);
-        }
-        catch (JobPayloadException ex)
-        {
-            outcome = await FailedAsync(job, session, ex, permanent: true);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // The worker is stopping: undo the attempt, hand the job back, and let the stop proceed.
-            await session.RollbackAsync(CancellationToken.None);
-            await ReleaseAsync(job);
-            outcome = "released";
-            throw;
-        }
-        catch (OperationCanceledException) when (Volatile.Read(ref lost) == 1)
-        {
-            outcome = await LeaseLostAsync(job, session);
-        }
-        catch (Exception ex)
-        {
-            outcome = await FailedAsync(job, session, ex, permanent: false);
+            outcome = await AttemptAsync(job, scope.ServiceProvider, leaseToken.Token, cancellationToken);
         }
         finally
         {
             await stopHeartbeat.CancelAsync();
             await heartbeat;
             Record(job, outcome ?? "error", start);
+        }
+
+        // The worker is stopping and the job was handed back: let the stop proceed.
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    // Each catch is one distinct outcome of an attempt: lease lost, payload refused, worker stopping, lease lost while cancelled, any other failure.
+    // Returns the outcome to record; "released" means the worker is stopping.
+    private async Task<string> AttemptAsync(ClaimedJob job, IServiceProvider services, CancellationToken leaseToken, CancellationToken stopToken)
+    {
+        var session = services.GetRequiredService<DbSession>();
+        try
+        {
+            await RunHandlerAsync(job, services, session, leaseToken);
+            return "success";
+        }
+        catch (LeaseLostException)
+        {
+            return await LeaseLostAsync(job, session);
+        }
+        catch (JobPayloadException ex)
+        {
+            return await FailedAsync(job, session, ex, permanent: true);
+        }
+        catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+        {
+            // Undo the attempt and hand the job back.
+            await session.RollbackAsync(CancellationToken.None);
+            await ReleaseAsync(job);
+            return "released";
+        }
+        catch (OperationCanceledException) when (leaseToken.IsCancellationRequested)
+        {
+            // Only the heartbeat cancels the lease token besides the stop, and the stop was ruled out above.
+            return await LeaseLostAsync(job, session);
+        }
+        catch (Exception ex)
+        {
+            return await FailedAsync(job, session, ex, permanent: false);
         }
     }
 

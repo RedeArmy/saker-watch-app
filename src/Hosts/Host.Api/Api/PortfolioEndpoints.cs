@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Web.Http;
 using SakerWatch.BuildingBlocks.Web.Idempotency;
@@ -93,6 +94,7 @@ internal static class PortfolioEndpoints
     private const string _json = "application/json";
 
     /// <summary>Maps the endpoints on the version group.</summary>
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Declarative composition: one registration per line, nothing to branch on; splitting it would only scatter the list.")]
     public static void MapPortfolios(this RouteGroupBuilder v1)
     {
         v1.MapPost("/portfolios", CreateAsync)
@@ -201,7 +203,7 @@ internal static class PortfolioEndpoints
         v1.MapDelete("/portfolios/{id:guid}", DeleteAsync)
             .WithName("DeletePortfolio")
             .WithSummary("Delete a portfolio")
-            .WithDescription("Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true and the removalToken of the deletion preview; without confirm the answer is 409 and nothing changes, and if the stocks that would leave are not the ones of that token (one was put in the portfolio since) the answer is 409 too and nothing is deleted. A portfolio that is already gone is not an error: the answer is 204.")
+            .WithDescription("Deletes the portfolio. When stocks would be left in no portfolio they leave the watchlist as well, so the request must carry confirm=true and the removalToken of exactly those stocks. Without them the answer is 409 and nothing changes, and the answer itself lists the stocks that would leave (stocksToRemove) and the removalToken that confirms them, so the confirmation needs no other request; if the stocks that would leave are not the ones of the token (one was put in the portfolio since) the answer is 409 too, with the current list and token, and nothing is deleted. A removalToken that is not sixteen hex digits is a 400. A portfolio that is already gone is not an error: the answer is 204.")
             .WithTags(_tag)
             .ExemptFromIdempotencyKey("A DELETE is idempotent by nature: deleting twice leaves the same state and the same 204.")
             .Produces(StatusCodes.Status204NoContent)

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.MarketData.Application.Ingestion;
@@ -36,6 +37,7 @@ public sealed class PriceHistory(
     public const int MaxRecentDays = 250;
 
     /// <inheritdoc />
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async Task<Result<PriceSeries>> SeriesAsync(string market, string ticker, string range, string interval, CancellationToken cancellationToken)
     {
         string wantedRange = (range ?? string.Empty).Trim().ToUpperInvariant();

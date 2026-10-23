@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using SakerWatch.BuildingBlocks.Application.Messaging;
 using SakerWatch.BuildingBlocks.Kernel.Monetary;
@@ -84,6 +85,7 @@ public sealed class CalculatePartialPurchaseHandler(IStockDirectory stocks, IMar
     private static readonly CurrencyCode _quetzal = CurrencyCode.Parse("GTQ");
 
     /// <inheritdoc />
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async ValueTask<Result<PartialPurchaseView>> Handle(CalculatePartialPurchaseQuery request, CancellationToken cancellationToken)
     {
         // The request is read first: a shares request with too many decimals never costs a database read.

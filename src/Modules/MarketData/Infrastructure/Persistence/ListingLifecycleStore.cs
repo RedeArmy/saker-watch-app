@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Npgsql;
 using SakerWatch.BuildingBlocks.Persistence;
 using SakerWatch.MarketData.Application.Lifecycle;
@@ -53,6 +54,7 @@ public sealed class ListingLifecycleStore(DbSession session) : IListingLifecycle
     }
 
     /// <inheritdoc />
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     public async Task<RenameOutcome> RenameAsync(TickerChange change, DateOnly on, string providerSymbol, DateTimeOffset at, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(change);

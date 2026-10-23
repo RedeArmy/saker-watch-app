@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,7 @@ public sealed partial class ClavarisAuthProvider : IAuthProvider, IDisposable
         return result;
     }
 
+    [SuppressMessage("Major Code Smell", "S138:Functions should not have too many lines of code", Justification = "Predates the size rule (ADR-0049): split it the next time it changes.")]
     private async Task<AuthResult> ValidateAsync(string accessToken, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(accessToken) || accessToken.Length > _maxTokenLength)

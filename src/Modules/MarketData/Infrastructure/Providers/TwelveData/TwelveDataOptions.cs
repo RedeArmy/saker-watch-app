@@ -24,17 +24,20 @@ public sealed class TwelveDataOptions
     /// <summary>The API key, sent in the <c>Authorization</c> header and never in a URL.</summary>
     public string? ApiKey { get; set; }
 
-    /// <summary>Credits per minute the plan allows. The free Basic plan allows 8; set a lower number to keep a margin.</summary>
-    [Range(1, 100000)]
+    /// <summary>
+    /// Credits per minute the plan allows. The free Basic plan allows 8; set a lower number to keep a margin. A history load asks for its two credits
+    /// together (ADR-0049), so at least 2 is required and an odd number leaves one credit of every minute unused.
+    /// </summary>
+    [Range(2, 100000)]
     public int CreditsPerMinute { get; set; } = 8;
 
-    /// <summary>Credits per UTC day the plan allows. The free Basic plan allows 800; paid plans have no daily cap, so set a large number.</summary>
-    [Range(1, 100000000)]
+    /// <summary>Credits per UTC day the plan allows. The free Basic plan allows 800; paid plans have no daily cap, so set a large number. At least 2: a history costs two credits.</summary>
+    [Range(2, 100000000)]
     public int CreditsPerDay { get; set; } = 800;
 
     /// <summary>
     /// Credits per UTC day that loading the history of new stocks may spend (ADR-0043), out of <see cref="CreditsPerDay"/>; the rest is kept for the
-    /// daily refresh. A history costs two credits, so 200 are 100 new stocks a day.
+    /// daily refresh. A history costs two credits, so 200 are 100 new stocks a day. 0 closes the lane; 1 could never pay a history, so it is refused.
     /// </summary>
     [Range(0, 100000000)]
     public int OnDemandCreditsPerDay { get; set; } = 200;
@@ -53,6 +56,11 @@ public sealed class TwelveDataOptionsValidator(IOptions<MarketDataProvidersOptio
         if (routed && string.IsNullOrWhiteSpace(options.ApiKey))
         {
             return ValidateOptionsResult.Fail("TwelveData:ApiKey is required because a market is routed to twelvedata (set it as an environment variable, a user secret or a Docker secret).");
+        }
+
+        if (options.OnDemandCreditsPerDay == 1)
+        {
+            return ValidateOptionsResult.Fail("TwelveData:OnDemandCreditsPerDay must be 0 (lane closed) or at least 2: a history load reserves its two credits together and one credit can never pay it.");
         }
 
         if (options.OnDemandCreditsPerDay > options.CreditsPerDay)

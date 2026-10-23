@@ -318,13 +318,18 @@ public sealed class PortfolioEndpointTests(TimescalePostgresFixture postgres) : 
         HttpResponseMessage falsy = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=false", token));
         string[] before = await WatchlistTickers(rig, token);
         HttpResponseMessage noToken = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true", token));
-        string removalToken = (await WatchlistRig.BodyAsync(await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Get, $"/v1/portfolios/{a}/deletion-preview", token))))
-            .GetProperty("removalToken").GetString()!;
+        HttpResponseMessage badToken = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken=not-a-token", token));
+        // The refusal itself says what would leave and carries the token that confirms exactly that: no request to the preview is needed.
+        JsonElement named = await WatchlistRig.BodyAsync(noToken);
+        string removalToken = named.GetProperty("removalToken").GetString()!;
         HttpResponseMessage confirmed = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken={removalToken}", token));
         HttpResponseMessage again = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken={removalToken}", token));
 
-        noToken.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await WatchlistRig.BodyAsync(noToken)).GetProperty("code").GetString().Should().Be("watchlist.portfolio.removal_token_required");
+        noToken.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        named.GetProperty("code").GetString().Should().Be("watchlist.portfolio.removal_token_required");
+        named.GetProperty("stocksToRemove").EnumerateArray().Select(stock => stock.GetProperty("ticker").GetString()).Should().Equal("AAPL");
+        badToken.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await WatchlistRig.BodyAsync(unconfirmed)).GetProperty("removalToken").GetString().Should().Be(removalToken, "the first refusal carries the same token");
         unconfirmed.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await WatchlistRig.BodyAsync(unconfirmed)).GetProperty("code").GetString().Should().Be("watchlist.portfolio.delete_requires_confirmation");
         falsy.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -348,7 +353,10 @@ public sealed class PortfolioEndpointTests(TimescalePostgresFixture postgres) : 
         HttpResponseMessage stale = await rig.Client.SendAsync(WatchlistRig.Send(HttpMethod.Delete, $"/v1/portfolios/{a}?confirm=true&removalToken={seen}", token));
 
         stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await WatchlistRig.BodyAsync(stale)).GetProperty("code").GetString().Should().Be("watchlist.portfolio.removal_changed");
+        JsonElement fresh = await WatchlistRig.BodyAsync(stale);
+        fresh.GetProperty("code").GetString().Should().Be("watchlist.portfolio.removal_changed");
+        fresh.GetProperty("removalToken").GetString().Should().NotBe(seen, "the answer has the token of what would leave now");
+        fresh.GetProperty("stocksToRemove").EnumerateArray().Select(stock => stock.GetProperty("ticker").GetString()).Should().Equal("AAPL", "MSFT");
         (await WatchlistTickers(rig, token)).Should().Equal(before);
     }
 

@@ -10,7 +10,7 @@
 | the history load of a stock somebody added, and the reload after a rewritten history | on demand | an allowance of its own first, `TwelveData:OnDemandCreditsPerDay` (default 200, key `twelvedata_ondemand`), then the plan's budget |
 | adding a stock the catalog does not have | per user | `MarketData:Lookup:RegistrationsPerUserPerDay` (default 20 a UTC day, key `register_{user}`) |
 
-A history costs two credits (adjusted and raw), so 200 credits are 100 new histories a day, and at least 600 credits are left for the refresh. The two are reserved together before the first call: a load that finds room for one credit and not for two waits whole, instead of spending one and losing it (ADR-0049). A series the provider cuts at its row limit fails the load with `marketdata.provider.series_truncated` and is recorded against the listing.
+A history costs two credits (adjusted and raw), so 200 credits are 100 new histories a day, and at least 600 credits are left for the refresh. The two are reserved together before the first call: a load that finds room for one credit and not for two waits whole, instead of spending one and losing it (ADR-0049). Because of that, set `TwelveData__CreditsPerMinute` and `TwelveData__CreditsPerDay` to at least 2 and `TwelveData__OnDemandCreditsPerDay` to 0 or at least 2 (the host refuses to start otherwise); an odd value is allowed and leaves one credit of that minute or day unused by loads, so prefer even numbers (8 a minute is four histories a minute). A series the provider cuts at its row limit fails the load with `marketdata.provider.series_truncated` and is recorded against the listing.
 
 ## Signals
 | Signal | Meaning |
