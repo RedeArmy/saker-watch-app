@@ -16,38 +16,74 @@ public sealed class IdempotencyStore(DbSession session) : IIdempotencyStore
 {
     private const string _lockNotAvailable = "55P03";
 
+    // How long a duplicate waits for the request that holds the key before it is answered as in progress. A login that sets its own lock_timeout keeps it.
+    private const string _waitForTheKeyHolder = "2s";
+
     /// <inheritdoc />
     public async Task<IdempotencyClaim> ClaimAsync(IdempotencyClaimRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         NpgsqlTransaction transaction = RequireTransaction();
 
+        bool bounded = await BoundTheWaitAsync(transaction, cancellationToken);
         try
         {
-            await using var insert = new NpgsqlCommand(
-                """
-                INSERT INTO platform.idempotency_keys (user_id, method, route, key, request_hash, state, created_at, expires_at, trace_id)
-                VALUES (@user, @method, @route, @key, @hash, 'in_progress', @now, @expires, @trace)
-                ON CONFLICT (user_id, method, route, key) DO NOTHING
-                """,
-                session.Connection,
-                transaction);
-            AddScope(insert, request.UserId, request.Key);
-            insert.Parameters.AddWithValue("hash", NpgsqlDbType.Bytea, request.RequestHash);
-            insert.Parameters.AddWithValue("now", request.Now);
-            insert.Parameters.AddWithValue("expires", request.ExpiresAt);
-            insert.Parameters.AddWithValue("trace", (object?)request.TraceId ?? DBNull.Value);
-            if (await insert.ExecuteNonQueryAsync(cancellationToken) == 1)
-            {
-                return new IdempotencyClaim.Claimed();
-            }
-
-            return await ExistingAsync(request, transaction, cancellationToken);
+            IdempotencyClaim claim = await TryClaimAsync(request, transaction, cancellationToken);
+            await ReleaseTheBoundAsync(bounded, transaction, cancellationToken);
+            return claim;
         }
         catch (PostgresException ex) when (ex.SqlState == _lockNotAvailable)
         {
             return new IdempotencyClaim.Busy();
         }
+    }
+
+    // Without a lock_timeout a duplicate would wait for the first request however long it runs and hold a connection while it does. The bound lasts
+    // for the claim only: the rest of the request keeps the timeout it had.
+    private async Task<bool> BoundTheWaitAsync(NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var current = new NpgsqlCommand("SELECT current_setting('lock_timeout')", session.Connection, transaction);
+        if (!string.Equals((string?)await current.ExecuteScalarAsync(cancellationToken), "0", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        await using var set = new NpgsqlCommand("SELECT set_config('lock_timeout', @wait, true)", session.Connection, transaction);
+        set.Parameters.AddWithValue("wait", _waitForTheKeyHolder);
+        await set.ExecuteScalarAsync(cancellationToken);
+        return true;
+    }
+
+    private async Task ReleaseTheBoundAsync(bool bounded, NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        if (bounded)
+        {
+            await using var reset = new NpgsqlCommand("SELECT set_config('lock_timeout', '0', true)", session.Connection, transaction);
+            await reset.ExecuteScalarAsync(cancellationToken);
+        }
+    }
+
+    private async Task<IdempotencyClaim> TryClaimAsync(IdempotencyClaimRequest request, NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var insert = new NpgsqlCommand(
+            """
+            INSERT INTO platform.idempotency_keys (user_id, method, route, key, request_hash, state, created_at, expires_at, trace_id)
+            VALUES (@user, @method, @route, @key, @hash, 'in_progress', @now, @expires, @trace)
+            ON CONFLICT (user_id, method, route, key) DO NOTHING
+            """,
+            session.Connection,
+            transaction);
+        AddScope(insert, request.UserId, request.Key);
+        insert.Parameters.AddWithValue("hash", NpgsqlDbType.Bytea, request.RequestHash);
+        insert.Parameters.AddWithValue("now", request.Now);
+        insert.Parameters.AddWithValue("expires", request.ExpiresAt);
+        insert.Parameters.AddWithValue("trace", (object?)request.TraceId ?? DBNull.Value);
+        if (await insert.ExecuteNonQueryAsync(cancellationToken) == 1)
+        {
+            return new IdempotencyClaim.Claimed();
+        }
+
+        return await ExistingAsync(request, transaction, cancellationToken);
     }
 
     // The conflicting row was committed by another transaction (we waited for it if it was still open).

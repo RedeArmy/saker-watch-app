@@ -206,6 +206,24 @@ public sealed class IdempotencyIntegrationTests(TimescalePostgresFixture postgre
     }
 
     [Fact]
+    public async Task ADuplicateWhileTheFirstIsStillRunning_OnALoginWithNoLockTimeout_IsStillAnsweredAsInProgress()
+    {
+        await using Host host = await StartAsync();
+        var user = Guid.CreateVersion7();
+        var probe = host.Provider.GetRequiredService<HandlerProbe>();
+        probe.HoldNextExecution();
+        CreateItemCommand command = new(KeyFor(), "widget");
+
+        Task<(Result<ItemDto> Result, bool Replayed)> first = host.SendAsync(user, command);
+        await probe.EnteredFirstExecution;
+        Task<(Result<ItemDto> Result, bool Replayed)> duplicate = host.SendAsync(user, command);
+
+        (await duplicate.WaitAsync(TimeSpan.FromSeconds(20))).Result.Error!.Code.Should().Be(IdempotencyErrors.InProgress, "the claim bounds its own wait");
+        probe.Release();
+        (await first).Result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task AnExpiredKey_CanBePurged_AndThenTheOperationRunsAgain()
     {
         await using Host host = await StartAsync();
