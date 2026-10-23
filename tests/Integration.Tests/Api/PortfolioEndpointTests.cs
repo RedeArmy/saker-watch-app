@@ -107,6 +107,36 @@ public sealed class PortfolioEndpointTests(TimescalePostgresFixture postgres) : 
     }
 
     [Fact]
+    public async Task Create_EightParallelRequestsWithTheSameKey_CreateOne_AndTheRestAreReplaysOrInProgress()
+    {
+        WatchlistRig.Rig rig = await StartRigAsync();
+        string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-p2-parallel" });
+        HttpRequestMessage Same() { HttpRequestMessage r = WatchlistRig.Send(HttpMethod.Post, "/v1/portfolios", token, new { name = "Paralela" }); r.Headers.Add("Idempotency-Key", "portfolio-parallel-000001"); return r; }
+
+        HttpResponseMessage[] responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => rig.Client.SendAsync(Same())));
+
+        responses.Count(r => r.StatusCode == HttpStatusCode.Created && !r.Headers.Contains("Idempotent-Replayed")).Should().Be(1, "exactly one request ran the command");
+        responses.Where(r => r.StatusCode != HttpStatusCode.Created).Select(r => r.StatusCode).Should().AllBeEquivalentTo(HttpStatusCode.Conflict, "a duplicate that met the first still running is told so");
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.portfolios")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_WithTheSameKeyAndAnotherBody_Is422_AndCreatesNothingMore()
+    {
+        WatchlistRig.Rig rig = await StartRigAsync();
+        string token = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-p2-mismatch" });
+        HttpRequestMessage With(string name) { HttpRequestMessage r = WatchlistRig.Send(HttpMethod.Post, "/v1/portfolios", token, new { name }); r.Headers.Add("Idempotency-Key", "portfolio-mismatch-00001"); return r; }
+
+        HttpResponseMessage first = await rig.Client.SendAsync(With("A"));
+        HttpResponseMessage other = await rig.Client.SendAsync(With("B"));
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        other.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM watchlist.portfolios")).Should().Be(1);
+        (await rig.Api.Db.Admin.ScalarAsync<string>("SELECT name FROM watchlist.portfolios")).Should().Be("A");
+    }
+
+    [Fact]
     public async Task Create_WithoutAKey_OrWithABadName_IsA400_AndAReusedNameIsA409()
     {
         WatchlistRig.Rig rig = await StartRigAsync();
