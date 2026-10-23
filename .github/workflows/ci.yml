@@ -21,6 +21,8 @@ jobs:
         run: bash scripts/check-docs-index.sh
       - name: TODO discipline
         run: bash scripts/check-todos.sh
+      - name: Ruleset of main requires only checks that exist
+        run: python3 -I scripts/check-ruleset.py
       - name: Remote-script pipe scan
         run: |
           pat='(curl|wget)[^;&]*\|&?[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$)|<\([[:space:]]*(curl|wget)|\$\([[:space:]]*(curl|wget)'
@@ -165,6 +167,7 @@ jobs:
           /d:sonar.coverage.exclusions="**/Program.cs,**/IAssemblyMarker.cs,scripts/**"
           /d:sonar.python.version="3.10,3.11,3.12,3.13,3.14"
           /d:sonar.exclusions="**/bin/**,**/obj/**,**/TestResults/**"
+          /d:sonar.cpd.exclusions="**/Migrations/**"
           /d:sonar.qualitygate.wait=true
       - name: Build
         if: env.SONAR_TOKEN != ''

@@ -61,6 +61,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0014-api-contract-openapi-versioning.md | ADR 0014 | Eder | approved | 0 | 2026-10-12 |
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
+| scripts/check-ruleset.py | Check that the ruleset of main requires only checks the CI workflow reports | Eder | approved | 1 | 2026-10-23 |
 | scripts/coverage-exempt.txt | Gated assemblies that hold no executable code yet (read by the coverage gate) | Eder | draft | 2 | 2026-10-22 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | scripts/dev-backup.sh | Backup of the PostgreSQL and MongoDB databases of a compose stack | Eder | approved | 2 | 2026-10-22 |
@@ -117,7 +118,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-23 |
 | docs/api/errors.md | API error codes for the screens | Eder | draft | 2 | 2026-10-23 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-23 |
-| docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | approved | 1 | 2026-10-22 |
+| docs/runbooks/sonarcloud-setup.md | Runbook SonarCloud and branch protection setup | Eder | approved | 1 | 2026-10-23 |
 | docs/runbooks/github-ruleset-main.json | Importable GitHub ruleset for main | Eder | approved | 1 | 2026-10-22 |
 | docs/runbooks/github-ruleset-tags.json | Importable GitHub ruleset for release tags | Eder | approved | 1 | 2026-10-22 |
 | docs/runbooks/local-development.md | Local development: infrastructure, migrations and runtime logins | Eder | approved | 1 | 2026-10-22 |
