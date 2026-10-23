@@ -218,7 +218,7 @@ public sealed class ListingLifecycleTests
         bool delisted = await lifecycle.NoteSymbolNotFoundAsync(_stock, day.AddDays(1), CancellationToken.None);
 
         (waiting, delisted).Should().Be((false, true));
-        store.Calls.Should().Equal("note 2026-10-19", "note 2026-10-20", "delist 2026-10-20 ingestion");
+        store.Calls.Should().Equal("note 2026-10-19", "note 2026-10-20", "share since 2026-10-19", "delist 2026-10-20 ingestion");
     }
 
     [Fact]
