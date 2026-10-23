@@ -109,12 +109,16 @@ public sealed class StockCatalog(DbSession session) : IStockCatalog
             """
             SELECT s.id FROM marketdata.stocks s
             LEFT JOIN marketdata.ingestion_state i ON i.stock_id = s.id
-            WHERE s.market_mic = @market AND s.is_active AND coalesce(i.status, 'pending') <> 'failed'
+            WHERE s.market_mic = @market AND s.is_active
+              AND (coalesce(i.status, 'pending') <> 'failed' OR i.failure_code = ANY(@configuration))
             ORDER BY s.ticker
             """,
             session.Connection,
             session.Transaction);
         command.Parameters.AddWithValue("market", market.Value);
+        // A listing stopped by the configuration (no provider for the market, no calendar, no provider symbol) is asked again every day: nothing of it is
+        // wrong, it does not call the provider while the cause stands, and the first run after the cause is fixed clears the mark.
+        command.Parameters.AddWithValue("configuration", new[] { ListingIngestion.MarketDisabledCode, ListingIngestion.NoAliasCode, ListingIngestion.NoCalendarCode });
 
         var ids = new List<StockId>();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);

@@ -39,6 +39,16 @@ If the provider already answers to the new symbol and no longer knows the old on
 - A delisting: `relist`. Ingestion tries the stock from scratch (the failure and the count of unknown days are cleared).
 - A rename: `rename` the other way; the ticker in use leaves the history.
 
+## A listing marked failed
+`marketdata.ingestion_state.status = 'failed'` with a `failure_code` leaves the listing out of the daily refresh. Three codes are a stop by the configuration and clear themselves: `market_disabled` (no provider for the market), `no_calendar` and `no_symbol_alias`. Those listings are asked again every day without calling the provider while the cause stands, and the first run after it is fixed marks them `ok`. Any other code (for example `series_truncated`, or a symbol the provider never knew when the first history was loaded) stays until the operator decides: fix the cause, then reset the row so the next refresh queues the load again:
+
+```sql
+UPDATE marketdata.ingestion_state SET status = 'pending', failure_code = NULL, not_found_days = 0, last_not_found_on = NULL
+WHERE stock_id = (SELECT id FROM marketdata.stocks WHERE market_mic = 'XNAS' AND ticker = 'EXAMPLE');
+```
+
+Run it as the admin login, one stock at a time. (A command for this, like `relist`, is not built: a failed listing is rare and always worth a look first.)
+
 ## Smoke test
 `bash scripts/smoke-worker.sh` (add `SMOKE_NOAVX=1` on a CPU without AVX) builds nothing: run `dotnet build` first. It starts a throwaway compose project `saker-smoke` (other ports, random passwords, removed at the end), applies the migrations, runs the worker for 25 seconds and checks that it starts, runs its jobs and stops gracefully with no warning, and then tries every command above and the rows they leave. It prints `ALL OK`, or one `FAIL` line per check that did not hold. The dev stack is not touched. The worker reaches the Banco de Guatemala for the exchange rate; nobody else is called.
 
