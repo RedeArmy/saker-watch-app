@@ -32,7 +32,7 @@ public sealed class RewriteStabilityLiveTests
     {
         string key = Environment.GetEnvironmentVariable(LiveFactAttribute.KeyVariable)!;
         double tolerance = new IngestionOptions().RewriteTolerance;
-        TimeSpan wait = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable("SAKER_LIVE_REWRITE_WAIT_MINUTES"), CultureInfo.InvariantCulture, out int minutes) ? minutes : 10);
+        var wait = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable("SAKER_LIVE_REWRITE_WAIT_MINUTES"), CultureInfo.InvariantCulture, out int minutes) ? minutes : 10);
         ProviderListingKey[] symbols = [.. (Environment.GetEnvironmentVariable("SAKER_LIVE_REWRITE_SYMBOLS") ?? _defaultSymbols)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(pair => pair.Split(':')).Select(parts => new ProviderListingKey(parts[0], parts[1]))];
