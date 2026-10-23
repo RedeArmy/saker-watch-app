@@ -82,7 +82,7 @@ export function setup() {
 
     const created = http.post(
       `${base}/v1/portfolios`,
-      JSON.stringify({ name: `Load ${index}`, description: null }),
+      JSON.stringify({ name: `Load ${index} ${Date.now()}`, description: null }),  // a repeat of the run on the same stack must not meet the name of the first
       headers(token, { 'Idempotency-Key': `load-portfolio-${index}-${Date.now()}-0123456789` }));
     ok(created, 'create portfolio');
     const id = created.json('id');
