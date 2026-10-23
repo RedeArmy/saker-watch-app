@@ -331,7 +331,7 @@ public sealed class EdgarProviderTests
     {
         var clock = new SignallingClock(_now);
         (EdgarProvider provider, EdgarFixtures.StubHandler handler, _, _) = Build(intervalMilliseconds: 500, clock: clock);
-        TimeSpan patience = TimeSpan.FromSeconds(30); // a bound so that a broken test fails, it is never waited out
+        var patience = TimeSpan.FromSeconds(30); // a bound so that a broken test fails, it is never waited out
 
         Task<Result<CompanyProfile>> profile = provider.GetProfileAsync("AAPL", CancellationToken.None);
         await clock.TimerCreated.Task.WaitAsync(patience); // the second request is now waiting for the half second

@@ -165,7 +165,7 @@ public sealed class PortfolioTests
     [Fact]
     public void AStoredName_IsRestoredWithoutBeingCheckedAgain_SoARuleThatBecomesStricterDoesNotBreakTheRowsAlreadyThere()
     {
-        PortfolioName restored = PortfolioName.Restore("Nombre\u0001antiguo");
+        var restored = PortfolioName.Restore("Nombre\u0001antiguo");
 
         restored.Value.Should().Be("Nombre\u0001antiguo");
         PortfolioName.Create("Nombre\u0001antiguo").IsSuccess.Should().BeFalse();

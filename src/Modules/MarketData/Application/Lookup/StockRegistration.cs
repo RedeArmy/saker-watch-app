@@ -108,7 +108,7 @@ public sealed class RegistrationFallback
     /// <summary>Takes one registration of <paramref name="user"/> for the UTC day of <paramref name="now"/>, or says how long until the day ends.</summary>
     public BudgetDecision TryTake(Guid user, int cap, DateTimeOffset now)
     {
-        DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
+        var day = DateOnly.FromDateTime(now.UtcDateTime);
         lock (_gate)
         {
             if (_counts.Count > _pruneAbove)
@@ -133,7 +133,7 @@ public sealed class RegistrationFallback
     /// <summary>Gives back one registration of <paramref name="user"/> for the UTC day of <paramref name="now"/>.</summary>
     public void Release(Guid user, DateTimeOffset now)
     {
-        DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
+        var day = DateOnly.FromDateTime(now.UtcDateTime);
         lock (_gate)
         {
             if (_counts.TryGetValue(user, out (DateOnly Day, int Count) known) && known.Day == day && known.Count > 0)

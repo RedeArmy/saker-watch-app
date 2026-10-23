@@ -1,5 +1,6 @@
 using System.Diagnostics.Metrics;
 using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
@@ -18,8 +19,11 @@ namespace SakerWatch.Integration.Tests.Persistence;
 
 /// <summary>The rate limiters that count in Redis, so that several API processes count a caller together, and how the processes count each other (ADR-0048).</summary>
 [Trait("Category", "Integration")]
-public sealed class RedisRateLimiterTests : IAsyncLifetime
+public sealed partial class RedisRateLimiterTests : IAsyncLifetime
 {
+    [GeneratedRegex("^v1:ratelimit:preauth:[0-9a-f]{32}:[0-9]+$")]
+    private static partial Regex PreauthKey();
+
     private static readonly DateTimeOffset _start = new(2026, 10, 22, 12, 0, 0, TimeSpan.Zero); // a window of 60 s starts at :00
 
     private readonly RedisContainer _container = new RedisBuilder(ComposeImages.For("redis")).Build();
@@ -136,7 +140,7 @@ public sealed class RedisRateLimiterTests : IAsyncLifetime
         string[] keys = [.. _redis.GetServer(_redis.GetEndPoints()[0]).Keys(pattern: "v1:ratelimit:preauth:*").Select(key => key.ToString())];
 
         results.Should().Equal(true, true, false);
-        keys.Should().NotBeEmpty().And.OnlyContain(key => !key.Contains("203.0.113.77") && System.Text.RegularExpressions.Regex.IsMatch(key, "^v1:ratelimit:preauth:[0-9a-f]{32}:[0-9]+$"));
+        keys.Should().NotBeEmpty().And.OnlyContain(key => !key.Contains("203.0.113.77") && PreauthKey().IsMatch(key));
     }
 
     [Fact]

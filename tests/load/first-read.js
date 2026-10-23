@@ -24,7 +24,7 @@ function seed() {
 }
 
 // The costly view of ADR-0033: sorted by a window, so it needs the numbers of all the listings.
-export default function () {
+export default function firstRead() {
   if (__ENV.K6_SEED === '1') {
     seed();
     return;

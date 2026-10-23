@@ -5,6 +5,7 @@
 cd "$(dirname "$0")/.." || exit 2
 files() {
   if [[ $# -gt 0 ]]; then printf '%s\0' "$@"; else git ls-files -z 'src/*' 'tests/*' 'web/*' 'deploy/*' 'scripts/*' ':!scripts/check-todos.sh' ':!*.md'; fi
+  return 0
 }
 files "$@" \
   | python3 -I -c '
