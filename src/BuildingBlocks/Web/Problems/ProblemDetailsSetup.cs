@@ -35,7 +35,7 @@ public static class ProblemDetailsSetup
     private static string CodeOf(Microsoft.AspNetCore.Mvc.ProblemDetails problem, HttpContext http) =>
         problem.Type is { } type && type.StartsWith(ResultHttpExtensions.ProblemTypeBase, StringComparison.Ordinal)
             ? type[ResultHttpExtensions.ProblemTypeBase.Length..]
-            : $"http.{problem.Status ?? http.Response.StatusCode}";
+            : $"http.{http.Response.StatusCode}";
 }
 
 /// <summary>Turns unhandled exceptions into a generic 500 ProblemDetails and logs the exception server-side.</summary>

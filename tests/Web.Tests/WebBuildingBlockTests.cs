@@ -86,6 +86,18 @@ public sealed class WebBuildingBlockTests
     }
 
     [Fact]
+    public async Task AProblemWithNoTypeAtAll_HasACodeMadeFromItsStatus()
+    {
+        using var host = await WebTestServer.StartAsync();
+
+        HttpResponseMessage response = await host.GetTestClient().GetAsync("/teapot");
+
+        JsonElement json = await ReadJson(response);
+        json.TryGetProperty("type", out _).Should().BeFalse("the problem was written with a status the framework has no type for");
+        json.GetProperty("code").GetString().Should().Be("http.418");
+    }
+
+    [Fact]
     public async Task AProblemTheFrameworkWrites_HasACodeMadeFromItsStatus()
     {
         using var host = await WebTestServer.StartAsync();

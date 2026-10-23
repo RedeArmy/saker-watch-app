@@ -106,6 +106,18 @@ public sealed class FxConverterTests
     }
 
     [Fact]
+    public async Task Convert_WhenTheRatesOfThePathCannotBeCombined_SaysSoWithACodeOfItsOwn()
+    {
+        // CAD to USD is the reciprocal of 1e-10 (1e10) and USD to GTQ is 1e10: each is a valid rate, their product (1e20) is beyond the allowed range.
+        Rates rates = new Rates().With("USD", "CAD", 17, 0.0000000001m).With("USD", "GTQ", 17, 10000000000m);
+
+        // A tiny amount, so that converting it step by step stays within the range of money and only the combined rate does not.
+        Result<FxConversion> result = await ConvertAsync(Converter(rates), 0.0000001m, _cad, _gtq);
+
+        (result.Error!.Code, result.Error.Type).Should().Be((FxConverter.RatesNotCombinableCode, ErrorType.Validation));
+    }
+
+    [Fact]
     public async Task Convert_WhenTheOppositePairIsNewer_UsesItsReciprocal()
     {
         Rates rates = new Rates().With("USD", "GTQ", 10, 8m).With("GTQ", "USD", 16, 0.125m);
