@@ -12,7 +12,7 @@ public sealed class CallerRateLimiterTests
     private static readonly DateTimeOffset _start = new(2026, 10, 22, 12, 0, 0, TimeSpan.Zero); // a window of 60 s starts at :00
 
     private static CallerRateLimiter Limiter(FakeTimeProvider clock, int limit = 10) =>
-        new(redis: null, countInRedis: () => false, scope: "global", partitionKey: "user:ana", limit, TimeSpan.FromSeconds(60), clock);
+        new(redis: null, countInRedis: () => false, new LimiterPolicy("global", limit, TimeSpan.FromSeconds(60)), partitionKey: "user:ana", clock);
 
     // A guard that the answer comes at once: the built-in fixed window limiter, asked for zero permits on a full window, does not answer until the next one.
     private static Task<RateLimitLease> AskAsync(RateLimiter limiter, int permits) => Task.Run(async () => await limiter.AcquireAsync(permits)).WaitAsync(TimeSpan.FromSeconds(5));
@@ -118,7 +118,7 @@ public sealed class CallerRateLimiterTests
     public async Task ARedisThatIsNotThere_MeansMemory_WhateverTheCallbackSays()
     {
         var clock = new FakeTimeProvider(_start);
-        using var limiter = new CallerRateLimiter(null, () => true, "global", "user:ana", 1, TimeSpan.FromSeconds(60), clock);
+        using var limiter = new CallerRateLimiter(null, () => true, new LimiterPolicy("global", 1, TimeSpan.FromSeconds(60)), "user:ana", clock);
 
         RateLimitLease first = await limiter.AcquireAsync(1);
         RateLimitLease second = await limiter.AcquireAsync(1);

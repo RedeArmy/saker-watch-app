@@ -157,10 +157,8 @@ public static class RateLimitingSetup
         return new CallerRateLimiter(
             provider.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
             () => options.UsesRedis(instances.Count),
-            scope,
+            new LimiterPolicy(scope, permits, TimeSpan.FromSeconds(options.WindowSeconds)),
             partitionKey,
-            permits,
-            TimeSpan.FromSeconds(options.WindowSeconds),
             provider.GetRequiredService<TimeProvider>());
     }
 

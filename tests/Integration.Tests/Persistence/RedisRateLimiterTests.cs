@@ -39,7 +39,7 @@ public sealed class RedisRateLimiterTests : IAsyncLifetime
 
     // Counts in Redis, on the clock of the test (the production limiter reads the clock of Redis).
     private CallerRateLimiter Limiter(FakeTimeProvider clock, string scope, string caller, int limit, bool inRedis = true) =>
-        new(_redis, () => inRedis, scope, caller, limit, TimeSpan.FromSeconds(60), clock, redisClock: false);
+        new(_redis, () => inRedis, new LimiterPolicy(scope, limit, TimeSpan.FromSeconds(60)), caller, clock, redisClock: false);
 
     private static async Task<bool> TakeAsync(RateLimiter limiter, int permits = 1) => (await limiter.AcquireAsync(permits)).IsAcquired;
 
@@ -130,7 +130,7 @@ public sealed class RedisRateLimiterTests : IAsyncLifetime
     [Fact]
     public async Task WithTheClockOfRedis_TheLimitHolds_AndTheKeyHoldsNeitherTheUserNorTheAddress()
     {
-        using var limiter = new CallerRateLimiter(_redis, () => true, "preauth", "ip:203.0.113.77", 2, TimeSpan.FromSeconds(60), TimeProvider.System);
+        using var limiter = new CallerRateLimiter(_redis, () => true, new LimiterPolicy("preauth", 2, TimeSpan.FromSeconds(60)), "ip:203.0.113.77", TimeProvider.System);
 
         bool[] results = [await TakeAsync(limiter), await TakeAsync(limiter), await TakeAsync(limiter)];
         string[] keys = [.. _redis.GetServer(_redis.GetEndPoints()[0]).Keys(pattern: "v1:ratelimit:preauth:*").Select(key => key.ToString())];
@@ -155,7 +155,7 @@ public sealed class RedisRateLimiterTests : IAsyncLifetime
     {
         await using ConnectionMultiplexer down = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:1,abortConnect=false,connectTimeout=200,syncTimeout=200,asyncTimeout=200");
         var clock = new FakeTimeProvider(_start);
-        using var limiter = new CallerRateLimiter(down, () => true, "global", "user:offline", 2, TimeSpan.FromSeconds(60), clock, redisClock: false);
+        using var limiter = new CallerRateLimiter(down, () => true, new LimiterPolicy("global", 2, TimeSpan.FromSeconds(60)), "user:offline", clock, redisClock: false);
         long fallbacks = 0;
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>

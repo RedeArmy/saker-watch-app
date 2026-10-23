@@ -8,6 +8,12 @@ using StackExchange.Redis;
 
 namespace SakerWatch.BuildingBlocks.Web.RateLimiting;
 
+/// <summary>What one limiter allows: which limiter it is, how many permits a window holds and how long the window is.</summary>
+/// <param name="Scope">The limiter this is (<c>global</c>, <c>expensive</c>, <c>preauth</c>): each has its own limit and its own count.</param>
+/// <param name="PermitLimit">Permits in a window.</param>
+/// <param name="Window">The length of a window.</param>
+public sealed record LimiterPolicy(string Scope, int PermitLimit, TimeSpan Window);
+
 /// <summary>
 /// The limiter of one caller in one scope (ADR-0048): a sliding window counter that counts in the memory of the process or, when several API processes
 /// run, in Redis, so that they count the caller together. Time is cut in windows of <c>window</c>; a request is let through when the permits of the
@@ -75,37 +81,34 @@ public sealed class CallerRateLimiter : RateLimiter
     /// <summary>Creates the limiter of one caller in one scope.</summary>
     /// <param name="redis">The shared connection, or <see langword="null"/> where there is none (the count is then always in memory).</param>
     /// <param name="countInRedis">Asked for each request: whether the count is kept in Redis now (several API processes) or in memory.</param>
-    /// <param name="scope">The limiter this is (<c>global</c>, <c>expensive</c>, <c>preauth</c>): each has its own limit and its own count.</param>
+    /// <param name="policy">The scope, the permits in a window and the length of the window.</param>
     /// <param name="partitionKey">The caller (a user or an address).</param>
-    /// <param name="permitLimit">Permits in a window.</param>
-    /// <param name="window">The length of a window.</param>
     /// <param name="time">The clock of the process: for the count in memory and for how long a limiter has been idle.</param>
     /// <param name="redisClock">True (as deployed) to take the time of a request from Redis, the same for every process; false to take it from <paramref name="time"/> (tests).</param>
     public CallerRateLimiter(
         IConnectionMultiplexer? redis,
         Func<bool> countInRedis,
-        string scope,
+        LimiterPolicy policy,
         string partitionKey,
-        int permitLimit,
-        TimeSpan window,
         TimeProvider time,
         bool redisClock = true)
     {
         ArgumentNullException.ThrowIfNull(countInRedis);
-        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentException.ThrowIfNullOrWhiteSpace(policy.Scope);
         ArgumentException.ThrowIfNullOrWhiteSpace(partitionKey);
         ArgumentNullException.ThrowIfNull(time);
 
         _redis = redis;
         _countInRedis = countInRedis;
-        _scope = scope;
-        _limit = permitLimit;
-        _windowMs = (long)window.TotalMilliseconds;
+        _scope = policy.Scope;
+        _limit = policy.PermitLimit;
+        _windowMs = (long)policy.Window.TotalMilliseconds;
         _time = time;
         _redisClock = redisClock;
         _lastUsed = time.GetTimestamp();
         // The caller is a user id or an address: hashed, so the key has only characters a key may have and no address sits in Redis.
-        _prefix = RedisKeys.For("ratelimit", scope, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(partitionKey)))[..32]);
+        _prefix = RedisKeys.For("ratelimit", policy.Scope, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(partitionKey)))[..32]);
     }
 
     /// <inheritdoc />
