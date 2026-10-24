@@ -10,6 +10,8 @@ public sealed class SensitiveTextTests
     [InlineData("failed with pwd: 'p@ss word' for app", "p@ss word")]
     [InlineData("client_secret=placeholder-value rejected", "placeholder-value")]
     [InlineData("{\"api_key\": \"sk-live-123456\"}", "sk-live-123456")]
+    [InlineData("the provider echoed X-Api-Key: placeholder-value-two and refused", "placeholder-value-two")]
+    [InlineData("GET /series?api-key=placeholder-value-three&symbol=AAPL failed", "placeholder-value-three")]
     [InlineData("Authorization: Bearer abcdef123456789 refused", "abcdef123456789")]
     [InlineData("token eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJlMTIz rejected", "eyJhbGci")]
     public void Credentials_AreMasked_WhateverTheShape(string text, string secret)

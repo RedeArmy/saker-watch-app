@@ -19,6 +19,7 @@ public sealed class IngestionOptions
     /// How long after a session closes its bar is trusted as final. Twelve Data's bar had 1.5 million shares 45 minutes after the close and the
     /// full day seven hours later (ADR-0027), so three hours is the default.
     /// </summary>
+    [Range(typeof(TimeSpan), "00:00:00", "1.00:00:00")]
     public TimeSpan SettleDelay { get; set; } = TimeSpan.FromHours(3);
 
     /// <summary>Attempts the queue gives a backfill before it is parked as dead (rate limits and outages are retried with backoff).</summary>
@@ -29,6 +30,7 @@ public sealed class IngestionOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>How often the scheduler looks for a market whose latest session has settled and has no refresh yet.</summary>
+    [Range(typeof(TimeSpan), "00:00:05", "1.00:00:00")]
     public TimeSpan CheckInterval { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
@@ -61,6 +63,7 @@ public sealed class IngestionOptions
     public double RewriteTolerance { get; set; } = 0.000001;
 
     /// <summary>How often the freshness gauges are measured.</summary>
+    [Range(typeof(TimeSpan), "00:00:05", "1.00:00:00")]
     public TimeSpan FreshnessInterval { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>

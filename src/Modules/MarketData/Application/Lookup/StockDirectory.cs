@@ -250,6 +250,26 @@ public sealed partial class StockDirectory(
         return match is null ? Error.NotFound(StockNotFoundCode, $"{ticker} was not found on {market}.") : match;
     }
 
+    // Writes the stock in a unit of work of its own. A conflict with another stock of the catalog is an answer; any other failure (the database, a cancelled
+    // request) created no stock either, so the user's registration of the day is given back before it goes on.
+    private async Task<Result<StockId>> StoreAsync(Stock stock, string provider, CachedListing match, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await registration.RegisterAsync(stock, provider, new ProviderListingKey(match.ProviderMic, match.Symbol.Trim()), now, cancellationToken);
+        }
+        catch (ProviderListingTakenException)
+        {
+            await registration.ReleaseAsync(cancellationToken);
+            return Error.Conflict(ProviderListingTakenCode, $"{stock.Ticker} on {stock.Market} is already known to the provider as another stock of the catalog. Ask the owner to look at it.");
+        }
+        catch
+        {
+            await registration.ReleaseAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private async Task<Result<StockSummary>> RegisterAsync(Mic market, Ticker ticker, CancellationToken cancellationToken)
     {
         if (!IsServed(market))
@@ -278,16 +298,13 @@ public sealed partial class StockDirectory(
             return limited;
         }
 
-        StockId id;
-        try
+        Result<StockId> stored = await StoreAsync(stock.Value, provider.Name, match, now, cancellationToken);
+        if (!stored.IsSuccess)
         {
-            id = await registration.RegisterAsync(stock.Value, provider.Name, new ProviderListingKey(match.ProviderMic, match.Symbol.Trim()), now, cancellationToken);
+            return stored.Error!;
         }
-        catch (ProviderListingTakenException)
-        {
-            await registration.ReleaseAsync(cancellationToken);
-            return Error.Conflict(ProviderListingTakenCode, $"{ticker} on {market} is already known to the provider as another stock of the catalog. Ask the owner to look at it.");
-        }
+
+        StockId id = stored.Value;
 
         // Another request registered the same stock first (the registry answers with the id of the row that holds the market and ticker): this one
         // created nothing, so it did not use one of the user's new registrations.

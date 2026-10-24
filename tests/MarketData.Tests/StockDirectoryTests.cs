@@ -599,6 +599,19 @@ public sealed class StockDirectoryTests
     }
 
     [Fact]
+    public async Task Ensure_WhenTheDatabaseFailsWhileRegistering_GivesTheRegistrationBack_AndTheFailureStillReachesTheCaller()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")));
+        rig.Registry.Throw = true;
+
+        Func<Task> act = () => rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("the database is down");
+        // A blip of the database must not cost the user one of the registrations of the day.
+        rig.Quota.Released.Should().Equal((RegistrationQuota.BudgetKey(_user), 1));
+    }
+
+    [Fact]
     public async Task Ensure_WhenAnotherRequestRegisteredTheSameStockFirst_GivesTheRegistrationBack()
     {
         Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), existingId: Guid.CreateVersion7());

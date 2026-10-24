@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using SakerWatch.BuildingBlocks.Kernel.Results;
 using SakerWatch.BuildingBlocks.Kernel.Transactions;
 
@@ -27,7 +28,7 @@ public enum LifecycleOperation
 /// <param name="NewTicker">The new ticker of a rename.</param>
 /// <param name="On">The day the change took effect; today when not given.</param>
 /// <param name="ProviderSymbol">The provider's symbol after a rename; the new ticker when not given.</param>
-public sealed record LifecycleCommand(LifecycleOperation Operation, string Market, string Ticker, string? NewTicker, DateOnly? On, string? ProviderSymbol)
+public sealed partial record LifecycleCommand(LifecycleOperation Operation, string Market, string Ticker, string? NewTicker, DateOnly? On, string? ProviderSymbol)
 {
     /// <summary>Code of the failure for a request that cannot be read.</summary>
     public const string UsageCode = "marketdata.lifecycle.usage";
@@ -72,6 +73,9 @@ public sealed record LifecycleCommand(LifecycleOperation Operation, string Marke
         return new LifecycleCommand(operation, positional[1], positional[2], operation == LifecycleOperation.Rename ? positional[3] : null, on, providerSymbol);
     }
 
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._/-]{0,31}$")]
+    private static partial Regex ProviderSymbolForm();
+
     private static Result<(List<string> Positional, DateOnly? On, string? ProviderSymbol)> ReadOptions(IReadOnlyList<string> args)
     {
         var positional = new List<string>();
@@ -94,6 +98,12 @@ public sealed record LifecycleCommand(LifecycleOperation Operation, string Marke
                 if (!pending.TryDequeue(out string? symbol) || symbol.StartsWith("--", StringComparison.Ordinal))
                 {
                     return Bad("--provider-symbol needs a symbol.");
+                }
+
+                // The same form the database accepts (ck_symbol_aliases_provider_symbol): a symbol it would refuse is a usage mistake here, not a failure later.
+                if (!ProviderSymbolForm().IsMatch(symbol))
+                {
+                    return Bad("--provider-symbol is 1 to 32 letters, digits, '.', '_', '/' or '-', and starts with a letter or a digit.");
                 }
 
                 providerSymbol = symbol;

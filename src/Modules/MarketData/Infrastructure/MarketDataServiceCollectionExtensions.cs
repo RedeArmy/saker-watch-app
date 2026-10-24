@@ -41,7 +41,8 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
-        services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
+        // Validated at start: a zero interval would loop on the database and a negative one stops the host, and its ranges were never enforced before.
+        services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddSakerDeployment(configuration);
         services.AddOptions<StockLookupOptions>().Bind(configuration.GetSection(StockLookupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddMarketDataApplication();

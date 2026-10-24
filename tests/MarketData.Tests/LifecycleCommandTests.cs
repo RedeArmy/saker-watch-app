@@ -51,6 +51,10 @@ public sealed class LifecycleCommandTests
     [InlineData("relist", "XNAS", "ABC", "--on", "2026-10-01")]
     [InlineData("rename", "XNAS", "FB", "META", "--provider-symbol")]
     [InlineData("rename", "XNAS", "FB", "META", "--provider-symbol", "--on")]
+    [InlineData("rename", "XNAS", "FB", "META", "--provider-symbol", "ME TA")]
+    [InlineData("rename", "XNAS", "FB", "META", "--provider-symbol", "META;DROP")]
+    [InlineData("rename", "XNAS", "FB", "META", "--provider-symbol", ".META")]
+    [InlineData("rename", "XNAS", "FB", "META", "--provider-symbol", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
     public void ARequestThatCannotBeRead_IsRefusedWithTheUsage(params string[] arguments)
     {
         Result<LifecycleCommand> result = LifecycleCommand.Parse(arguments);
