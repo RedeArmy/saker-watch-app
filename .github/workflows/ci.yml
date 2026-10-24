@@ -37,6 +37,12 @@ jobs:
           # `make up` must not need the Grafana password: the observability file is separate.
           unset GRAFANA_ADMIN_PASSWORD
           docker compose -f deploy/docker-compose.yml --profile dev config -q
+          # The application services must be valid with the variables a host sets, and must not publish a port.
+          export API_DB_PASSWORD=ci WORKER_DB_PASSWORD=ci MONGO_APP_PASSWORD=ci AUDIT_ACTOR_PEPPER=ci CLAVARIS_AUTHORITY=https://idp.invalid CLAVARIS_AUDIENCE=ci
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml --profile app config -q
+          if docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml --profile app config | grep -E '^\s+published:' | grep -v '8088'; then
+            echo "an application service publishes a port"; exit 1
+          fi
           # The fake IdP must exist only behind the dev profile.
           if docker compose -f deploy/docker-compose.yml config --services | grep -q fake-idp; then
             echo "fake-idp is enabled without the dev profile"; exit 1
@@ -232,4 +238,26 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           exit-code: "1"
-  # Planned for phase 5 (tracked in docs/roadmap.md): multi-arch images (linux/arm64), migration image/bundle, deploy job.
+  images:
+    # The three images of deploy/Dockerfile must build (with the warnings-as-errors build inside) and carry no HIGH or CRITICAL vulnerability that has a fix.
+    # Not a required check of the ruleset yet: a base image with a fresh finding should not block unrelated pull requests; Dependabot proposes the new digest.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: Build the images
+        run: |
+          for target in api worker migrator; do
+            docker build -f deploy/Dockerfile --target "$target" -t "saker-watch/$target:ci" .
+          done
+      - name: Scan the API image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with: { image-ref: "saker-watch/api:ci", scanners: "vuln,secret", severity: "HIGH,CRITICAL", ignore-unfixed: "true", exit-code: "1" }
+      - name: Scan the worker image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with: { image-ref: "saker-watch/worker:ci", scanners: "vuln,secret", severity: "HIGH,CRITICAL", ignore-unfixed: "true", exit-code: "1" }
+      - name: Scan the migrator image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with: { image-ref: "saker-watch/migrator:ci", scanners: "vuln,secret", severity: "HIGH,CRITICAL", ignore-unfixed: "true", exit-code: "1" }
+  # Planned for phase 5 (tracked in docs/roadmap.md): multi-arch images (linux/arm64) pushed to a registry, a signature, and a deploy job.

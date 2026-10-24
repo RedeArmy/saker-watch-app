@@ -78,6 +78,11 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | approved | 0 | 2026-10-12 |
 | docs/observability/README.md | Observability catalog | Eder | approved | 1 | 2026-10-22 |
 | docs/adr/0018-multi-market-and-multi-currency.md | ADR 0018 | Eder | approved | 0 | 2026-10-12 |
+| deploy/Dockerfile | The images of the API, the worker and the migrator | Eder | draft | 5 | 2026-10-24 |
+| deploy/docker-compose.app.yml | The application on top of the datastores, with the memory limits of the 12 GB host | Eder | draft | 5 | 2026-10-24 |
+| deploy/app.env.example | Provider settings of the application containers | Eder | draft | 5 | 2026-10-24 |
+| scripts/smoke-app-stack.sh | Smoke test of the images and the memory of the stack on a throwaway compose project | Eder | draft | 5 | 2026-10-24 |
+| docs/runbooks/running-the-stack.md | Runbook: the images, the compose file of the application and its memory budget | Eder | draft | 5 | 2026-10-24 |
 | deploy/docker-compose.no-avx.yml | Dev override: Mongo 4.4 for CPUs without AVX | Eder | approved | 0 | 2026-10-12 |
 | docs/product-spec.md | Product specification | Eder | approved | 0 | 2026-10-12 |
 | docs/data-model.md | Data model and retention | Eder | approved | 1 | 2026-10-22 |
