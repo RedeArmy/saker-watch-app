@@ -27,6 +27,9 @@
 ## Jobs that are waiting for a provider's budget (Phase 2)
 A market data job (a history load, a daily refresh) that finds the provider's call budget spent is not failed: it queues a continuation for when the budget has room and uses no attempt (`sakerwatch_marketdata_backfills_total{outcome="waiting"}`, `sakerwatch_marketdata_refreshes_total{outcome="waiting"}`). The history load of a new stock draws on an on-demand allowance of the day (ADR-0043), so after a burst of new stocks the queue depth and the oldest age can grow until 00:00 UTC without anything being wrong; the stocks show as `pending`. Check `docs/runbooks/provider-quota.md` before requeueing anything, and do not raise `attempts` or requeue these jobs by hand: they would only spend the allowance again.
 
+## The order in which jobs are claimed
+A worker takes an expired lease first (work that was started and abandoned, one index probe that is empty almost always) and then the pending job that has waited longest (`available_at`). The cost of a claim does not grow with the backlog: with 30,000 pending jobs it read 22 buffers and the lookup of the pending job took 0.06 ms. A backlog is therefore a matter of throughput (workers, `Jobs:MaxConcurrency`) and never of the cost of choosing the next job.
+
 ## Handler outlives its lease or its transaction
 A job that waits on external I/O for longer than the worker login's `idle_in_transaction_session_timeout` loses its connection and retries until dead (ADR-0022, "keep the unit of work short"). Fix the handler (fetch before the transaction) rather than raising the timeout.
 
