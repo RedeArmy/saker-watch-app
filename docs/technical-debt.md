@@ -33,6 +33,7 @@
 | TD-012 | Retention covers only the platform tables (idempotency keys, processed outbox and inbox, finished and dead jobs: `RetentionTarget`). Not enforced yet, though `docs/data-model.md` section 5 sets the policy: the TTL of `provider_payloads` (30 to 90 days) and `job_events` in Mongo, the 24-month partition drop of `audit_log`, and the expiry of analysis documents | The raw provider answers, which are kept as received on every call, grow without bound | M | 5 |
 | TD-013 | Multi-user features absent: quotas for analysis, onboarding, data export, account deletion (30-day hard delete plus Clavaris deletion), admin tooling, licence compliance for redistribution | Cannot be opened to a second person | XL | 6 |
 | TD-014 | Weekly and monthly sparkline points are **computed on read**; `price_daily` has no compression or retention policy and there are no continuous aggregates | Fine at 500 stocks, grows linearly with the catalog | M | after 5 |
+| TD-015 | **The Oracle Always Free VM is 2 OCPUs and 12 GB**, not the 4 and 24 the plan was written for (Oracle's documentation, 2026-10-24). PostgreSQL with Timescale, MongoDB, Redis, the API, the worker, Caddy, the observability stack and any model have to share it | The deployment shape, the cost line of the spec and the place of the LLM all depend on it; a stack that fits in 24 GB may not fit in 12 | decision, then M | RFC-0002, 5 |
 
 ## 4. Present debt in the code
 | ID | Debt | Impact | Effort | Pri |

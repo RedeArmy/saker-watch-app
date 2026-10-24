@@ -13,7 +13,7 @@
 | A-006 | Test assertions: AwesomeAssertions (ADR-0011). | — | — (answered) |
 | A-007 | Provider free tiers may forbid redistribution; needed before multi-user rollout. | Single-user only | Phase 2 ADR / Phase 6 |
 | A-008 | RESOLVED 2026-10-12: banker's rounding for monetary display; share fractions truncated to 6 decimals (ADR-0006). | — | — |
-| A-009 | Oracle Always Free quotas to be verified at deploy time. | Verify in Phase 5 | Phase 5 |
+| A-009 | PARTLY VERIFIED 2026-10-24: Oracle's documentation (*Always Free Resources*) gives the Ampere A1 shape 1,500 OCPU hours and 9,000 GB hours a month, "equivalent to 2 OCPUs and 12 GB of memory" for an Always Free tenancy; articles report that it was 4 OCPUs and 24 GB until June 2026, and many guides still say so. The whole stack and any model on the VM share 2 cores and 12 GB (RFC-0002). The other quotas (storage, network, instances) are still to be verified at deploy time. | Plan for 2 OCPUs and 12 GB | Phase 5, and before the LLM spike |
 | A-010 | RESOLVED 2026-10-12: GitHub handle `RedeArmy` used in CODEOWNERS. | — | — |
 | A-011 | RESOLVED 2026-10-12: SDK 10.0.112 installed; `dotnet restore/build -warnaserror/format/test` verified green (4 architecture tests). Fixes needed: unique csproj names (slnx), Microsoft.Extensions.Hosting reference for the Worker, CA1707 relaxed for tests. | — | — |
 | A-012 | Caddy `handle_path /idp/*` strips the prefix, so the fake IdP issuer URL differs from the public path. Also unverified: that `mock-oauth2-server` supports a two-segment issuer path (`/o/{orgId}`); if not, CI uses a minimal fake IdP written in .NET that reproduces the Clavaris contract. | Decide in Phase 1 | Phase 1 |

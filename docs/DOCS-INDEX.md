@@ -9,7 +9,8 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 |---|---|---|---|---|---|
 | docs/pr-faq.md | PR-FAQ | Eder | approved | 0 | 2026-10-12 |
 | docs/rfc/0001-design-doc.md | RFC / design doc | Eder | approved | 0 | 2026-10-12 |
-| docs/assumptions.md | Assumptions | Eder | approved | 0 | 2026-10-12 |
+| docs/rfc/0002-llm-feasibility-spike.md | RFC-0002 one-week feasibility spike of the LLM analysis | Eder | draft | 4 | 2026-10-24 |
+| docs/assumptions.md | Assumptions | Eder | approved | 0 | 2026-10-24 |
 | docs/clavaris-contract.md | Clavaris integration contract | Eder | approved | 1 | 2026-10-22 |
 | docs/threat-model/threat-model-v1.md | STRIDE threat model | Eder | approved | 0 | 2026-10-12 |
 | docs/api/README.md | API guidelines | Eder | approved | 1 | 2026-10-22 |
