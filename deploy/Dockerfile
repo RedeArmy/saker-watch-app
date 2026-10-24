@@ -7,7 +7,7 @@
 # proposes new digests. Nothing secret is in an image: connection strings and keys arrive as environment variables at run time.
 
 # The build runs on the machine's own architecture and publishes for the target one: no emulation of the compiler.
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0@sha256:747cbade5bfd918a175ac32f8f1d931edec2c7d0d5397a3de72eaef1ac1f66d2 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props SakerWatch.slnx BannedSymbols.txt SonarLint.xml .editorconfig ./
