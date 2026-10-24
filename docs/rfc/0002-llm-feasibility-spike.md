@@ -20,7 +20,7 @@ I did not run any model for this document. The figures in section 5 are what the
 ## 3. Scope
 **In:** a throw-away harness (`scripts/llm-spike/`, Python with the standard library only, not part of the solution) that builds a context for each of 20 stocks from data the system already has, calls a model through the OpenAI-compatible API (Ollama locally, an external model for the reference), validates the answer against a JSON schema, and records tokens, time, memory and the answer.
 
-**Out:** the queue, the persistence in two stores, the scoring step, the signals engine, the UI, the final prompts and rubrics, any change to `src/`. The harness is thrown away or rewritten; nothing of it becomes production code by being there.
+**Out:** the queue, the persistence in two stores, the scoring step, the signals engine, the UI, the final prompts and rubrics, any change to `src/`. The harness is thrown away or rewritten; nothing of it becomes production code by being there. **The harness is written and tested** (`scripts/llm-spike/`: `spike.py` with the commands `contexts`, `run`, `report` and `sheets`, the provisional schema and prompt, and 14 tests against a fake Ollama server); what is left of day 2 is the real contexts of the 20 stocks and the rubric text.
 
 ## 4. The golden set of 20 stocks
 Chosen to cover the cases that break an analysis, from the catalog or the load seed, with the owner's approval of the list on day 1:

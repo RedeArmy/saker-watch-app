@@ -63,6 +63,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-ruleset.py | Check that the ruleset of main requires only checks the CI workflow reports | Eder | approved | 1 | 2026-10-23 |
+| scripts/llm-spike/README.md | Throw-away harness of the LLM feasibility spike (RFC-0002) | Eder | draft | 4 | 2026-10-24 |
 | scripts/coverage-exempt.txt | Gated assemblies that hold no executable code yet (read by the coverage gate) | Eder | draft | 2 | 2026-10-22 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | scripts/dev-backup.sh | Backup of the PostgreSQL and MongoDB databases of a compose stack | Eder | approved | 2 | 2026-10-22 |
