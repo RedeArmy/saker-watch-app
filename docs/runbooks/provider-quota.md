@@ -12,6 +12,9 @@
 
 A history costs two credits (adjusted and raw), so 200 credits are 100 new histories a day, and at least 600 credits are left for the refresh. The two are reserved together before the first call: a load that finds room for one credit and not for two waits whole, instead of spending one and losing it (ADR-0049). Because of that, set `TwelveData__CreditsPerMinute` and `TwelveData__CreditsPerDay` to at least 2 and `TwelveData__OnDemandCreditsPerDay` to 0 or at least 2 (the host refuses to start otherwise); an odd value is allowed and leaves one credit of that minute or day unused by loads, so prefer even numbers (8 a minute is four histories a minute). A series the provider cuts at its row limit fails the load with `marketdata.provider.series_truncated` and is recorded against the listing.
 
+## How many stocks the plan carries
+A refresh of a listing costs two credits a day, so the catalog the plan keeps fresh is **(`TwelveData__CreditsPerDay` − `TwelveData__OnDemandCreditsPerDay`) / 2**: 300 on the free plan (800 and 200), and the shared catalog is capped below it, at `MarketData__Lookup__MaxCatalogListings` (250 by default, ADR-0051), to leave room for the reloads of rewritten histories. A new stock past the cap is refused with `409 marketdata.stock.catalog_full` and event 2504; a stock already in the catalog still goes on a watchlist. Change the plan and the cap together: a paid plan with no daily limit sets `CreditsPerDay` large and the cap to the number of stocks wanted. If prices of the last stocks of the day go stale and no refusals appear, the cap is too high for the credits left after the reloads.
+
 ## Signals
 | Signal | Meaning |
 |---|---|

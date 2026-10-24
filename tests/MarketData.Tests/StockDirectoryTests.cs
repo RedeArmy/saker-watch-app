@@ -131,6 +131,11 @@ public sealed class StockDirectoryTests
         }
     }
 
+    private sealed class CatalogSizeOf(int active) : ICatalogSize
+    {
+        public Task<int> ActiveListingsAsync(CancellationToken cancellationToken) => Task.FromResult(active);
+    }
+
     private sealed class Unit : IUnitOfWork
     {
         public int Begun { get; private set; }
@@ -182,7 +187,8 @@ public sealed class StockDirectoryTests
         Guid? user = null,
         bool quotaUnreachable = false,
         RegistrationFallback? fallback = null,
-        int replicas = 1)
+        int replicas = 1,
+        int activeListings = 0)
     {
         var provider = new Provider(answer);
         var catalog = new Catalog();
@@ -203,6 +209,7 @@ public sealed class StockDirectoryTests
             Options.Create(new IngestionOptions()),
             new RegistrationQuota(quota, new User(user ?? _user), Options.Create(lookup ?? new StockLookupOptions()), new DeclaredApiInstances(Options.Create(new DeploymentOptions { ApiReplicas = replicas })), fallback ?? new RegistrationFallback(), clock),
             unit,
+            new CatalogCapacity(new CatalogSizeOf(activeListings), Options.Create(lookup ?? new StockLookupOptions()), NullLogger<CatalogCapacity>.Instance),
             NullLogger<StockRegistration>.Instance);
         var directory = new StockDirectory(catalog, search, registration, router, ExchangeCalendars.Default(), new TimeProviderIdGenerator(clock), clock);
         return new Rig(directory, provider, catalog, registry, budget, cache, jobs, quota, unit);
@@ -539,6 +546,42 @@ public sealed class StockDirectoryTests
         (error.Code, error.Type).Should().Be((StockDirectory.RegistrationLimitCode, ErrorType.TooManyRequests));
         rig.Registry.Registered.Should().BeEmpty();
         rig.Jobs.Queued.Should().BeEmpty("a refused registration queues no history, which is what spends the provider's credits");
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheCatalogHoldsTheMostTheDataPlanCanKeepFresh_RefusesANewStock_WithoutTakingARegistration()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: new StockLookupOptions { MaxCatalogListings = 250 }, activeListings: 250);
+
+        Error error = (await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None)).Error!;
+
+        (error.Code, error.Type).Should().Be((StockDirectory.CatalogFullCode, ErrorType.Conflict));
+        rig.Registry.Registered.Should().BeEmpty();
+        rig.Quota.Spent.Should().BeEmpty("the user's registration of the day is not spent on a stock that cannot be added");
+        rig.Jobs.Queued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ensure_OneListingBelowTheCap_StillRegistersTheStock()
+    {
+        Rig rig = Build(_ => Found(Listing("XNGS", "AAPL")), lookup: new StockLookupOptions { MaxCatalogListings = 250 }, activeListings: 249);
+
+        Result<StockSummary> result = await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        rig.Registry.Registered.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Ensure_ACataloguedStockIsStillAddedWhenTheCatalogIsFull_BecauseItCreatesNothing()
+    {
+        Rig rig = Build(_ => Found(), lookup: new StockLookupOptions { MaxCatalogListings = 1 }, activeListings: 5);
+        rig.Catalog.Listings.Add(new CatalogListing(StockId.Create(Guid.CreateVersion7()), Mic.Parse("XNAS"), Ticker.Parse("AAPL"), "Apple Inc.", CurrencyCode.Parse("USD"), AssetType.Equity, true));
+
+        Result<StockSummary> result = await rig.Directory.EnsureAsync("XNAS", "AAPL", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue("the stock is in the catalog already, so adding it to a watchlist creates nothing");
+        rig.Registry.Registered.Should().BeEmpty();
     }
 
     [Fact]

@@ -81,6 +81,7 @@ A token that is not sixteen hex digits is `400 validation.failed` on `removalTok
 | `marketdata.stock.market_not_available` | 400 | The market is not served | "Ese mercado aún no está disponible." |
 | `marketdata.stock.currency_mismatch` | 400 | The listing does not trade in the currency of its market | "No pudimos agregar esa acción." |
 | `marketdata.stock.provider_listing_taken` | 409 | The provider lists that ticker as another stock of the catalog | "No pudimos agregar esa acción. Avísanos." |
+| `marketdata.stock.catalog_full` | 409 | The shared catalog holds the most stocks the data plan can keep up to date (250 on the free plan, ADR-0051); a stock already in the catalog can still be added | "No se pueden agregar acciones nuevas por ahora. Las que ya están en el catálogo sí se pueden agregar." |
 | `marketdata.stock.registration_limit` | 429 | The user added the daily maximum of new stocks (20 a UTC day); stocks already in the catalog still go in | "Agregaste el máximo de acciones nuevas por hoy. Vuelve mañana." (`Retry-After` is the time to 00:00 UTC) |
 | `marketdata.search.query_invalid` | 400 | The search text is empty, too long or has characters other than letters, digits, space, `.`, `&`, `-`, `_` | Mark the search box |
 | `marketdata.search.busy` | 429 | The shared search budget is spent | "Hay muchas búsquedas. Intenta en un momento." |

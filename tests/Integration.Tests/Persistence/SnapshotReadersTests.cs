@@ -47,6 +47,20 @@ public sealed class SnapshotReadersTests(TimescalePostgresFixture postgres) : IC
     }
 
     [Fact]
+    public async Task TheCatalogSize_CountsTheActiveListingsOnly()
+    {
+        MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();
+        await SeedStockAsync(db.Admin, "AAA");
+        await SeedStockAsync(db.Admin, "BBB");
+        StockId gone = await SeedStockAsync(db.Admin, "CCC");
+        await db.Admin.ExecuteAsync("UPDATE marketdata.stocks SET is_active = false, delisted_at = now() WHERE id = @id", ("id", gone.Value));
+
+        int active = await InSessionAsync(db.Api, session => new CatalogSize(session).ActiveListingsAsync(CancellationToken.None));
+
+        active.Should().Be(2, "a delisted listing is not refreshed, so it takes no credits");
+    }
+
+    [Fact]
     public async Task ListIngestable_LeavesOutWhatFailedForGood_ButAsksAgainForWhatTheConfigurationStopped()
     {
         MigratedDatabase db = await postgres.CreateMigratedDatabaseAsync();

@@ -52,6 +52,9 @@ public sealed partial class StockDirectory(
     /// <summary>Code of the failure when the user has put the most new stocks in the catalog that one day allows.</summary>
     public const string RegistrationLimitCode = "marketdata.stock.registration_limit";
 
+    /// <summary>Code of the failure when the shared catalog holds the most listings the data plan can keep fresh (ADR-0051).</summary>
+    public const string CatalogFullCode = "marketdata.stock.catalog_full";
+
     /// <summary>Code of the failure when the provider cannot answer for now.</summary>
     public const string ProviderUnavailableCode = "marketdata.search.provider_unavailable";
 
@@ -171,6 +174,7 @@ public sealed partial class StockDirectory(
     {
         SearchBusyCode => "busy",
         RegistrationLimitCode => "limit",
+        CatalogFullCode => "catalog_full",
         ProviderListingTakenCode => "conflict",
         ProviderUnavailableCode => "unavailable",
         StockNotFoundCode => "not_found",
