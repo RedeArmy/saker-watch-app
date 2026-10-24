@@ -86,27 +86,23 @@ public sealed partial record LifecycleCommand(LifecycleOperation Operation, stri
         {
             if (arg == "--on")
             {
-                if (!pending.TryDequeue(out string? text) || !DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly day))
+                Result<DateOnly> day = ReadDay(pending);
+                if (!day.IsSuccess)
                 {
-                    return Bad("--on needs a date as yyyy-MM-dd.");
+                    return day.Error!;
                 }
 
-                on = day;
+                on = day.Value;
             }
             else if (arg == "--provider-symbol")
             {
-                if (!pending.TryDequeue(out string? symbol) || symbol.StartsWith("--", StringComparison.Ordinal))
+                Result<string> symbol = ReadProviderSymbol(pending);
+                if (!symbol.IsSuccess)
                 {
-                    return Bad("--provider-symbol needs a symbol.");
+                    return symbol.Error!;
                 }
 
-                // The same form the database accepts (ck_symbol_aliases_provider_symbol): a symbol it would refuse is a usage mistake here, not a failure later.
-                if (!ProviderSymbolForm().IsMatch(symbol))
-                {
-                    return Bad("--provider-symbol is 1 to 32 letters, digits, '.', '_', '/' or '-', and starts with a letter or a digit.");
-                }
-
-                providerSymbol = symbol;
+                providerSymbol = symbol.Value;
             }
             else if (arg.StartsWith("--", StringComparison.Ordinal))
             {
@@ -119,6 +115,24 @@ public sealed partial record LifecycleCommand(LifecycleOperation Operation, stri
         }
 
         return (positional, on, providerSymbol);
+    }
+
+    private static Result<DateOnly> ReadDay(Queue<string> pending) =>
+        pending.TryDequeue(out string? text) && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly day)
+            ? day
+            : Bad("--on needs a date as yyyy-MM-dd.");
+
+    // The same form the database accepts (ck_symbol_aliases_provider_symbol): a symbol it would refuse is a usage mistake here, not a failure later.
+    private static Result<string> ReadProviderSymbol(Queue<string> pending)
+    {
+        if (!pending.TryDequeue(out string? symbol) || symbol.StartsWith("--", StringComparison.Ordinal))
+        {
+            return Bad("--provider-symbol needs a symbol.");
+        }
+
+        return ProviderSymbolForm().IsMatch(symbol)
+            ? symbol
+            : Bad("--provider-symbol is 1 to 32 letters, digits, '.', '_', '/' or '-', and starts with a letter or a digit.");
     }
 
     private static Error Bad(string reason) => Error.Validation(UsageCode, $"{reason} {Usage}");

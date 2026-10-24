@@ -49,6 +49,8 @@ dotnet_diagnostic.S1192.severity = error
 dotnet_diagnostic.S138.severity = error
 # SonarCloud's quality profile also fails the CI build on more than 7 parameters (S107, the analyzer's default threshold); enable it locally so it fails before pushing
 dotnet_diagnostic.S107.severity = error
+# SonarCloud's quality profile fails the CI build on a cognitive complexity over 15 (S3776, the analyzer's default); enable it locally so it fails before pushing
+dotnet_diagnostic.S3776.severity = error
 # C#-only code base: "Error" is the established name for the Result error type (VB keyword clash is irrelevant)
 dotnet_diagnostic.CA1716.severity = none
 
