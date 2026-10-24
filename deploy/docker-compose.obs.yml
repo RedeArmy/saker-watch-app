@@ -29,7 +29,7 @@ services:
     security_opt: ["no-new-privileges:true"]
   loki:
     profiles: [obs]
-    image: grafana/loki:3.7.8
+    image: grafana/loki:3.7.9
     command: ["-config.file=/etc/loki/loki.yaml"]
     volumes:
       - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
