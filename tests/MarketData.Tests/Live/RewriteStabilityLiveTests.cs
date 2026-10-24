@@ -4,6 +4,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Infrastructure;
@@ -26,6 +27,13 @@ public sealed class RewriteStabilityLiveTests
     // Under this price one unit of the last place of a close is as large as the tolerance (docs/runbooks/provider-quota.md), the case the check is for.
     private const decimal _cheap = 5m;
 
+    // Fewest symbols that must answer for the comparison to mean anything.
+    private const int _fewest = 3;
+
+    // How many times a symbol is asked again after a failure that may pass, and how long to wait: the breaker of the HTTP client stays open for a while.
+    private const int _attempts = 3;
+    private static readonly TimeSpan _pause = TimeSpan.FromSeconds(45);
+
     private static readonly string _reportDirectory = Environment.GetEnvironmentVariable("SAKER_LIVE_REPORT_DIR") ?? "/tmp/saker-live-twelvedata";
 
     private readonly StringBuilder _report = new();
@@ -42,7 +50,8 @@ public sealed class RewriteStabilityLiveTests
         Directory.CreateDirectory(_reportDirectory);
 
         var services = new ServiceCollection();
-        services.AddLogging();
+        // What the adapter logs when a call fails is the only trace of why (a timeout, a refused connection, an open circuit), so it goes into the report.
+        services.AddLogging(logging => logging.AddProvider(new ReportLogger(Line)));
         services.AddSingleton<IProviderCallBudget>(new TwelveDataLiveTests.PacedBudget());
         services.AddSingleton<IProviderPayloadStore>(new TwelveDataLiveTests.CapturingStore());
         services.AddMarketData(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -56,6 +65,14 @@ public sealed class RewriteStabilityLiveTests
 
         Line($"# Stability of the adjusted closes, {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} UTC, tolerance {tolerance.ToString("0.0E+0", CultureInfo.InvariantCulture)}, {wait.TotalMinutes} minutes between passes");
         Dictionary<string, Dictionary<string, string>> first = await PassAsync(twelve, symbols);
+        if (first.Count < _fewest)
+        {
+            // Nothing to compare and nothing worth waiting ten minutes for; the snapshot of an earlier run is left alone.
+            Line($"\n## Result\nonly {first.Count} of {symbols.Length} symbols answered in the first pass (at least {_fewest} are needed): the run stops here and the snapshot of the earlier run is untouched. The lines above say why each symbol failed.");
+            await File.WriteAllTextAsync(Path.Combine(_reportDirectory, "rewrite-stability-report.md"), _report.ToString());
+            first.Count.Should().BeGreaterThanOrEqualTo(_fewest, "see the report in " + _reportDirectory);
+        }
+
         string snapshotPath = Path.Combine(_reportDirectory, "rewrite-stability-snapshot.json");
         int crossings = 0;
         if (File.Exists(snapshotPath) && DateTimeOffset.UtcNow - File.GetLastWriteTimeUtc(snapshotPath) > TimeSpan.FromHours(1))
@@ -76,7 +93,7 @@ public sealed class RewriteStabilityLiveTests
             + (cheap == 0 ? "**None is cheap, so the case this check exists for was not tested:** name some with SAKER_LIVE_REWRITE_SYMBOLS and run it again." : "The low-priced case is covered."));
         Line($"\n## Result\n{(crossings == 0 ? "no completed session moved beyond the tolerance" : $"{crossings} closes moved beyond the tolerance without a corporate action: RewriteTolerance reads provider noise as a rewrite for them")}");
         await File.WriteAllTextAsync(Path.Combine(_reportDirectory, "rewrite-stability-report.md"), _report.ToString());
-        first.Count.Should().BeGreaterThanOrEqualTo(3, "at least three symbols must have answered for the comparison to mean anything");
+        second.Count.Should().BeGreaterThanOrEqualTo(_fewest, "at least " + _fewest + " symbols must answer the second pass for the comparison to mean anything");
         crossings.Should().Be(0, "see the report in " + _reportDirectory);
     }
 
@@ -89,9 +106,16 @@ public sealed class RewriteStabilityLiveTests
         {
             var request = new DailySeriesRequest(symbol, today.AddDays(-21), null, Adjusted: true);
             var result = await twelve.GetDailyAsync(request, CancellationToken.None);
+            for (int attempt = 1; attempt < _attempts && !result.IsSuccess && ProviderErrors.Classify(result.Error!) is ProviderFailureKind.Transient or ProviderFailureKind.RateLimited; attempt++)
+            {
+                Line($"- {symbol.ProviderMic}:{symbol.Symbol}: {result.Error!.Code}; waiting {_pause.TotalSeconds:0} s before attempt {attempt + 1} of {_attempts}");
+                await Task.Delay(_pause);
+                result = await twelve.GetDailyAsync(request, CancellationToken.None);
+            }
+
             if (!result.IsSuccess)
             {
-                Line($"- {symbol.ProviderMic}:{symbol.Symbol}: not read ({result.Error!.Code}); left out");
+                Line($"- {symbol.ProviderMic}:{symbol.Symbol}: not read ({result.Error!.Code}: {result.Error.Message}); left out");
                 continue;
             }
 
@@ -141,4 +165,30 @@ public sealed class RewriteStabilityLiveTests
     }
 
     private void Line(string text) => _report.AppendLine(text);
+
+    // Warnings and errors of the adapter and its HTTP client, with the type and message of the exception: no secret is in them (the key travels in a header).
+    private sealed class ReportLogger(Action<string> write) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new Sink(write, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Sink(Action<string> write, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (IsEnabled(logLevel))
+                {
+                    write($"  [{logLevel}] {category}: {formatter(state, exception)}{(exception is null ? string.Empty : $" ({exception.GetType().Name}: {exception.Message})")}");
+                }
+            }
+        }
+    }
 }
