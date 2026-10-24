@@ -1,6 +1,6 @@
 # ADR-0051: The size of the shared catalog follows what the data plan can refresh
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-23
 - **Deciders:** Eder
 
@@ -18,11 +18,12 @@ Nothing stopped the catalog from growing past that. With 400 stocks the refresh 
 ## Decision
 - **The shared catalog is capped at `MarketData:Lookup:MaxCatalogListings` active listings, 250 by default** (the 300 the plan sustains, less 50 for reloads). `StockRegistration.ReserveAsync` asks `CatalogCapacity` before it spends one of the user's registrations of the day; past the cap the answer is `409 marketdata.stock.catalog_full` and nothing is registered or queued. A stock that is already in the catalog still goes on a watchlist: it creates nothing. Delisted listings do not count: they are not refreshed.
 - The count is read once per registration, so registrations in parallel can pass the cap by their number. It is a margin under the plan's credits, not an exact limit, and an exact one (a count under a lock in `register_stock`) would need a migration for a bound that has 50 listings of slack.
-- **The cap follows the plan.** The rule is `(TwelveData:CreditsPerDay − TwelveData:OnDemandCreditsPerDay) / 2`, less headroom; whoever changes the plan changes both settings together (`docs/runbooks/provider-quota.md`). A paid plan with no daily limit sets a cap that fits the number of stocks the owner wants.
+- **The cap follows the plan, and the host checks it.** The rule is `(TwelveData:CreditsPerDay − TwelveData:OnDemandCreditsPerDay) / 2`, less headroom; whoever changes the plan changes both settings together (`docs/runbooks/provider-quota.md`). `TwelveDataOptionsValidator` refuses to start a host that routes a market to Twelve Data when twice the cap is more than the credits the refresh has, and the message names the cap that fits: the invariant this decision rests on cannot be broken by editing one number. A paid plan with no daily limit sets a cap that fits the number of stocks the owner wants. A host that routes no market to Twelve Data is not checked.
 - **The spec is corrected** (`docs/product-spec.md`, section 4): 500 is the most one user may follow, reached only when the catalog is large enough; 1,000 stocks for the nightly analysis need a paid plan.
 
 ## Consequences
 - The 250th stock is the last one a user can add on the free plan, and the 251st gets an error that says why instead of a price that goes stale in a week. The screens of Phase 3 show it (`docs/api/errors.md`).
 - The "500 items" SLO of `GET /v1/watchlist` is measured on a catalog that is larger than the free plan allows (the k6 baseline seeds 500 listings); it stays a valid performance target for a paid plan and says nothing about how many stocks the free plan holds.
 - The cap is a setting that can be wrong in both directions: too high and some stocks go stale, too low and the owner is refused stocks the plan could carry. `sakerwatch_marketdata_stock_lookups_total{outcome="catalog_full"}` and event 2504 show the refusals, and the freshness gauges show the other failure.
+- The cap counts every active listing, also those whose ingestion failed for good and are not refreshed: it errs towards refusing. And it is **one cap for the whole catalog while the credits are one provider's**: when a second provider serves other markets the cap should become one per provider (a decision for the day a second market arrives, A-027), and until then it protects the only provider there is.
 - It does not solve the cost of the analysis for 1,000 stocks, or a second market: both need credits and are Phase 4 and later decisions.

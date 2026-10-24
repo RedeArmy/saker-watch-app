@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Options;
+using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Providers;
 
 namespace SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
@@ -43,9 +44,13 @@ public sealed class TwelveDataOptions
     public int OnDemandCreditsPerDay { get; set; } = 200;
 }
 
-/// <summary>Requires the API key when at least one market is routed to Twelve Data, so a host without a key still starts when it does not use it.</summary>
+/// <summary>
+/// Requires the API key when at least one market is routed to Twelve Data, so a host without a key still starts when it does not use it, and refuses a catalog
+/// cap the day's credits cannot refresh (ADR-0051): a host that would leave its last stocks stale every day does not start.
+/// </summary>
 /// <param name="routing">The market routing table.</param>
-public sealed class TwelveDataOptionsValidator(IOptions<MarketDataProvidersOptions> routing) : IValidateOptions<TwelveDataOptions>
+/// <param name="lookup">The cap on the size of the catalog; without it the cap is not checked (a tool, a test).</param>
+public sealed class TwelveDataOptionsValidator(IOptions<MarketDataProvidersOptions> routing, IOptions<StockLookupOptions>? lookup = null) : IValidateOptions<TwelveDataOptions>
 {
     /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, TwelveDataOptions options)
@@ -66,6 +71,15 @@ public sealed class TwelveDataOptionsValidator(IOptions<MarketDataProvidersOptio
         if (options.OnDemandCreditsPerDay > options.CreditsPerDay)
         {
             return ValidateOptionsResult.Fail("TwelveData:OnDemandCreditsPerDay is a share of TwelveData:CreditsPerDay and cannot be larger.");
+        }
+
+        // Every listing of the catalog is refreshed every day at two credits; what the day leaves after the allowance for new stocks has to carry the cap.
+        int refreshable = options.CreditsPerDay - options.OnDemandCreditsPerDay;
+        if (routed && lookup is not null && lookup.Value.MaxCatalogListings * 2L > refreshable)
+        {
+            return ValidateOptionsResult.Fail(
+                $"MarketData:Lookup:MaxCatalogListings ({lookup.Value.MaxCatalogListings}) needs {lookup.Value.MaxCatalogListings * 2L} credits a day to refresh every listing, but "
+                + $"TwelveData:CreditsPerDay minus TwelveData:OnDemandCreditsPerDay leaves {refreshable}: lower the cap to {refreshable / 2} or raise the credits (ADR-0051).");
         }
 
         return Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out Uri? uri) && uri.Scheme == Uri.UriSchemeHttps

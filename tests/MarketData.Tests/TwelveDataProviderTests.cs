@@ -3,11 +3,15 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
 using AwesomeAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SakerWatch.BuildingBlocks.Kernel.Results;
+using SakerWatch.MarketData.Application.Lookup;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Stocks;
+using SakerWatch.MarketData.Infrastructure;
 using SakerWatch.MarketData.Infrastructure.Providers.TwelveData;
 
 namespace SakerWatch.MarketData.Tests;
@@ -547,6 +551,64 @@ public sealed class TwelveDataProviderTests
         bool custom = new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions())).Validate(null, options).Succeeded;
 
         (annotations && custom).Should().Be(valid);
+    }
+
+    [Theory]
+    [InlineData(250, 800, 200, true)]   // the defaults: 500 credits of refresh against 600
+    [InlineData(300, 800, 200, true)]   // exactly what the free plan carries
+    [InlineData(301, 800, 200, false)]
+    [InlineData(500, 800, 200, false)]   // the spec's 500 stocks need 1,000 credits a day
+    [InlineData(500, 1200, 200, true)]   // a plan with more credits carries them
+    [InlineData(500, 100000, 0, true)]   // a plan with no daily limit
+    public void Options_TheCatalogCapMustFitTheCreditsThatRefreshIt(int cap, int perDay, int onDemand, bool valid)
+    {
+        var options = new TwelveDataOptions { ApiKey = _key, CreditsPerDay = perDay, OnDemandCreditsPerDay = onDemand };
+        var routed = new MarketDataProvidersOptions { Markets = new Dictionary<string, string> { ["XNAS"] = TwelveDataOptions.ProviderName } };
+
+        ValidateOptionsResult result = new TwelveDataOptionsValidator(Options.Create(routed), Options.Create(new StockLookupOptions { MaxCatalogListings = cap })).Validate(null, options);
+
+        result.Succeeded.Should().Be(valid);
+        if (!valid)
+        {
+            string.Join(' ', result.Failures!).Should().Contain("MaxCatalogListings").And.Contain("ADR-0051");
+        }
+    }
+
+    [Theory]
+    [InlineData("250", true)]
+    [InlineData("500", false)]
+    public void TheRegisteredHost_StopsAtStartWhenTheCapCannotBeRefreshed(string cap, bool starts)
+    {
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["TwelveData:ApiKey"] = _key,
+            ["MarketData:Providers:Markets:XNAS"] = "twelvedata",
+            ["MarketData:Lookup:MaxCatalogListings"] = cap,
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMarketData(configuration);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Func<TwelveDataOptions> read = () => provider.GetRequiredService<IOptions<TwelveDataOptions>>().Value;
+
+        if (starts)
+        {
+            read.Should().NotThrow();
+        }
+        else
+        {
+            read.Should().Throw<OptionsValidationException>().WithMessage("*MaxCatalogListings*");
+        }
+    }
+
+    [Fact]
+    public void Options_TheCatalogCapIsNotCheckedAgainstCreditsAHostDoesNotUse()
+    {
+        var options = new TwelveDataOptions { ApiKey = _key, CreditsPerDay = 800, OnDemandCreditsPerDay = 200 };
+
+        new TwelveDataOptionsValidator(Options.Create(new MarketDataProvidersOptions()), Options.Create(new StockLookupOptions { MaxCatalogListings = 5000 })).Validate(null, options).Succeeded
+            .Should().BeTrue("no market is routed to Twelve Data, so its credits carry nothing");
     }
 
     [Fact]
