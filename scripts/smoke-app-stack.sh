@@ -17,10 +17,11 @@ log() {
   return 0
 }
 check() { # check <what> <expected> <actual>
-  if [[ "$2" == "$3" ]]; then
-    log "ok   $1"
+  local what="$1" expected="$2" actual="$3"
+  if [[ "$expected" == "$actual" ]]; then
+    log "ok   $what"
   else
-    log "FAIL $1: expected '$2', got '$3'"
+    log "FAIL $what: expected '$expected', got '$actual'"
     failures=$((failures + 1))
   fi
   return 0
@@ -95,7 +96,8 @@ done
 check "the API container is healthy" healthy "$state"
 
 http() { # http <path> -> status code
-  curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:$api_port$1"
+  local path="$1"
+  curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:$api_port$path"
   return 0
 }
 check "/health/live answers 200" 200 "$(http /health/live)"
@@ -121,7 +123,8 @@ check "the datastores are not on the network that has outbound access" 0 "$("${c
 
 # Memory: at rest, and after some traffic (the health route does the three datastore round trips).
 sample() { # sample <label>
-  log "memory $1 (container, used / limit):"
+  local label="$1"
+  log "memory $label (container, used / limit):"
   docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' $("${compose[@]}" ps -q) | sed 's/saker-appsmoke-//' | tee -a "$out/memory.log" | sed 's/^/       /'
   return 0
 }

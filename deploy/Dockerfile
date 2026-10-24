@@ -14,9 +14,14 @@ COPY global.json Directory.Build.props Directory.Packages.props SakerWatch.slnx 
 COPY src ./src
 # The runtime identifier trims the native assets (the MongoDB driver ships several) to the ones of the target; the output is framework-dependent.
 RUN --mount=type=cache,target=/root/.nuget/packages \
-    case "$TARGETARCH" in amd64) rid=linux-x64 ;; arm64) rid=linux-arm64 ;; *) echo "unsupported architecture $TARGETARCH" >&2; exit 1 ;; esac \
+    case "$TARGETARCH" in \
+      amd64) rid=linux-x64 ;; \
+      arm64) rid=linux-arm64 ;; \
+      *) echo "unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
+    esac \
     && for host in Api Worker Migrator; do \
-         dotnet publish "src/Hosts/Host.$host/SakerWatch.Hosts.$host.csproj" -c Release -r "$rid" --self-contained false -p:UseAppHost=false -o "/out/$host"; \
+         dotnet publish "src/Hosts/Host.$host/SakerWatch.Hosts.$host.csproj" \
+           -c Release -r "$rid" --self-contained false -p:UseAppHost=false -o "/out/$host"; \
        done
 
 # The three hosts run on the same ASP.NET Core base: the worker and the migrator reach the framework through the building blocks.
