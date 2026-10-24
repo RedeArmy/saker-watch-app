@@ -95,6 +95,26 @@ public sealed class WatchlistEndpointTests(TimescalePostgresFixture postgres) : 
         catalogued.StatusCode.Should().Be(HttpStatusCode.Created, "once another user registered it, the stock is in the catalog and costs nothing");
     }
 
+    [Fact]
+    public async Task PuttingANewStock_PastTheSizeOfTheCatalogThePlanCanRefresh_Is409_ButACataloguedStockStillGoesIn()
+    {
+        WatchlistRig.Rig rig = await WatchlistRig.StartAsync(postgres, maxCatalogListings: 2);
+        _rigs.Add(rig);
+        string ana = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-catalog-ana" });
+        string ben = rig.Api.Idp.Mint(new TokenSpec { Subject = "account-catalog-ben" });
+
+        HttpResponseMessage first = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/AAPL", ana));
+        HttpResponseMessage second = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/MSFT", ana));
+        HttpResponseMessage third = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/NVDA", ana));
+        HttpResponseMessage catalogued = await rig.Client.SendAsync(Send(HttpMethod.Put, "/v1/watchlist/items/XNAS/MSFT", ben));
+
+        (first.StatusCode, second.StatusCode).Should().Be((HttpStatusCode.Created, HttpStatusCode.Created));
+        third.StatusCode.Should().Be(HttpStatusCode.Conflict, "the catalog holds the two stocks the plan can refresh");
+        (await BodyAsync(third)).GetProperty("code").GetString().Should().Be("marketdata.stock.catalog_full");
+        catalogued.StatusCode.Should().Be(HttpStatusCode.Created, "a stock that is in the catalog creates nothing, so it goes in whatever its size");
+        (await rig.Api.Db.Admin.ScalarAsync<long>("SELECT count(*) FROM marketdata.stocks")).Should().Be(2, "nothing was registered for the refused stock");
+    }
+
     // Asks the database, from outside the API, how many sessions are sitting in an open transaction at the moment the provider is being asked.
     private sealed class WatchingProvider(FakeMarketDataProvider inner, string admin) : IMarketDataProvider
     {

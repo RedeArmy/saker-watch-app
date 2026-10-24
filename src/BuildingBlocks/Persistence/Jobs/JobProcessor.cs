@@ -284,13 +284,17 @@ public sealed partial class JobProcessor
             """
             UPDATE platform.job_queue AS j
             SET state = 'leased', attempts = j.attempts + 1, lease_token = @token, lease_expires_at = @expires, leased_by = @worker
-            WHERE j.id = (
-                SELECT id FROM platform.job_queue
-                WHERE ((state = 'pending' AND available_at <= @now) OR (state = 'leased' AND lease_expires_at <= @now))
-                  AND attempts < max_attempts
-                ORDER BY available_at
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED)
+            WHERE j.id = COALESCE(
+                (SELECT id FROM platform.job_queue
+                 WHERE state = 'leased' AND lease_expires_at <= @now AND attempts < max_attempts
+                 ORDER BY lease_expires_at
+                 LIMIT 1
+                 FOR UPDATE SKIP LOCKED),
+                (SELECT id FROM platform.job_queue
+                 WHERE state = 'pending' AND available_at <= @now AND attempts < max_attempts
+                 ORDER BY available_at
+                 LIMIT 1
+                 FOR UPDATE SKIP LOCKED))
             RETURNING j.id, j.job_key, j.type, j.payload::text, j.attempts, j.max_attempts, j.correlation_id, j.trace_id, j.lease_token, j.user_id
             """,
             connection);
@@ -299,23 +303,20 @@ public sealed partial class JobProcessor
         claim.Parameters.AddWithValue("worker", _worker);
         claim.Parameters.AddWithValue("now", now);
         await using NpgsqlDataReader reader = await claim.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new ClaimedJob(
-            reader.GetGuid(0),
-            reader.GetString(1),
-            reader.GetString(2),
-            reader.GetString(3),
-            reader.GetInt32(4),
-            reader.GetInt32(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6),
-            reader.IsDBNull(7) ? null : reader.GetString(7),
-            reader.GetGuid(8),
-            reader.IsDBNull(9) ? null : reader.GetGuid(9));
+        return await reader.ReadAsync(cancellationToken) ? ReadClaimed(reader) : null;
     }
+
+    private static ClaimedJob ReadClaimed(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0),
+        reader.GetString(1),
+        reader.GetString(2),
+        reader.GetString(3),
+        reader.GetInt32(4),
+        reader.GetInt32(5),
+        reader.IsDBNull(6) ? null : reader.GetString(6),
+        reader.IsDBNull(7) ? null : reader.GetString(7),
+        reader.GetGuid(8),
+        reader.IsDBNull(9) ? null : reader.GetGuid(9));
 
     // True for exactly one caller per ParkInterval: the polling loops of every worker share the work of this housekeeping query.
     private bool ParkCheckIsDue()

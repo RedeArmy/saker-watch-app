@@ -34,6 +34,22 @@ public sealed class StockLookupOptions
     /// </summary>
     [Range(1, 10_000)]
     public int RegistrationsPerUserPerDay { get; set; } = 20;
+
+    /// <summary>
+    /// Most active listings the shared catalog holds (ADR-0051). Every one is refreshed every day at two credits (the adjusted and the raw series), so the
+    /// catalog the plan can keep fresh is (<c>TwelveData:CreditsPerDay</c> − <c>TwelveData:OnDemandCreditsPerDay</c>) / 2, which is 300 on the free plan, less some
+    /// room for the reloads of rewritten histories: 250. A new stock past the cap is refused (<see cref="StockDirectory.CatalogFullCode"/>) instead of
+    /// being added and left with prices that go stale because the day's credits ran out. A paid plan raises it with the credits.
+    /// </summary>
+    [Range(1, 1_000_000)]
+    public int MaxCatalogListings { get; set; } = 250;
+}
+
+/// <summary>How many listings the catalog holds, for the cap on its size.</summary>
+public interface ICatalogSize
+{
+    /// <summary>The number of active listings (<c>is_active</c>), delisted ones excluded: they are not refreshed.</summary>
+    Task<int> ActiveListingsAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>A listing found at a provider, kept as the cache stores it: the provider's own code and symbol plus the text it reported.</summary>

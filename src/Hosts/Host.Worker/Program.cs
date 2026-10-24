@@ -39,7 +39,22 @@ builder.Services.AddHostedService<WorkerLifecycleService>();
 if (args.Length > 0 && string.Equals(args[0], "marketdata", StringComparison.OrdinalIgnoreCase))
 {
     using IHost tool = builder.Build();
-    return await MarketDataCommandLine.RunAsync(tool.Services, args[1..], CancellationToken.None);
+
+    // Ctrl-C cancels the command (a hung database call included) instead of killing the process mid-write; 130 is the usual status of an interrupt.
+    using var interrupted = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        interrupted.Cancel();
+    };
+    try
+    {
+        return await MarketDataCommandLine.RunAsync(tool.Services, args[1..], interrupted.Token);
+    }
+    catch (OperationCanceledException) when (interrupted.IsCancellationRequested)
+    {
+        return 130;
+    }
 }
 
 await builder.Build().RunAsync();

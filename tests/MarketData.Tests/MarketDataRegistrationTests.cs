@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SakerWatch.MarketData.Application.Fx;
+using SakerWatch.MarketData.Application.Ingestion;
 using SakerWatch.MarketData.Application.Prices;
 using SakerWatch.MarketData.Application.Providers;
 using SakerWatch.MarketData.Domain.Markets;
@@ -143,6 +144,31 @@ public sealed class MarketDataRegistrationTests
         Action act = () => _ = provider.GetRequiredService<IOptions<MarketDataProvidersOptions>>().Value;
 
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
+    [InlineData("MarketData:Ingestion:CheckInterval", "00:00:00")]
+    [InlineData("MarketData:Ingestion:CheckInterval", "-00:10:00")]
+    [InlineData("MarketData:Ingestion:FreshnessInterval", "00:00:00")]
+    [InlineData("MarketData:Ingestion:SettleDelay", "-01:00:00")]
+    [InlineData("MarketData:Ingestion:BackfillMaxAttempts", "0")]
+    public void AnIngestionSettingOutOfItsRange_StopsTheHost_AtStart(string key, string value)
+    {
+        using ServiceProvider provider = Build(new Dictionary<string, string?> { [key] = value });
+
+        Func<IngestionOptions> read = () => provider.GetRequiredService<IOptions<IngestionOptions>>().Value;
+
+        read.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void TheDefaultIngestionSettings_AreWithinTheirRanges()
+    {
+        using ServiceProvider provider = Build([]);
+
+        Func<IngestionOptions> read = () => provider.GetRequiredService<IOptions<IngestionOptions>>().Value;
+
+        read.Should().NotThrow();
     }
 
     [Fact]

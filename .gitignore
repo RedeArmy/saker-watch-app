@@ -28,3 +28,9 @@ web/out/
 .DS_Store
 sbom/
 coverage-summary.txt
+
+# Python bytecode of the helper scripts
+__pycache__/
+
+# Provider settings of a host (the .example file next to it is the template)
+deploy/app.env

@@ -1,0 +1,83 @@
+# RFC-0002 — Feasibility spike of the LLM analysis (one week)
+
+- **Purpose:** decide, with measurements, whether the analysis of the product (spec 2.3, ADR-0008) can run on the hardware the owner has, before more infrastructure is built around it. Closes assumption A-004 and tells ADR-0008 whether it stands.
+- **Owner:** Eder · **Status:** draft · **Target phase:** 4 (run before Phase 4 is planned; it does not block Phase 3)
+
+## 1. Why a spike, and why now
+Phases 0 to 2 built the platform and the market data. The analysis agent, which is what sets the product apart from a watchlist, has no code, and everything it depends on is unmeasured: tokens per analysis, tokens per second, memory, quality. Three decisions wait on those numbers: the model, where it runs, and whether the nightly run for the whole catalog fits in a night (ADR-0008, A-004, TD-010, TD-102). The spike buys the numbers in a week and may end with "do not self-host", which is a good answer if it is the true one.
+
+## 2. Facts the plan stands on
+| Fact | Source | Consequence |
+|---|---|---|
+| The owner's hardware is the **Oracle Always Free Ampere A1 VM** | Owner, 2026-10-24 | ADR-0008 says "a separate GPU host"; the spike tests the VM instead, and the result may supersede that ADR |
+| The Always Free allowance of the A1 shape is **2 OCPUs and 12 GB of memory** (1,500 OCPU hours and 9,000 GB hours a month) | Oracle's documentation, *Always Free Resources*, read on 2026-10-24. Third-party articles reported that the allowance was cut from 4 OCPUs and 24 GB in June 2026; many guides still say 4 and 24 | The whole stack and the model share **2 cores and 12 GB**. The spec's cost line and A-009 must say it |
+| The stack already needs memory: PostgreSQL with Timescale, MongoDB, Redis, the API, the worker, Caddy, and the observability stack of the compose | The compose file | The first estimate was 4 to 6 GB for all of it. The images now exist and `scripts/smoke-app-stack.sh` measured them: **about 0.3 GB at rest with an empty database** on the dev machine (`docs/runbooks/running-the-stack.md`), with the compose limits adding up to a ceiling of 4.8 GB; the figure that counts, with the data loaded, the load of the k6 baseline and the observability stack, is taken on the VM on day 1. MongoDB's default cache is half of the memory of the host minus 1 GB and is capped at 0.5 GB |
+| The catalog is capped at 250 listings on the free data plan | ADR-0051 | The spike sizes the nightly run for 250 stocks first, and for 1,000 only as a stretch figure |
+| The analysis is shared per stock, prompt version and date, and sees public market data and filings, never a user's notes | Spec 2.3, ADR-0008 | An external model can be used without sending anything private; it is a legitimate comparison and a possible fallback |
+
+I did not run any model for this document. The figures in section 5 are what the spike has to measure and the thresholds in section 6 are proposals for the owner to fix.
+
+## 3. Scope
+**In:** a throw-away harness (`scripts/llm-spike/`, Python with the standard library only, not part of the solution) that builds a context for each of 20 stocks from data the system already has, calls a model through the OpenAI-compatible API (Ollama locally, an external model for the reference), validates the answer against a JSON schema, and records tokens, time, memory and the answer.
+
+**Out:** the queue, the persistence in two stores, the scoring step, the signals engine, the UI, the final prompts and rubrics, any change to `src/`. The harness is thrown away or rewritten; nothing of it becomes production code by being there. **The harness is written and tested** (`scripts/llm-spike/`: `spike.py` with the commands `contexts`, `run`, `report` and `sheets`, the provisional schema and prompt, and 14 tests against a fake Ollama server); what is left of day 2 is the real contexts of the 20 stocks and the rubric text.
+
+## 4. The golden set of 20 stocks
+Chosen to cover the cases that break an analysis, from the catalog or the load seed, with the owner's approval of the list on day 1:
+- 6 large caps of different sectors; 2 ETFs (no fundamentals); 3 stocks under $5 or with a short history; 1 with a recent split; 1 with a rewritten adjusted history; 1 delisted or stale; 3 with a volatile year; 3 with little recent filing activity.
+- For each: the context it would get in the pipeline, stored as a file with its `source` and `as_of`.
+
+**Two levels of context**, because the data the system has today is thin:
+1. **L1, what exists now:** the eight performance windows, the price status, the profile (name, industry code, fiscal year end) and the list of recent filings (form and date) from the SEC adapter.
+2. **L2, L1 plus text:** excerpts of the latest annual report (the risk factors) cut to a fixed size. This is where the cost is: the input becomes thousands of tokens and the prefill time of a CPU decides the nightly run.
+
+The owner reviews the 20 answers once (about 3 hours): for each, is the structured assessment right, wrong or unsupported, and is any red flag, catalyst or number invented. The review sheet is generated by the harness, one page per stock, with the context beside the answer so that "unsupported" can be judged.
+
+## 5. What is measured
+| Measure | How | Why |
+|---|---|---|
+| Input and output tokens per analysis (L1 and L2) | The API's usage fields | The base of every capacity figure |
+| Prefill and generation speed, tokens per second | Timings of the runtime, on the VM, with the databases running | The nightly window; prefill is what long contexts cost on a CPU |
+| Memory of the model and peak memory of the VM | `free`, the runtime, with the stack up | Whether it fits beside the stack |
+| Valid answers against the schema, first try and after one repair | The harness | The pipeline of the spec depends on it |
+| Stability: the same input twice at temperature 0 | Run each stock twice | The idempotency rule (run twice, same result) |
+| Faithfulness: every number and every cited fact is in the context | A check in the harness plus the owner's review | An analysis that invents is worse than none |
+| Resistance to injection | Three poisoned contexts (instructions inside a company name and inside a filing excerpt) | Provider text is untrusted (T44, TD-101) |
+| Quality against the owner's review | The review of section 4 | The only measure of whether it is useful |
+| Cost and latency of the external reference | The same 20 contexts through one small and one large hosted model | The ceiling of quality and the price of not self-hosting |
+
+## 6. Decision criteria (proposals; the owner fixes them before the run)
+Self-hosting on the VM **continues** only if all hold, with the 250-stock catalog and the stack running:
+- At least 95 % of answers validate with at most one repair.
+- The nightly run (250 stocks, the analyses the owner keeps) takes under 8 hours, leaving the VM usable by day.
+- At least 98 % of the numbers and facts of the answers are in the context, and the three poisoned contexts do not change an assessment.
+- The owner's review calls at least 80 % of the structured assessments right or acceptable.
+- Peak memory leaves at least 1 GB free beside the stack.
+
+| Result | Action |
+|---|---|
+| All hold on the VM | Choose the model, write ADR-0052 (model, runtime, hosting), start Phase 4 on the VM |
+| Quality holds but speed or memory do not | Reduce the work (fewer analyses, a weekly run, a smaller model) and re-measure; or put the model on a separate host, as ADR-0008 says |
+| Only the external reference reaches the quality | ADR-0052 chooses an external model behind `ILlmAnalyzer` (the interface exists for it), with a monthly cost limit and a fallback; self-hosting becomes a later option |
+| Nothing reaches the quality | The analysis is redesigned before Phase 4: a narrower question, more structured inputs, or a smaller promise in the spec |
+
+## 7. Calendar
+| Day | Work | Owner's time |
+|---|---|---|
+| 1 | Measure the memory of the stack on the VM (cap MongoDB's cache), install Ollama, choose two or three models (one of about 3B, one of 7 to 8B, 4-bit quantized) and two hosted models, record their versions and digests; choose the 20 stocks | 30 min to approve the list |
+| 2 | Contexts L1 and L2 for the 20 stocks; the schema; the provisional prompt for the three analyses | The rubric text if it exists, otherwise provisional |
+| 3 | Run the 20 stocks on the models and the references; measure; repair retry; stability; injection | none |
+| 4 | Generate the review sheets; **the owner's review** | **3 hours** |
+| 5 | Compute the figures against section 6; write `docs/reports/llm-spike.md`; ADR-0052; update A-004, A-009, the spec and the debt register | 30 min to read the report |
+
+Two spare days for the first thing that goes wrong (the VM, the model download, the context) are part of the week.
+
+## 8. Risks of the spike
+- **Measuring on the wrong machine.** Only the VM's numbers count; the laptop of the owner (3 CPUs, 9 GB) is for the harness, not for the figures.
+- **The VM's capacity.** Ampere capacity is sometimes unavailable to create; if the VM does not exist yet, creating it is day 1 and the first risk.
+- **A thin context.** If L1 gives the model nothing to say, the finding is about the data and not the model; the report says which.
+- **The rubric is not written.** Provisional prompts measure speed and format well and quality poorly; the report states that limit.
+- **Scope drift.** Every "while we are here" (a queue, a table, a screen) is refused; the exit is the report.
+
+## 9. Deliverables
+`docs/reports/llm-spike.md` (the numbers, the decision, what was not measured), ADR-0052, closed A-004, updated A-009 and `docs/technical-debt.md` (TD-010, TD-102), and the harness kept in the repository only if the owner wants it as the base of the evaluation harness of the spec.

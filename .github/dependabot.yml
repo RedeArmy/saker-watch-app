@@ -18,3 +18,7 @@ updates:
   - package-ecosystem: docker-compose
     directory: /deploy
     schedule: { interval: weekly }
+  # The base images of deploy/Dockerfile, pinned by digest.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule: { interval: weekly }

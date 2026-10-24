@@ -8,6 +8,8 @@
 2. Redis must be there and healthy (`/health/ready` checks it): the rate limiters count in it from `Deployment__ApiReplicas` above 1 (`RateLimiting__Backend=Auto`, or `Redis` to force it). `Memory` keeps one count in each process and is the wrong choice with several.
 3. The proxy must be in `ForwardedHeaders` (`docs/runbooks/local-development.md`): the pre-authentication limiter counts by client address, and behind a proxy that is not listed every user is the proxy.
 
+3. Size the connection pools so that every process fits in the server. PostgreSQL's `max_connections` is 100 by default and Npgsql's pool was 100 per process, so processes could not all get what they asked for. Each process now has `ConnectionStrings__PostgresMaxPoolSize` connections (default 20, range 2 to 200; a `Maximum Pool Size` written in the connection string wins). Keep **API replicas × pool + worker pool + migrator and admin (about 5) + 3 reserved for superusers ≤ `max_connections`**: with the defaults, two API replicas and a worker use 60 of 100. A request that finds the pool empty waits for a connection (the driver's timeout, 15 s) instead of opening one more; `db.client.connection.pending_requests` of the `Npgsql` meter above zero for long means the pool is too small for the load, and the wait time says by how much.
+
 ## After
 | Check | How |
 |---|---|

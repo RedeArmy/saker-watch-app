@@ -389,6 +389,28 @@ public sealed class JobQueueIntegrationTests(TimescalePostgresFixture postgres) 
     }
 
     [Fact]
+    public async Task AnAbandonedLease_IsReclaimedBeforeTheBacklogOfPendingJobs_AndThePendingOnesGoOldestFirst()
+    {
+        await using Env env = await StartAsync();
+        await env.EnqueueAsync("pending-1");
+        await env.EnqueueAsync("pending-2");
+        await env.EnqueueAsync("crashed-worker");
+        await env.Db.Admin.ExecuteAsync(
+            "UPDATE platform.job_queue SET state = 'leased', attempts = 1, lease_token = @t, lease_expires_at = now() - interval '1 minute', leased_by = 'dead-worker' WHERE job_key = 'crashed-worker'",
+            ("t", Guid.CreateVersion7()));
+        await env.Db.Admin.ExecuteAsync("UPDATE platform.job_queue SET available_at = now() - interval '2 hours' WHERE job_key = 'pending-2'");
+        await env.Db.Admin.ExecuteAsync("UPDATE platform.job_queue SET available_at = now() - interval '1 hour' WHERE job_key = 'pending-1'");
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+        (await env.State("crashed-worker")).Should().Be("succeeded", "an abandoned lease is claimed first: it is work already started");
+        (await env.State("pending-1")).Should().Be("pending");
+
+        await env.Processor.ProcessNextAsync(CancellationToken.None);
+        (await env.State("pending-2")).Should().Be("succeeded", "of the pending jobs the one that has waited longest goes first");
+        (await env.State("pending-1")).Should().Be("pending");
+    }
+
+    [Fact]
     public async Task ALiveLease_IsNotTakenByAnotherWorker()
     {
         await using Env env = await StartAsync();

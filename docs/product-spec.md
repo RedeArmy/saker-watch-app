@@ -38,9 +38,10 @@ Every analysis/signal screen and API response schema carries a localized **"info
 Authenticated Next.js app through the BFF (ADR-0007, ADR-0009). Screens by phase: **Phase 3** watchlist (sortable table, sparkline, change windows), stock detail (chart with range selector), calculator, basic settings; **Phase 4** analysis history and signal reasons on the stock detail; **Phase 6** data export and delete account. WCAG 2.1 AA, responsive, loading/error/stale states, `es-GT` i18n, optimistic updates with rollback, typed client generated from OpenAPI. Playwright E2E for the core journeys.
 
 ## 4. Non-functional targets
+- **Capacity of the data plan (ADR-0051):** the shared catalog is capped at the stocks the plan can refresh every day, two credits each: 250 listings on the free Twelve Data plan (800 credits a day, 200 kept for loading new stocks), and more only with a paid plan. The 500 of the watchlist is the most one user may follow, and it is reached only when the catalog is large enough; the 1,000 stocks of the nightly analysis need a paid plan too.
 - **SLOs:** `GET /v1/watchlist` p95 < 300 ms at 500 items; API availability >= 99.5 % monthly; price staleness < 24 h on trading days; nightly analysis for 1,000 stocks within a configurable window (a target; feasibility depends on the LLM hardware decision, A-004).
 - **Backups and DR:** daily encrypted `pg_dump` and Mongo dump off-box; RPO <= 24 h, RTO <= 4 h; scripted restore and a restore drill executed once in Phase 5.
-- **Cost:** within Oracle Always Free limits (verified at deploy time) plus the separate LLM server; no paid SaaS required to run.
+- **Cost:** within Oracle Always Free limits (the Ampere A1 allowance is 2 OCPUs and 12 GB of memory per Oracle's documentation of 2026-10-24, A-009; the rest verified at deploy time) plus the LLM server, which the spike of RFC-0002 places on that VM or elsewhere; the data plan is the one of ADR-0051. Whether "no paid SaaS" holds depends on those two decisions.
 - **Observability and idempotency:** ADR-0016 and ADR-0017. **Security:** `docs/threat-model/` and ADR-0009/0010; target OWASP ASVS Level 2 and API Security Top 10.
 - **Feature flags** (config-based) for LLM analysis, provider switches, per-market enablement and multi-user features.
 - Time: all timestamps UTC (`timestamptz`), injectable `TimeProvider`, client-side conversion.

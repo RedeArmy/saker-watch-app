@@ -41,7 +41,8 @@ public static class MarketDataServiceCollectionExtensions
         }
 
         services.AddOptions<MarketDataProvidersOptions>().Bind(configuration.GetSection(MarketDataProvidersOptions.SectionName));
-        services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName));
+        // Validated at start: a zero interval would loop on the database and a negative one stops the host, and its ranges were never enforced before.
+        services.AddOptions<IngestionOptions>().Bind(configuration.GetSection(IngestionOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddSakerDeployment(configuration);
         services.AddOptions<StockLookupOptions>().Bind(configuration.GetSection(StockLookupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddMarketDataApplication();
@@ -75,6 +76,9 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddSingleton<ISearchCache, RedisSearchCache>();
         services.TryAddScoped<StockCatalog>();
         services.TryAddScoped<IStockCatalog>(provider => new UnitScopedStockCatalog(provider.GetRequiredService<StockCatalog>(), provider.GetRequiredService<IUnitOfWork>()));
+        services.TryAddScoped<CatalogSize>();
+        services.TryAddScoped<ICatalogSize>(provider => new UnitScopedCatalogSize(provider.GetRequiredService<CatalogSize>(), provider.GetRequiredService<IUnitOfWork>()));
+        services.TryAddScoped<CatalogCapacity>();
         services.TryAddSingleton<RegistrationFallback>();
         services.TryAddScoped<RegistrationQuota>();
         services.TryAddScoped<IStockRegistry, StockRegistry>();

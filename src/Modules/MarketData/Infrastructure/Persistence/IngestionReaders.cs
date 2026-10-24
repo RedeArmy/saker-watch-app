@@ -10,6 +10,18 @@ using SakerWatch.MarketData.Domain.Stocks;
 
 namespace SakerWatch.MarketData.Infrastructure.Persistence;
 
+/// <summary><see cref="ICatalogSize"/> over <c>marketdata.stocks</c>.</summary>
+/// <param name="session">The scope's database connection and transaction.</param>
+public sealed class CatalogSize(DbSession session) : ICatalogSize
+{
+    /// <inheritdoc />
+    public async Task<int> ActiveListingsAsync(CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT count(*) FROM marketdata.stocks WHERE is_active", session.Connection, session.Transaction);
+        return (int)(long)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+}
+
 /// <summary><see cref="IStockCatalog"/> over <c>marketdata.stocks</c>.</summary>
 /// <param name="session">The scope's database connection and transaction.</param>
 public sealed class StockCatalog(DbSession session) : IStockCatalog

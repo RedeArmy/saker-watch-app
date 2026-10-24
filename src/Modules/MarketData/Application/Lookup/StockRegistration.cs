@@ -155,10 +155,15 @@ public sealed partial class StockRegistration(
     IOptions<IngestionOptions> ingestion,
     RegistrationQuota quota,
     IUnitOfWork unit,
+    CatalogCapacity capacity,
     ILogger<StockRegistration> logger)
 {
-    /// <summary>Takes one of the caller's registrations of the day (<see cref="RegistrationQuota"/>).</summary>
-    public Task<Error?> ReserveAsync(CancellationToken cancellationToken) => quota.ReserveAsync(cancellationToken);
+    /// <summary>
+    /// Refuses the registration when the catalog already holds the most listings the data plan can keep fresh (<see cref="CatalogCapacity"/>, ADR-0051), before it
+    /// takes one of the caller's registrations of the day; otherwise takes one (<see cref="RegistrationQuota"/>).
+    /// </summary>
+    public async Task<Error?> ReserveAsync(CancellationToken cancellationToken) =>
+        await capacity.CheckAsync(cancellationToken) ?? await quota.ReserveAsync(cancellationToken);
 
     /// <summary>Gives back the registration taken by <see cref="ReserveAsync"/> when no stock was created (<see cref="RegistrationQuota.ReleaseAsync"/>).</summary>
     public Task ReleaseAsync(CancellationToken cancellationToken) => quota.ReleaseAsync(cancellationToken);

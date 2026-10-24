@@ -83,7 +83,7 @@ internal static class WatchlistRig
     internal static ProviderListing Listing(string mic, string symbol, string name) =>
         new(new ProviderListingKey(mic, symbol), name, "USD", "Asia/Tokyo", AssetType.Equity);
 
-    internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false, int? registrationsPerDay = null, Func<FakeMarketDataProvider, MigratedDatabase, IMarketDataProvider>? wrap = null)
+    internal static async Task<Rig> StartAsync(TimescalePostgresFixture postgres, bool budgetSpent = false, int? registrationsPerDay = null, Func<FakeMarketDataProvider, MigratedDatabase, IMarketDataProvider>? wrap = null, int? maxCatalogListings = null)
     {
         RealApiHost api = await RealApiHost.StartAsync(postgres);
         var clock = new SteadyClock(DateTimeOffset.UtcNow);
@@ -112,6 +112,11 @@ internal static class WatchlistRig
             {
                 builder.UseSetting("MarketData:Lookup:RegistrationsPerUserPerDay", perDay.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
+            if (maxCatalogListings is { } cap)
+            {
+                builder.UseSetting("MarketData:Lookup:MaxCatalogListings", cap.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<TimeProvider>();

@@ -12,6 +12,7 @@
 | Log message templates only, never interpolation (`CA2254`) | `.editorconfig` |
 | A method of `src/**` has at most 40 lines of code (Sonar `S138`); a method that needs more carries `[SuppressMessage("Major Code Smell", "S138:...", Justification = "...")]`, and `grep -rn S138 src` lists them (the list may only shrink). EF migrations are exempt | `.editorconfig`, `SonarLint.xml` |
 | At most 7 parameters (Sonar `S107`, the threshold of the CI quality profile) | `.editorconfig` |
+| A cognitive complexity of at most 15 per method (Sonar `S3776`, the threshold of the CI quality profile) | `.editorconfig` |
 | A string literal repeated is a constant (`S1192`) | `.editorconfig` |
 | Formatting (`dotnet format --verify-no-changes`) | CI `dotnet` job |
 

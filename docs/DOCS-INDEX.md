@@ -9,7 +9,8 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 |---|---|---|---|---|---|
 | docs/pr-faq.md | PR-FAQ | Eder | approved | 0 | 2026-10-12 |
 | docs/rfc/0001-design-doc.md | RFC / design doc | Eder | approved | 0 | 2026-10-12 |
-| docs/assumptions.md | Assumptions | Eder | approved | 0 | 2026-10-12 |
+| docs/rfc/0002-llm-feasibility-spike.md | RFC-0002 one-week feasibility spike of the LLM analysis | Eder | draft | 4 | 2026-10-24 |
+| docs/assumptions.md | Assumptions | Eder | approved | 0 | 2026-10-24 |
 | docs/clavaris-contract.md | Clavaris integration contract | Eder | approved | 1 | 2026-10-22 |
 | docs/threat-model/threat-model-v1.md | STRIDE threat model | Eder | approved | 0 | 2026-10-12 |
 | docs/api/README.md | API guidelines | Eder | approved | 1 | 2026-10-22 |
@@ -62,6 +63,7 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0015-code-documentation-and-comment-discipline.md | ADR 0015 | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-todos.sh | TODO/HACK/FIXME discipline check | Eder | approved | 0 | 2026-10-12 |
 | scripts/check-ruleset.py | Check that the ruleset of main requires only checks the CI workflow reports | Eder | approved | 1 | 2026-10-23 |
+| scripts/llm-spike/README.md | Throw-away harness of the LLM feasibility spike (RFC-0002) | Eder | draft | 4 | 2026-10-24 |
 | scripts/coverage-exempt.txt | Gated assemblies that hold no executable code yet (read by the coverage gate) | Eder | draft | 2 | 2026-10-22 |
 | scripts/smoke-worker.sh | Smoke start of the worker and the marketdata commands on a throwaway stack | Eder | approved | 2 | 2026-10-21 |
 | scripts/dev-backup.sh | Backup of the PostgreSQL and MongoDB databases of a compose stack | Eder | approved | 2 | 2026-10-22 |
@@ -76,6 +78,11 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0017-idempotency-design.md | ADR 0017 | Eder | approved | 0 | 2026-10-12 |
 | docs/observability/README.md | Observability catalog | Eder | approved | 1 | 2026-10-22 |
 | docs/adr/0018-multi-market-and-multi-currency.md | ADR 0018 | Eder | approved | 0 | 2026-10-12 |
+| deploy/Dockerfile | The images of the API, the worker and the migrator | Eder | draft | 5 | 2026-10-24 |
+| deploy/docker-compose.app.yml | The application on top of the datastores, with the memory limits of the 12 GB host | Eder | draft | 5 | 2026-10-24 |
+| deploy/app.env.example | Provider settings of the application containers | Eder | draft | 5 | 2026-10-24 |
+| scripts/smoke-app-stack.sh | Smoke test of the images and the memory of the stack on a throwaway compose project | Eder | draft | 5 | 2026-10-24 |
+| docs/runbooks/running-the-stack.md | Runbook: the images, the compose file of the application and its memory budget | Eder | draft | 5 | 2026-10-24 |
 | deploy/docker-compose.no-avx.yml | Dev override: Mongo 4.4 for CPUs without AVX | Eder | approved | 0 | 2026-10-12 |
 | docs/product-spec.md | Product specification | Eder | approved | 0 | 2026-10-12 |
 | docs/data-model.md | Data model and retention | Eder | approved | 1 | 2026-10-22 |
@@ -114,8 +121,10 @@ Statuses (review lifecycle): stub → draft → in-review → approved. ADR head
 | docs/adr/0048-warming-the-performance-windows-and-the-number-of-api-processes.md | ADR 0048 | Eder | approved | 2 | 2026-10-23 |
 | docs/adr/0049-smaller-decisions-of-the-phase-2-review.md | ADR 0049 | Eder | approved | 2 | 2026-10-23 |
 | docs/adr/0050-no-sparkline-cache-before-the-screens.md | ADR 0050 | Eder | approved | 2 | 2026-10-23 |
+| docs/adr/0051-catalog-capacity-follows-the-data-plan.md | ADR 0051 | Eder | approved | 2 | 2026-10-23 |
 | docs/reports/phase-1-report.md | Phase 1 report (gate) | Eder | approved | 1 | 2026-10-16 |
 | docs/reports/phase-2-load-baseline.md | Phase 2 load baseline | Eder | approved | 2 | 2026-10-23 |
+| docs/technical-debt.md | Technical debt register: present, future, resolved and the opportunities it blocks | Eder | draft | 2 | 2026-10-23 |
 | docs/code-standards.md | Code standards the build enforces and the guidelines kept by review | Eder | draft | 2 | 2026-10-23 |
 | docs/api/errors.md | API error codes for the screens | Eder | draft | 2 | 2026-10-23 |
 | docs/reports/phase-2-report.md | Phase 2 report (gate) | Eder | draft | 2 | 2026-10-23 |
