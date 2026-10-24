@@ -208,14 +208,14 @@ jobs:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json', 'dotnet-tools.json') }}
           restore-keys: nuget-${{ runner.os }}-
-      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with: { languages: csharp }
       - run: dotnet build --no-incremental -warnaserror
       # Code scanning (the upload target) needs a public repo or GitHub Advanced Security. On a private repo
       # without it, analyze locally and keep the SARIF as a build artifact instead of failing the job.
       # `upload` only covers the SARIF; the CodeQL database is uploaded separately (`upload-database`) and needs
       # code scanning too, so both are switched off together on a private repo.
-      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           output: sarif-results
           upload: ${{ github.event.repository.private && 'never' || 'always' }}
