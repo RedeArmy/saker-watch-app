@@ -18,11 +18,11 @@ namespace SakerWatch.MarketData.Tests.Live;
 /// series that moves on its own, most likely for low-priced stocks whose closes have few significant digits, would waste credits and leave stocks stale.
 /// The check fetches the last weeks of adjusted closes of a few symbols twice, <c>SAKER_LIVE_REWRITE_WAIT_MINUTES</c> apart (default 10), and compares
 /// the completed sessions; it also compares the first pass with the snapshot an earlier run left in the report directory, so running it again on another
-/// day covers a longer gap. About sixteen credits a run (eight symbols, two passes); the report says how many closed under $5, the case it exists for. Symbols can be changed with <c>SAKER_LIVE_REWRITE_SYMBOLS</c> (<c>MIC:SYMBOL,...</c>).
+/// day covers a longer gap. About twenty-two credits a run (eleven symbols, two passes; one that the provider does not know under that market code is left out and the run goes on); the report says how many closed under $5, the case it exists for. Symbols can be changed with <c>SAKER_LIVE_REWRITE_SYMBOLS</c> (<c>MIC:SYMBOL,...</c>).
 /// </summary>
 public sealed class RewriteStabilityLiveTests
 {
-    private const string _defaultSymbols = "XNGS:AAPL,XNYS:KO,XNYS:F,ARCX:SPY,XNGS:SIRI,XNYS:NOK,XNYS:RIG,XNYS:BB";
+    private const string _defaultSymbols = "XNGS:AAPL,XNYS:KO,XNYS:F,ARCX:SPY,XNGS:SIRI,XNYS:NOK,XNYS:RIG,XNYS:BB,XNYS:AMC,XNCM:PLUG,XNCM:SNDL";
 
     // Under this price one unit of the last place of a close is as large as the tolerance (docs/runbooks/provider-quota.md), the case the check is for.
     private const decimal _cheap = 5m;
