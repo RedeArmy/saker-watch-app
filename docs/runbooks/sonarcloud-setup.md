@@ -24,6 +24,9 @@
 - If the scanner reports "automatic analysis is enabled", repeat A.4.
 - Findings appear under the project in SonarCloud; fix them or mark false positives with a justification (never disable a rule globally without an ADR note).
 
+## What the scanner is told about the Python and SQL files
+Two warnings of the scanner are answered in the `sonarcloud` job of the workflow. The Python tests of the spike harness (`scripts/**/test_*.py`) are declared with `sonar.test.inclusions`, so that the rules for production code are not run on them. The PL/SQL analyzer is switched off (`sonar.plsql.file.suffixes=-`): the only `.sql` files are the seed of the load test and none of them is code that ships, and the analyzer needs a data dictionary the project does not have; the SQL of the migrations lives in C# strings and was never analyzed by it.
+
 ## What SonarCloud validates here
 C# bugs, vulnerabilities, code smells and complexity; security hotspots; duplication; coverage on new code (OpenCover from coverlet); secrets; IaC and GitHub Actions workflow files. Formatting stays enforced locally and in CI by `dotnet format --verify-no-changes` and the analyzers in the build (warnings are errors), so the Sonar analyzers also run inside every local build.
 
