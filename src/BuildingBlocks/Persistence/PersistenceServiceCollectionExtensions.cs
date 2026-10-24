@@ -33,6 +33,8 @@ public static class PersistenceServiceCollectionExtensions
             .Bind(configuration.GetSection(PostgresOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.PostConfigure<PostgresOptions>(options => options.Postgres = PostgresPooling.Apply(options.Postgres, options.PostgresMaxPoolSize));
+        services.AddSingleton<IValidateOptions<PostgresOptions>, PostgresOptionsValidator>();
         services.AddHealthChecks().AddCheck<PostgresReadinessCheck>("postgres", failureStatus: null, tags: ["ready"], timeout: ReadinessDefaults.CheckTimeout);
         services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
         services.TryAddScoped<UserContextConnectionInterceptor>();

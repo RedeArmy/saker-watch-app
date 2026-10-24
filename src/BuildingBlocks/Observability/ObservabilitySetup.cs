@@ -52,7 +52,8 @@ public static class ObservabilitySetup
             })
             .WithMetrics(metrics =>
             {
-                metrics.AddMeter(TelemetryName).AddHttpClientInstrumentation().AddRuntimeInstrumentation();
+                // "Npgsql" is the driver's own meter: connections in use, idle and waiting, the maximum, and the time spent waiting for one (the pool of PostgresOptions).
+                metrics.AddMeter(TelemetryName).AddMeter("Npgsql").AddHttpClientInstrumentation().AddRuntimeInstrumentation();
                 configureMetrics?.Invoke(metrics);
             });
 
